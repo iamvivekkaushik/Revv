@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Revv</string>
+    <string name="media_listener_label">Revv media controls</string>
+
+    <string name="launch_failed">Couldn’t open %1$s</string>
+    <string name="no_music_app">No music app found</string>
+    <string name="no_dialer">No phone app found</string>
+    <string name="no_projection_app">No Android Auto or phone-projection app found</string>
+    <string name="no_navigation_app">No navigation app found</string>
+    <string name="media_access_restricted_hint">Switch greyed out? Open App info → ⋮ → Allow restricted settings, then try again.</string>
+</resources>

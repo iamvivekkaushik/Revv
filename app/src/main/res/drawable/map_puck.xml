@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The car on the map: the design's position arrow, outlined so it stands out on a road. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="36dp"
+    android:viewportWidth="28"
+    android:viewportHeight="36">
+    <path
+        android:fillColor="#E6EDF3"
+        android:pathData="M14,2 L26,34 L14,26 L2,34 Z"
+        android:strokeColor="#03050A"
+        android:strokeLineJoin="miter"
+        android:strokeWidth="2" />
+</vector>

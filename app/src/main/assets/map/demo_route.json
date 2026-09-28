@@ -1,0 +1,94 @@
+{
+ "source": "Valhalla route (valhalla1.openstreetmap.de) over OpenStreetMap data, (c) OpenStreetMap contributors, ODbL",
+ "destination": {
+  "name": "DLF Cyber Hub",
+  "detail": "Sector 25A · Gurugram",
+  "lat": 28.4951,
+  "lon": 77.0885
+ },
+ "trip": {
+  "summary": {
+   "length": 8.518,
+   "time": 1780.132,
+   "has_toll": false
+  },
+  "legs": [
+   {
+    "shape": "sblfu@ahbarCyGvAon@hM_XdFsUtE{vAdYob@lIyh@lKuK`Ce^tIid@|Lkh@rNgc@pLcBb@e@LwHpBuc@hL}c@lLq@NcBf@{Cz@_RxEyYpHmc@bN}p@dQiV~GwLnCyCj@mUnEmeAtQkmEf~@weA`WemCnr@_`@tJqj@pNacAbT{IzAsCf@wR`DwHj@oI`AgW~Eke@bJod@tIwo@dMgj@`LiXhFmSzDkKrBca@zHgbAjR_i@vKwVfEu^lH_q@tJgs@vH}|Ct]c_C~U}l@~FoUlBuc@lBqbBe@uKnBi{BLwyAhAs\\IyD?kuAFul@f@wOcAiLk@{VgD{o@sL}m@uLs`AcRwX_FkWiD{m@uE{|@cHah@gBuXv@mP~DmHlCgJzFiQjRsNbXg`@hw@_Zvj@aD`GwNd[cOdZaBfPi@fC}DtImM`YqPf\\eLlNeOrHaQtEiNi@aIsBuUgJsv@e]{CgAuReHwNiFeGyBoj@oTix@y]{FaEaU_PkYcLeCaAqBy@oAzDkp@juBpNvEpHPxH|AlKbE|b@xRf^tOhJdElc@~S|LhF~ExEhBtIJzEG`HyAzGyEtFqFbEqq@rf@wAFcAkAiBkEgUzRuX~VqCr@oCeAqSsSsGgGuFsEsAq@{Bg@{BCpJuJ~DuBfGqDlA_DLkCk@_DsOoL",
+    "maneuvers": [
+     {
+      "type": 1,
+      "street_names": [
+       "Golf Course Road"
+      ],
+      "time": 230.275,
+      "length": 1.342,
+      "begin_shape_index": 0,
+      "end_shape_index": 28
+     },
+     {
+      "type": 23,
+      "street_names": [
+       "Golf Course Road Underpass"
+      ],
+      "time": 622.239,
+      "length": 3.629,
+      "begin_shape_index": 28,
+      "end_shape_index": 65
+     },
+     {
+      "type": 9,
+      "street_names": [
+       "Sikandarpur Underpass"
+      ],
+      "time": 260.95,
+      "length": 1.522,
+      "begin_shape_index": 65,
+      "end_shape_index": 90
+     },
+     {
+      "type": 16,
+      "street_names": [
+       "Service Road"
+      ],
+      "time": 175.934,
+      "length": 0.878,
+      "begin_shape_index": 90,
+      "end_shape_index": 113
+     },
+     {
+      "type": 15,
+      "time": 117.907,
+      "length": 0.215,
+      "begin_shape_index": 113,
+      "end_shape_index": 115
+     },
+     {
+      "type": 15,
+      "street_names": [
+       "DLF Tower 10th Road"
+      ],
+      "time": 332.675,
+      "length": 0.814,
+      "begin_shape_index": 115,
+      "end_shape_index": 145
+     },
+     {
+      "type": 10,
+      "time": 40.149,
+      "length": 0.117,
+      "begin_shape_index": 145,
+      "end_shape_index": 152
+     },
+     {
+      "type": 5,
+      "time": 0.0,
+      "length": 0.0,
+      "begin_shape_index": 152,
+      "end_shape_index": 152
+     }
+    ]
+   }
+  ]
+ }
+}
