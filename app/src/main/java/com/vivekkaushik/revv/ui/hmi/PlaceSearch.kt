@@ -46,7 +46,7 @@ fun PlaceSearchPanel(
         actions.searchPlaces(query)
     }
     Row(
-        modifier.background(Hmi.MapBg.copy(alpha = 0.97f)).blueprintGrid().padding(32.dp),
+        modifier.background(Hmi.MapBg).blueprintGrid().padding(32.dp),
         horizontalArrangement = Arrangement.spacedBy(36.dp),
     ) {
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {

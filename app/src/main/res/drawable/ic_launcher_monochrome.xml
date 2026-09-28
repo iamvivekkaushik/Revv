@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Monogram: Michroma's R (its outline, from res/font) in the cluster's corner brackets, over an RPM
-     bar that ends in the red line. Everything sits inside the 66dp safe zone. -->
+<!-- Themed-icon layer: the same shapes in one colour, which Android tints. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -8,16 +7,13 @@
     android:viewportHeight="108">
     <path
         android:pathData="M31,39V31H39M69,31H77V39M77,69V77H69M39,77H31V69"
-        android:strokeColor="#FF4DD8FF"
+        android:strokeColor="#FFFFFFFF"
         android:strokeWidth="2.4"
         android:strokeLineCap="square" />
     <path
         android:pathData="M41.59,40.50L56.65,40.50Q59.93,40.50 61.95,40.80Q63.96,41.08 65.00,41.80Q66.04,42.52 66.40,43.77Q66.78,45.02 66.78,46.92L66.78,47.50Q66.78,49.27 66.35,50.53Q65.95,51.80 64.76,52.58Q63.57,53.36 61.25,53.69L66.14,63.00L63.32,63.00L58.53,53.89Q58.25,53.91 57.92,53.91Q57.60,53.91 57.28,53.91L44.40,53.91L44.40,63.00L41.59,63.00L41.59,40.50ZM44.40,51.47L56.84,51.47Q59.34,51.47 60.78,51.31Q62.23,51.14 62.90,50.72Q63.59,50.28 63.78,49.52Q63.96,48.73 63.96,47.50L63.96,46.92Q63.96,45.53 63.70,44.72Q63.45,43.91 62.65,43.53Q61.85,43.16 60.29,43.05Q58.73,42.94 56.10,42.94L44.40,42.94L44.40,51.47Z"
-        android:fillColor="#FFE6EDF3" />
+        android:fillColor="#FFFFFFFF" />
     <path
-        android:pathData="M40.00,70h4.4v2.4h-4.4zM45.90,70h4.4v2.4h-4.4zM51.80,70h4.4v2.4h-4.4zM57.70,70h4.4v2.4h-4.4z"
-        android:fillColor="#FF4DD8FF" />
-    <path
-        android:pathData="M63.60,70h4.4v2.4h-4.4z"
-        android:fillColor="#FFFF3B3B" />
+        android:pathData="M40.00,70h4.4v2.4h-4.4zM45.90,70h4.4v2.4h-4.4zM51.80,70h4.4v2.4h-4.4zM57.70,70h4.4v2.4h-4.4zM63.60,70h4.4v2.4h-4.4z"
+        android:fillColor="#FFFFFFFF" />
 </vector>

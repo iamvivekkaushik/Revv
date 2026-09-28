@@ -142,6 +142,8 @@ fun MapsScreen(
             camera = if (panned) MapCamera.Free else followMode,
             zoom = zoom,
             interactive = true,
+            // The search panel covers it completely.
+            visible = !searching,
             headingUpTilt = HEADING_UP_TILT,
             headingUpShift = 0.4,
             onCameraFreed = { panned = true },
