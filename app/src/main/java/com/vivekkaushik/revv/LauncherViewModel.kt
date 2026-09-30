@@ -2,11 +2,14 @@ package com.vivekkaushik.revv
 
 import android.app.Application
 import android.bluetooth.BluetoothManager
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.graphics.Rect
 import android.media.AudioManager
 import android.os.Bundle
 import android.widget.Toast
+import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vivekkaushik.revv.apps.AppRepository
@@ -25,6 +28,9 @@ import com.vivekkaushik.revv.obd.ObdLink
 import com.vivekkaushik.revv.obd.ObdReadings
 import com.vivekkaushik.revv.obd.ObdSession
 import com.vivekkaushik.revv.obd.ObdStatus
+import com.vivekkaushik.revv.phone.CallRoute
+import com.vivekkaushik.revv.phone.PhoneMonitor
+import com.vivekkaushik.revv.phone.PhoneState
 import com.vivekkaushik.revv.settings.HmiSettings
 import com.vivekkaushik.revv.settings.SettingsStore
 import com.vivekkaushik.revv.system.FirstRun
@@ -54,6 +60,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val obd = ObdSession(application, viewModelScope)
     private val bleScanner = BleScanner(application)
     private val navigator = Navigator(application, viewModelScope)
+    private val phoneMonitor = PhoneMonitor(application, viewModelScope)
     private val isDebugBuild = application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     val icons: IconProvider = appRepository
@@ -73,6 +80,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     val obdStatus: StateFlow<ObdStatus> = obd.status
     val obdReadings: StateFlow<ObdReadings?> = obd.readings
+    val obdLog: StateFlow<List<String>> = obd.adapterLog
 
     private val pairedAdapters = MutableStateFlow<List<ObdAdapter>>(emptyList())
 
@@ -91,7 +99,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val navigation: StateFlow<NavState> = navigator.state
     val recentPlaces: StateFlow<List<Place>> = navigator.recents
 
+    val phone: StateFlow<PhoneState> = phoneMonitor.state
+
     init {
+        // First, so the adapter log knows whether to save before the adapter says anything.
+        viewModelScope.launch {
+            settings.map { it.isOn(SettingsStore.SAVE_OBD_LOG) }.distinctUntilChanged().collect(obd::saveLogs)
+        }
         // Stay connected to whichever adapter is chosen, from launch onwards.
         viewModelScope.launch {
             settings.map { it.obdAdapter }.distinctUntilChanged().collect { adapter ->
@@ -113,17 +127,20 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         bleScanner.stop()
         obd.stop()
         navigator.stop()
+        phoneMonitor.stop()
     }
 
     fun onStart() {
         refreshSystemState()
         media.start()
         navigator.start()
+        phoneMonitor.start()
     }
 
     fun onStop() {
         media.stop()
         navigator.stop()
+        phoneMonitor.stop()
     }
 
     fun refreshSystemState() {
@@ -151,9 +168,36 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun onBluetoothPermissionResult() {
         refreshSystemState()
         refreshAdapterChoices()
+        phoneMonitor.refresh()
     }
 
     fun onLocationPermissionResult() = refreshSystemState()
+
+    fun readPhoneAgain() = phoneMonitor.readAgain()
+
+    /** Calls [number] on the phone paired over Bluetooth, never on the head unit itself. */
+    fun call(number: String) {
+        val dialable = number.filter { it.isDigit() || it in "+*#" }
+        if (dialable.isEmpty()) return
+        val context = getApplication<Application>()
+        val toast = { text: String -> Toast.makeText(context, text, Toast.LENGTH_LONG).show() }
+        when (phoneMonitor.call(dialable, onFailed = toast)) {
+            CallRoute.Phone -> toast(context.getString(R.string.calling_on, phone.value.link?.name.orEmpty()))
+            CallRoute.HeadUnit -> dialWithHeadUnit(dialable)
+            CallRoute.None -> toast(context.getString(R.string.no_phone_to_call))
+        }
+    }
+
+    /** Hands [number] to the head unit's dialer, whose hands-free link calls on the phone. */
+    private fun dialWithHeadUnit(number: String) {
+        val context = getApplication<Application>()
+        val dial = Intent(Intent.ACTION_DIAL, "tel:${android.net.Uri.encode(number)}".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            context.startActivity(dial)
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(context, R.string.no_dialer, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     fun searchPlaces(query: String) = navigator.search(query)
     fun clearPlaceSearch() = navigator.clearSearch()
@@ -209,6 +253,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         isDefaultHome = HomeRole.isHeld(getApplication()),
         bluetoothOn = runCatching { bluetooth?.isEnabled == true }.getOrDefault(false),
         hasBluetoothPermission = BluetoothAccess.granted(getApplication()),
+        pairedDevices = BluetoothAccess.pairedCount(getApplication()),
         canScanBle = BluetoothAccess.canScan(getApplication()),
         locationBlocksBleScan = BluetoothAccess.locationBlocksScanning(getApplication()),
         hasLocationPermission = DeviceLocation.permitted(getApplication()),

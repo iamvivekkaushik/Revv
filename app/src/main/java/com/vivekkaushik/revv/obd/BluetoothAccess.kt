@@ -64,6 +64,18 @@ object BluetoothAccess {
         return adapters.sortedWith(compareByDescending<ObdAdapter> { looksLikeObd(it.name) }.thenBy { it.name.lowercase() })
     }
 
+    /** How many devices are paired, or null while Bluetooth is off or Revv may not look. */
+    @SuppressLint("MissingPermission")
+    fun pairedCount(context: Context): Int? {
+        if (!granted(context)) return null
+        val bluetooth = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return null
+        return try {
+            if (bluetooth.isEnabled) bluetooth.bondedDevices.orEmpty().size else null
+        } catch (e: SecurityException) {
+            null
+        }
+    }
+
     fun looksLikeObd(name: String): Boolean = obdNameHints.any { name.contains(it, ignoreCase = true) }
 
     private fun has(context: Context, permission: String): Boolean =

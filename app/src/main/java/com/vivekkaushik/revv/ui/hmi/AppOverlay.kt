@@ -24,7 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vivekkaushik.revv.nav.NavState
-import com.vivekkaushik.revv.vehicle.DemoData
+import com.vivekkaushik.revv.phone.PhoneState
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.StateFlow
 
@@ -35,6 +36,7 @@ fun AppOverlay(
     state: HmiUiState,
     live: LiveTelemetry,
     clock: String,
+    now: LocalDateTime,
     navigation: StateFlow<NavState>,
     timeFormat: DateTimeFormatter,
     actions: HmiActions,
@@ -50,7 +52,8 @@ fun AppOverlay(
         kept.clear()
         kept += stack
     }
-    Box(modifier.fillMaxSize().background(Hmi.Bg).blueprintGrid()) {
+    // The home screen stays underneath; taps between an app's controls mustn't reach it.
+    Box(modifier.fillMaxSize().opaqueToTouch().background(Hmi.Bg).blueprintGrid()) {
         Row(
             Modifier.padding(start = 56.dp, end = 56.dp, top = 40.dp).fillMaxWidth().height(44.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -73,8 +76,8 @@ fun AppOverlay(
         Box(Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 112.dp, bottom = 160.dp)) {
             screens.SaveableStateProvider(app) {
                 when (app) {
-                    HmiApp.Phone -> PhoneScreen(actions)
-                    HmiApp.Auto -> AutoScreen(actions)
+                    HmiApp.Phone -> PhoneScreen(state.phone, now, timeFormat, actions)
+                    HmiApp.Auto -> AutoScreen(state.phone, state.system.hasBluetoothPermission, actions)
                     HmiApp.Maps -> MapsScreen(state, navigation, timeFormat, actions)
                     HmiApp.Vehicle -> VehicleScreen(live)
                     HmiApp.Camera -> CameraScreen(live)
@@ -100,7 +103,7 @@ private fun StubScreen(name: String, message: String) {
 }
 
 @Composable
-private fun AutoScreen(actions: HmiActions) {
+private fun AutoScreen(phone: PhoneState, canSeeBluetooth: Boolean, actions: HmiActions) {
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         Column(
             Modifier.weight(1f).fillMaxHeight().border(1.dp, Hmi.Line).padding(56.dp),
@@ -110,9 +113,13 @@ private fun AutoScreen(actions: HmiActions) {
                 PathIcon(HmiIcons.AUTO, 48.dp, Hmi.Cyan)
             }
             HText("PHONE PROJECTION", size = 36.sp, family = Hmi.Display, lineHeight = 43.sp)
+            val connected = phone.link?.takeIf { it.connected }
             HText(
-                "${DemoData.PHONE} is connected over wireless Android Auto. Your phone's maps, calls, " +
-                    "messages and media take over this screen while projecting.",
+                if (connected != null) {
+                    "${connected.name} is connected. Your phone's maps, calls, messages and media take over this screen while projecting."
+                } else {
+                    "Connect your phone to bring its maps, calls, messages and media to this screen."
+                },
                 Modifier.widthIn(max = 600.dp),
                 size = 20.sp,
                 color = Hmi.Muted,
@@ -123,18 +130,30 @@ private fun AutoScreen(actions: HmiActions) {
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(Modifier.weight(1f).fillMaxWidth().border(1.dp, Hmi.Line).padding(32.dp)) {
                 Caption("PAIRED PHONES", Modifier.padding(bottom = 16.dp))
-                DemoData.pairedPhones.forEach { phone ->
+                when {
+                    !canSeeBluetooth -> {
+                        HText("Revv needs Bluetooth access to see them", size = 18.sp, color = Hmi.Muted)
+                        AccentButton("ALLOW", actions::requestBluetoothPermission, Modifier.padding(top = 20.dp).height(52.dp))
+                    }
+                    phone.pairedPhones.isEmpty() -> HText("None paired over Bluetooth yet", size = 18.sp, color = Hmi.Muted)
+                }
+                phone.pairedPhones.take(PAIRED_SHOWN).forEach { paired ->
                     Row(
                         Modifier.fillMaxWidth().edgeLine(Hmi.LineSoft).padding(vertical = 20.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
-                        Box(Modifier.size(10.dp).background(if (phone.connected) Hmi.Cyan else Color.White.copy(alpha = 0.2f)))
+                        Box(Modifier.size(10.dp).background(if (paired.connected) Hmi.Cyan else Color.White.copy(alpha = 0.2f)))
                         Column(Modifier.weight(1f)) {
-                            HText(phone.name, size = 24.sp, weight = FontWeight.Medium)
-                            HText(phone.detail, Modifier.padding(top = 4.dp), size = 15.sp, color = Hmi.Muted)
+                            HText(paired.name, size = 24.sp, weight = FontWeight.Medium, maxLines = 1)
+                            HText(
+                                if (paired.connected) "Calls and audio over Bluetooth" else "Not connected",
+                                Modifier.padding(top = 4.dp),
+                                size = 15.sp,
+                                color = Hmi.Muted,
+                            )
                         }
-                        Caption(if (phone.connected) "CONNECTED" else "PAIRED", color = if (phone.connected) Hmi.Cyan else Hmi.Muted)
+                        Caption(if (paired.connected) "CONNECTED" else "PAIRED", color = if (paired.connected) Hmi.Cyan else Hmi.Muted)
                     }
                 }
             }
@@ -157,3 +176,6 @@ private fun Fact(label: String, value: String, modifier: Modifier, color: Color 
         HText(value, Modifier.padding(top = 8.dp), size = 24.sp, color = color)
     }
 }
+
+/** As many paired phones as fit above the facts row. */
+private const val PAIRED_SHOWN = 4

@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
@@ -334,6 +335,16 @@ fun Modifier.edgeLine(color: Color = Hmi.Line, bottom: Boolean = true): Modifier
     } else {
         drawRect(color, Offset(size.width - line, 0f), Size(line, size.height))
     }
+}
+
+/**
+ * Makes a layer as solid to touch as its background is to the eye: a tap on an empty part of it
+ * stops there instead of reaching whatever the layer covers. Its own controls work as before.
+ */
+fun Modifier.opaqueToTouch(): Modifier = pointerInput(Unit) {
+    // Listening is enough: of overlapping siblings, Compose offers a touch only to the topmost one
+    // that listens. Consuming it as well would cancel taps on the layer's own controls.
+    awaitPointerEventScope { while (true) awaitPointerEvent() }
 }
 
 /** Fades (and optionally rises) into place like the design's CSS transitions, delay included. */

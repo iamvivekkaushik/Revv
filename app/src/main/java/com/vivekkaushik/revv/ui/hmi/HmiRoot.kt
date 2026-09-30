@@ -113,6 +113,7 @@ fun HmiRoot(state: HmiUiState, obdReadings: StateFlow<ObdReadings?>, navigation:
                     live = ignition.live,
                     clock = clock,
                     date = date,
+                    now = now,
                     navigation = navigation,
                     timeFormat = timeFormat,
                     actions = actions,
@@ -121,7 +122,7 @@ fun HmiRoot(state: HmiUiState, obdReadings: StateFlow<ObdReadings?>, navigation:
                         actions.goHome()
                     },
                 )
-                AppLayer(state, ignition.live, clock, navigation, timeFormat, actions)
+                AppLayer(state, ignition.live, clock, now, navigation, timeFormat, actions)
                 Dock(
                     current = state.screen.app,
                     visible = ready,
@@ -138,6 +139,7 @@ private fun AppLayer(
     state: HmiUiState,
     live: LiveTelemetry,
     clock: String,
+    now: LocalDateTime,
     navigation: StateFlow<NavState>,
     timeFormat: DateTimeFormatter,
     actions: HmiActions,
@@ -153,7 +155,7 @@ private fun AppLayer(
             enter = fadeIn(tween(400, easing = Hmi.Ease)) + slideInVertically(tween(500, easing = Hmi.Glide)) { rise },
             exit = fadeOut(tween(400, easing = Hmi.Ease)) + slideOutVertically(tween(500, easing = Hmi.Glide)) { rise },
         ) {
-            if (shown != null) AppOverlay(shown, state, live, clock, navigation, timeFormat, actions)
+            if (shown != null) AppOverlay(shown, state, live, clock, now, navigation, timeFormat, actions)
         }
     }
 }

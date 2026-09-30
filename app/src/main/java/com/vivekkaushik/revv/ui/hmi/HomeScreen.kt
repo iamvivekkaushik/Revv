@@ -44,8 +44,12 @@ import com.vivekkaushik.revv.media.NowPlaying
 import com.vivekkaushik.revv.media.formatDuration
 import com.vivekkaushik.revv.nav.NavState
 import com.vivekkaushik.revv.obd.ObdLink
+import com.vivekkaushik.revv.phone.CallType
+import com.vivekkaushik.revv.phone.PhoneState
+import com.vivekkaushik.revv.phone.PhoneSync
 import com.vivekkaushik.revv.vehicle.DemoData
 import com.vivekkaushik.revv.vehicle.DriveSimulator
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +64,7 @@ fun HomeScreen(
     live: LiveTelemetry,
     clock: String,
     date: String,
+    now: LocalDateTime,
     navigation: StateFlow<NavState>,
     timeFormat: DateTimeFormatter,
     actions: HmiActions,
@@ -96,8 +101,8 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(28.dp),
                 ) {
                     FuelCard(live, Modifier.weight(1f).fillMaxHeight())
-                    PhoneCard(onCallBack = { actions.open(HmiApp.Phone) }, Modifier.weight(1f).fillMaxHeight())
-                    MediaCard(state.nowPlaying, state.system.hasMediaAccess, actions, Modifier.weight(1.4f).fillMaxHeight())
+                    PhoneCard(state.phone, now, timeFormat, actions, Modifier.weight(1f).fillMaxHeight())
+                    MediaCard(state.nowPlaying, state.system.hasMediaAccess, state.phone.link?.name, actions, Modifier.weight(1.4f).fillMaxHeight())
                 }
             }
             NavPanel(
@@ -232,10 +237,13 @@ private fun SpeedPanel(live: LiveTelemetry, modifier: Modifier) {
     }
 }
 
+/** With no demo and no car answering there's nothing to show, so dashes, like the other readings. */
+private fun LiveTelemetry.hasNoData() = source == DataSource.None && isReady
+
 @Composable
 private fun SpeedReadout(live: LiveTelemetry, modifier: Modifier) {
     HText(
-        live.speedKmh.toString(),
+        if (live.hasNoData()) "--" else live.speedKmh.toString(),
         modifier,
         size = 150.sp,
         family = Hmi.Display,
@@ -303,7 +311,7 @@ private fun RpmPanel(live: LiveTelemetry, modifier: Modifier) {
 
 @Composable
 private fun RpmReadout(live: LiveTelemetry) {
-    HText(tenths(live.rpmTenths), size = 64.sp, family = Hmi.Display, spacing = (-2).sp, lineHeight = 64.sp)
+    HText(if (live.hasNoData()) "--" else tenths(live.rpmTenths), size = 64.sp, family = Hmi.Display, spacing = (-2).sp, lineHeight = 64.sp)
 }
 
 /** Sixteen bars; the last four are the redline. */
@@ -381,26 +389,70 @@ private fun FuelCard(live: LiveTelemetry, modifier: Modifier) {
 }
 
 @Composable
-private fun PhoneCard(onCallBack: () -> Unit, modifier: Modifier) {
-    val lastCall = DemoData.recents.first()
+private fun PhoneCard(phone: PhoneState, now: LocalDateTime, timeFormat: DateTimeFormatter, actions: HmiActions, modifier: Modifier) {
+    val lastCall = phone.recents.firstOrNull()
     Column(
         modifier.border(1.dp, Hmi.Line).padding(horizontal = 28.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Caption("PHONE")
-            Caption("${DemoData.PHONE.uppercase()} · ${DemoData.PHONE_BATTERY}")
+            Caption(PhoneFormat.badge(phone.link), Modifier.weight(1f, fill = false).padding(start = 16.dp), maxLines = 1)
         }
-        Column {
-            HText(lastCall.name, size = 24.sp, weight = FontWeight.Medium)
-            HText(lastCall.detail, Modifier.padding(top = 4.dp), size = 15.sp, color = Hmi.Red)
+        val button = Modifier.fillMaxWidth().height(52.dp)
+        val name = phone.link?.name.orEmpty()
+        val openPhone = { actions.open(HmiApp.Phone) }
+        when {
+            lastCall == null -> when (phone.sync) {
+                PhoneSync.NeedsPermission -> {
+                    LastCall("Calls and contacts", "TAP ALLOW TO CONNECT", Hmi.Muted)
+                    AccentButton("ALLOW", actions::requestBluetoothPermission, button)
+                }
+                PhoneSync.NoPhone -> {
+                    LastCall("No phone connected", "PAIR ONE OVER BLUETOOTH", Hmi.Muted)
+                    AccentButton("BLUETOOTH", actions::openBluetoothSettings, button)
+                }
+                PhoneSync.Reading -> {
+                    LastCall(name, "READING CALLS…", Hmi.Muted)
+                    AccentButton("OPEN PHONE", openPhone, button)
+                }
+                PhoneSync.AwaitingApproval -> {
+                    LastCall(name, "ALLOW ACCESS ON THE PHONE", Hmi.Amber)
+                    AccentButton("OPEN PHONE", openPhone, button)
+                }
+                PhoneSync.Failed -> {
+                    LastCall(name, "COULDN'T READ CALLS", Hmi.Red)
+                    AccentButton("TRY AGAIN", actions::readPhoneAgain, button)
+                }
+                PhoneSync.Synced -> {
+                    LastCall("No recent calls", "NOTHING IN ITS CALL HISTORY", Hmi.Muted)
+                    AccentButton("OPEN PHONE", openPhone, button)
+                }
+            }
+            else -> {
+                val missed = lastCall.type == CallType.Missed
+                LastCall(lastCall.label, PhoneFormat.detail(lastCall, now, timeFormat), if (missed) Hmi.Red else Hmi.Muted)
+                AccentButton(
+                    if (lastCall.type == CallType.Outgoing) "CALL AGAIN" else "CALL BACK",
+                    // A withheld number can't be called back; the phone screen has the rest.
+                    { if (lastCall.number.isNotBlank()) actions.call(lastCall.number) else actions.open(HmiApp.Phone) },
+                    button,
+                )
+            }
         }
-        AccentButton("CALL BACK", onCallBack, Modifier.fillMaxWidth().height(52.dp))
     }
 }
 
 @Composable
-private fun MediaCard(nowPlaying: NowPlaying?, hasAccess: Boolean, actions: HmiActions, modifier: Modifier) {
+private fun LastCall(title: String, detail: String, detailColor: Color) {
+    Column {
+        HText(title, size = 24.sp, weight = FontWeight.Medium, maxLines = 1)
+        HText(detail, Modifier.padding(top = 4.dp), size = 15.sp, color = detailColor, maxLines = 1)
+    }
+}
+
+@Composable
+private fun MediaCard(nowPlaying: NowPlaying?, hasAccess: Boolean, phoneName: String?, actions: HmiActions, modifier: Modifier) {
     Row(
         modifier.border(1.dp, Hmi.Line).padding(horizontal = 28.dp, vertical = 22.dp),
         horizontalArrangement = Arrangement.spacedBy(24.dp),
@@ -419,7 +471,9 @@ private fun MediaCard(nowPlaying: NowPlaying?, hasAccess: Boolean, actions: HmiA
                     Spacer(Modifier.height(19.dp))
                 }
                 else -> {
-                    Caption("MEDIA · ${nowPlaying.appLabel.uppercase()}", maxLines = 1)
+                    // The phone's music, over Bluetooth, goes by the phone's name rather than "Bluetooth".
+                    val source = if (nowPlaying.fromPhone) phoneName ?: nowPlaying.appLabel else nowPlaying.appLabel
+                    Caption("MEDIA · ${source.uppercase()}", maxLines = 1)
                     TrackText(
                         title = nowPlaying.title,
                         subtitle = nowPlaying.subtitle.uppercase(),

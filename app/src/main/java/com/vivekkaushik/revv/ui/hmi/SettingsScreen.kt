@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -98,6 +99,8 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
         choosingAdapter = true
     }
     BackHandler(enabled = choosingAdapter) { choosingAdapter = false }
+    var viewingLog by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = viewingLog) { viewingLog = false }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         Column(
             Modifier.width(420.dp).fillMaxHeight().border(1.dp, Hmi.Line).padding(16.dp),
@@ -107,15 +110,19 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                 CategoryButton(entry, selected = entry == category) {
                     category = entry
                     choosingAdapter = false
+                    viewingLog = false
                 }
             }
         }
         Column(Modifier.weight(1f).fillMaxHeight().border(1.dp, Hmi.Line).padding(horizontal = 36.dp, vertical = 32.dp)) {
-            if (choosingAdapter) {
-                AdapterPicker(state, actions, onDone = { choosingAdapter = false })
-            } else {
-                HText(category.title, Modifier.padding(bottom = 16.dp), size = 26.sp, family = Hmi.Display)
-                rowsFor(category, state, actions, about, chooseAdapter).forEach { row -> SettingRowView(row, state, actions) }
+            when {
+                choosingAdapter -> AdapterPicker(state, actions, onDone = { choosingAdapter = false })
+                viewingLog -> AdapterLog(state.obdLog, onDone = { viewingLog = false })
+                else -> {
+                    HText(category.title, Modifier.padding(bottom = 16.dp), size = 26.sp, family = Hmi.Display)
+                    rowsFor(category, state, actions, about, chooseAdapter, showLog = { viewingLog = true })
+                        .forEach { row -> SettingRowView(row, state, actions) }
+                }
             }
         }
     }
@@ -255,6 +262,35 @@ private fun AdapterPicker(state: HmiUiState, actions: HmiActions, onDone: () -> 
                     modifier = Modifier.height(56.dp),
                 )
             }
+            AccentButton("DONE", onDone, Modifier.height(56.dp))
+        }
+    }
+}
+
+/** The adapter conversation, newest last, for working out why a car won't talk. */
+@Composable
+private fun AdapterLog(lines: List<String>, onDone: () -> Unit) {
+    val list = rememberLazyListState()
+    // Follows the newest line, like a terminal.
+    LaunchedEffect(lines.size) {
+        if (lines.isNotEmpty()) list.scrollToItem(lines.lastIndex)
+    }
+    Column(Modifier.fillMaxSize()) {
+        HText("ADAPTER LOG", size = 26.sp, family = Hmi.Display)
+        HText(
+            "What Revv and the adapter said on recent connection attempts, also in logcat as RevvObd. With Save adapter " +
+                "logs on, it's kept on this device too, one file a day, in Android/data/com.vivekkaushik.revv/files/logs.",
+            Modifier.padding(top = 6.dp),
+            size = 15.sp,
+            color = Hmi.Muted,
+        )
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp), state = list) {
+            if (lines.isEmpty()) {
+                item { HText("Nothing yet: Revv logs here once it starts connecting.", size = 16.sp, color = Hmi.Muted) }
+            }
+            items(lines) { line -> HText(line, size = 14.sp, lineHeight = 22.sp) }
+        }
+        Row(Modifier.padding(top = 16.dp)) {
             AccentButton("DONE", onDone, Modifier.height(56.dp))
         }
     }
@@ -467,6 +503,7 @@ private fun rowsFor(
     actions: HmiActions,
     about: About,
     chooseAdapter: () -> Unit,
+    showLog: () -> Unit,
 ): List<SettingRow> {
     val settings = state.settings
     val system = state.system
@@ -487,10 +524,12 @@ private fun rowsFor(
             ActionRow("Bluetooth", if (system.bluetoothOn) "On" else "Off", "OPEN", actions::openBluetoothSettings),
             ActionRow("Wi-Fi", "Networks and hotspots", "OPEN", actions::openWifiSettings),
             ToggleRow("hotspot", "Phone hotspot", "Use phone data for maps"),
-            ValueRow("Paired devices", "2 devices"),
+            pairedDevicesRow(system, actions),
         )
-        Category.Vehicle -> listOf(
+        Category.Vehicle -> listOfNotNull(
             adapterRow(state, actions, chooseAdapter),
+            settings.obdAdapter?.let { ActionRow("Adapter log", "What the adapter said, for when a car won't connect", "VIEW", showLog) },
+            settings.obdAdapter?.let { ToggleRow(SettingsStore.SAVE_OBD_LOG, "Save adapter logs", "One file a day on this device, for troubleshooting later") },
             ToggleRow(SettingsStore.DEMO_DRIVE, "Demo drive", "Simulated car data while no OBD-II adapter is set up"),
             ValueRow("Model", "Swift VXi 2015 · 5MT"),
             ToggleRow("tpms", "Tyre pressure alerts", "Warn below 28 psi"),
@@ -558,6 +597,17 @@ private fun adapterRow(state: HmiUiState, actions: HmiActions, chooseAdapter: ()
         ObdLink.BluetoothOff -> ActionRow(name, detail, "OPEN", actions::openBluetoothSettings, "CHANGE" to chooseAdapter)
         ObdLink.NoWifi -> ActionRow(name, detail, "JOIN", actions::openWifiSettings, "CHANGE" to chooseAdapter)
         else -> ActionRow(name, detail, "CHANGE", chooseAdapter)
+    }
+}
+
+/** How many devices are paired, or what keeps Revv from counting them. */
+private fun pairedDevicesRow(system: SystemState, actions: HmiActions): SettingRow {
+    val count = system.pairedDevices
+    return when {
+        !system.hasBluetoothPermission ->
+            ActionRow("Paired devices", "Allow Bluetooth access to see them", "ALLOW", actions::requestBluetoothPermission)
+        count == null -> ValueRow("Paired devices", "Bluetooth is off", "—")
+        else -> ValueRow("Paired devices", if (count == 1) "1 device" else "$count devices")
     }
 }
 

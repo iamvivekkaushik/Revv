@@ -40,6 +40,18 @@ open class StreamObdTransport(
         return reply
     }
 
+    override fun discard(): String {
+        val dropped = StringBuilder(pending)
+        pending.clear()
+        val chunk = ByteArray(256)
+        while (input.available() > 0) {
+            val count = readAvailable(chunk)
+            if (count <= 0) break
+            for (i in 0 until count) dropped.append((chunk[i].toInt() and 0xFF).toChar())
+        }
+        return dropped.toString()
+    }
+
     override fun close() = onClose()
 
     /**

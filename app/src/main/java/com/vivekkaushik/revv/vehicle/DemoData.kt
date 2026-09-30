@@ -1,8 +1,8 @@
 package com.vivekkaushik.revv.vehicle
 
 /**
- * Placeholder content from the "Swift HMI v4" design: the demo drive's car figures, plus the paired
- * phone and weather, which Revv can't read yet.
+ * Placeholder content from the "Swift HMI v4" design: the demo drive's car figures, plus weather,
+ * which Revv can't read yet.
  */
 object DemoData {
     const val WEATHER = "31°C"
@@ -21,29 +21,6 @@ object DemoData {
     const val GEARBOX = "5MT"
     const val TRIP_A_KM = "128.4"
     const val DRIVE_TIME = "3:12"
-
-    const val PHONE = "Pixel 8"
-    const val PHONE_BATTERY = "74%"
-    const val PHONE_NETWORK = "JIO 4G"
-
-    data class Call(val name: String, val detail: String, val missed: Boolean)
-
-    val recents = listOf(
-        Call("Aarav Mehta", "MISSED · 12 MIN AGO", missed = true),
-        Call("Priya", "OUTGOING · 09:40", missed = false),
-        Call("Maa", "INCOMING · YESTERDAY", missed = false),
-        Call("Rohan", "OUTGOING · YESTERDAY", missed = false),
-        Call("Dr. Sethi", "OUTGOING · WED", missed = false),
-    )
-
-    val favourites = listOf("Priya", "Rohan", "Maa", "Papa", "Aarav", "Office")
-
-    data class PairedPhone(val name: String, val detail: String, val connected: Boolean)
-
-    val pairedPhones = listOf(
-        PairedPhone("Pixel 8", "Wireless · Android Auto ready", connected = true),
-        PairedPhone("Galaxy S23", "Last used 3 days ago", connected = false),
-    )
 
     data class Tyre(val position: String, val psi: Int, val temperature: String)
 

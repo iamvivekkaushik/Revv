@@ -87,8 +87,11 @@ class MainActivity : ComponentActivity(), HmiActions {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         hideSystemBars()
-        // Pressing home while Revv is up returns to the home screen.
-        addOnNewIntentListener { viewModel.goHome(animate = !offScreen) }
+        // Pressing home while Revv is the home app returns to the home screen. Its icon in another
+        // launcher (on a phone, say, coming back from Bluetooth settings) resumes where it was.
+        addOnNewIntentListener { intent ->
+            if (intent.hasCategory(Intent.CATEGORY_HOME)) viewModel.goHome(animate = !offScreen)
+        }
         setContent {
             val apps by viewModel.apps.collectAsStateWithLifecycle()
             val nowPlaying by viewModel.nowPlaying.collectAsStateWithLifecycle()
@@ -99,9 +102,13 @@ class MainActivity : ComponentActivity(), HmiActions {
             val adapterChoices by viewModel.adapterChoices.collectAsStateWithLifecycle()
             val bleScanning by viewModel.bleScanning.collectAsStateWithLifecycle()
             val recentPlaces by viewModel.recentPlaces.collectAsStateWithLifecycle()
+            val obdLog by viewModel.obdLog.collectAsStateWithLifecycle()
+            val phone by viewModel.phone.collectAsStateWithLifecycle()
             CompositionLocalProvider(LocalIconProvider provides viewModel.icons) {
                 HmiRoot(
-                    state = HmiUiState(apps, nowPlaying, system, settings, screen, obdStatus, adapterChoices, bleScanning, recentPlaces),
+                    state = HmiUiState(
+                        apps, nowPlaying, system, settings, screen, obdStatus, adapterChoices, bleScanning, recentPlaces, obdLog, phone,
+                    ),
                     obdReadings = viewModel.obdReadings,
                     navigation = viewModel.navigation,
                     actions = this@MainActivity,
@@ -186,10 +193,9 @@ class MainActivity : ComponentActivity(), HmiActions {
         if (!startFirstAvailable(music)) toast(R.string.no_music_app)
     }
 
-    override fun dial(number: String) {
-        val dial = Intent(Intent.ACTION_DIAL, if (number.isEmpty()) null else "tel:${android.net.Uri.encode(number)}".toUri())
-        if (!startFirstAvailable(dial)) toast(R.string.no_dialer)
-    }
+    override fun call(number: String) = viewModel.call(number)
+
+    override fun readPhoneAgain() = viewModel.readPhoneAgain()
 
     override fun startProjection() {
         val projection = ExternalApps.findProjectionApp(viewModel.apps.value)

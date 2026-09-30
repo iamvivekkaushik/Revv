@@ -2,7 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Bluetooth for the status bar and ELM327 OBD-II adapters, Classic and LE. -->
+    <!-- Bluetooth for the status bar, ELM327 OBD-II adapters (Classic and LE), and the paired phone's
+         calls and contacts, read over PBAP. -->
     <uses-feature
         android:name="android.hardware.bluetooth"
         android:required="false" />

@@ -18,6 +18,8 @@ data class NowPlaying(
     val playbackSpeed: Float,
     val canSkipPrevious: Boolean,
     val canSkipNext: Boolean,
+    /** The phone's own player, heard over Bluetooth: the head unit's Bluetooth publishes it as a session. */
+    val fromPhone: Boolean = false,
 ) {
     /** Playback position extrapolated to [nowElapsed], the way the system media controls do it. */
     fun positionAt(nowElapsed: Long): Long {

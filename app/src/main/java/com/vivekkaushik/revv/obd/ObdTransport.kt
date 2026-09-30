@@ -13,4 +13,10 @@ interface ObdTransport : Closeable {
      * within [timeoutMillis].
      */
     fun receive(timeoutMillis: Long): String?
+
+    /**
+     * Drops, and returns, whatever the adapter has sent that no command is waiting for. Some clones
+     * answer a failed search twice, and the spare answer mustn't pass for the next command's.
+     */
+    fun discard(): String = ""
 }

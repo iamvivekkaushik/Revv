@@ -50,7 +50,8 @@ class DriveSimulator(private val sixSpeed: Boolean = false) {
         val bandHigh = if (gear < bands.size) bands[gear] else 180f
         val rpm = when {
             speedKmh >= 1f -> 1500f + (speedKmh - bandLow) / (bandHigh - bandLow) * 2600f
-            phase < PHASE_SWEEP -> 0f
+            // Only the demo's engine idles: with no demo there's no engine to show at all.
+            phase < PHASE_SWEEP || !demoDrive -> 0f
             else -> IDLE_RPM
         }
 
@@ -64,6 +65,7 @@ class DriveSimulator(private val sixSpeed: Boolean = false) {
         val idle = phase == PHASE_READY && speedKmh < 1f
         val gearIndex = when {
             reversing && phase == PHASE_READY -> GEAR_REVERSE
+            !demoDrive && phase == PHASE_READY -> GEAR_NONE
             idle || phase < PHASE_READY -> GEAR_NEUTRAL
             else -> gear
         }
@@ -100,6 +102,9 @@ class DriveSimulator(private val sixSpeed: Boolean = false) {
         /** Indexes into the gear strip R 1 2 3 4 5 6 N. */
         const val GEAR_REVERSE = 0
         const val GEAR_NEUTRAL = 7
+
+        /** No gear lit: nothing is reporting one. */
+        const val GEAR_NONE = -1
 
         const val MAX_SPEED = 200f
         const val MAX_RPM = 8000f

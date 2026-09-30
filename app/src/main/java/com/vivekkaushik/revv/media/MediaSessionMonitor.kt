@@ -124,25 +124,29 @@ class MediaSessionMonitor(private val context: Context) {
     }
 
     private fun snapshot(controller: MediaController): NowPlaying? {
-        val metadata = controller.metadata ?: return null
-        val description = metadata.description
-        val title = description.title?.toString()?.takeIf { it.isNotBlank() } ?: return null
+        val fromPhone = controller.packageName in BLUETOOTH_PACKAGES
+        val metadata = controller.metadata
+        val description = metadata?.description
+        val title = description?.title?.toString()?.takeIf { it.isNotBlank() }
+            // A phone may not have named its track yet, but play and skip reach it all the same.
+            ?: if (fromPhone) PHONE_AUDIO else return null
         val state = controller.playbackState
         val actions = state?.actions ?: 0L
         return NowPlaying(
             packageName = controller.packageName,
             appLabel = appLabel(controller.packageName),
             title = title,
-            subtitle = description.subtitle?.toString().orEmpty(),
-            art = description.iconBitmap,
+            subtitle = description?.subtitle?.toString().orEmpty(),
+            art = description?.iconBitmap,
             isPlaying = state.isPlaying,
-            durationMs = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION),
+            durationMs = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L,
             positionMs = state?.position ?: 0L,
             positionUpdatedAt = state?.lastPositionUpdateTime ?: 0L,
             playbackSpeed = state?.playbackSpeed ?: 1f,
             // Players that don't declare their actions usually still handle skips.
             canSkipPrevious = actions == 0L || (actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS) != 0L,
             canSkipNext = actions == 0L || (actions and PlaybackState.ACTION_SKIP_TO_NEXT) != 0L,
+            fromPhone = fromPhone,
         )
     }
 
@@ -161,6 +165,16 @@ class MediaSessionMonitor(private val context: Context) {
             )
             .toBundle()
         else -> null
+    }
+
+    private companion object {
+        /**
+         * The Bluetooth stack's packages, AOSP's and Google's. A head unit's Bluetooth plays the
+         * phone's audio and publishes the phone's player as a media session under one of them.
+         */
+        val BLUETOOTH_PACKAGES = setOf("com.android.bluetooth", "com.google.android.bluetooth")
+
+        const val PHONE_AUDIO = "Phone audio"
     }
 }
 

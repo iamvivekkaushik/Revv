@@ -70,6 +70,7 @@ class SettingsStore(context: Context) {
         const val MEDIA_VOLUME = "vol"
         const val NAV_VOLUME = "navVol"
         const val AVOID_TOLLS = "avoidTolls"
+        const val SAVE_OBD_LOG = "obdLog"
 
         private const val TOGGLE_PREFIX = "toggle."
         private const val LEVEL_PREFIX = "level."
@@ -88,6 +89,7 @@ class SettingsStore(context: Context) {
             "tpms" to true,
             "shiftL" to true,
             AVOID_TOLLS to false,
+            SAVE_OBD_LOG to true,
             "traffic" to true,
             "autoUpd" to true,
         )

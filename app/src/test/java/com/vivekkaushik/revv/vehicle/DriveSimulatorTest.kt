@@ -1,6 +1,7 @@
 package com.vivekkaushik.revv.vehicle
 
 import com.vivekkaushik.revv.vehicle.DriveSimulator.Companion.GEAR_NEUTRAL
+import com.vivekkaushik.revv.vehicle.DriveSimulator.Companion.GEAR_NONE
 import com.vivekkaushik.revv.vehicle.DriveSimulator.Companion.GEAR_REVERSE
 import com.vivekkaushik.revv.vehicle.DriveSimulator.Companion.IDLE_RPM
 import com.vivekkaushik.revv.vehicle.DriveSimulator.Companion.MAX_RPM
@@ -42,12 +43,21 @@ class DriveSimulatorTest {
     }
 
     @Test
-    fun withoutDemoDriveTheCarIdlesInNeutral() {
-        val idle = DriveSimulator().run(10f, demoDrive = false)
-        assertEquals(0, idle.speedKmh)
-        assertEquals(GEAR_NEUTRAL, idle.gearIndex)
-        assertEquals(IDLE_RPM / MAX_RPM, idle.rpmFraction, 0.0001f)
-        assertNull(idle.kmPerLitre)
+    fun withoutDemoDriveThereIsNoEngineToShow() {
+        val parked = DriveSimulator().run(10f, demoDrive = false)
+        assertEquals(0, parked.speedKmh)
+        assertEquals(GEAR_NONE, parked.gearIndex)
+        assertEquals(0f, parked.rpmFraction, 0f)
+        assertNull(parked.kmPerLitre)
+    }
+
+    @Test
+    fun theDemoIdlesInNeutralAtTheLights() {
+        // The demo loop stops from 30 to 38 seconds in.
+        val stopped = DriveSimulator().run(36f)
+        assertEquals(0, stopped.speedKmh)
+        assertEquals(GEAR_NEUTRAL, stopped.gearIndex)
+        assertEquals(IDLE_RPM / MAX_RPM, stopped.rpmFraction, 0.0001f)
     }
 
     @Test

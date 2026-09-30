@@ -5,11 +5,14 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.net.Network
+import android.os.Build
 import android.os.SystemClock
+import androidx.core.content.edit
 import com.vivekkaushik.revv.vehicle.FuelMath
 import com.vivekkaushik.revv.vehicle.GearEstimator
 import com.vivekkaushik.revv.vehicle.TripComputer
 import com.vivekkaushik.revv.vehicle.VehicleProfile
+import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +47,26 @@ class ObdSession(
     private val gears = GearEstimator(profile)
     private var job: Job? = null
 
+    /** Saved where USB can reach it (Android/data/<app>/files/logs), for drives with no laptop along. */
+    private val log = ObdLog(context.getExternalFilesDir(LOG_FOLDER) ?: File(context.filesDir, LOG_FOLDER)).also {
+        it.recordCrashes()
+    }
+
+    /** The adapter conversation of recent connection attempts, for troubleshooting. */
+    val adapterLog: StateFlow<List<String>> = log.lines
+
+    /** Whether the adapter log is also saved to a file on the device. */
+    fun saveLogs(save: Boolean) {
+        log.saving = save
+    }
+
+    /** The protocol each adapter's car answered on, tried first on the next connection. */
+    private val protocols = context.getSharedPreferences("obd", Context.MODE_PRIVATE)
+
+    /** While live data flows, the log keeps only what went wrong. */
+    @Volatile
+    private var polling = false
+
     /** Where the Wi-Fi adapter answered last time, tried first on reconnects. */
     @Volatile
     private var lastWifiEndpoint: WifiEndpoint? = null
@@ -68,25 +91,33 @@ class ObdSession(
     }
 
     private suspend fun keepConnected(adapter: ObdAdapter) {
+        log.add("Revv ${appVersion()} on ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
         var retryMillis = FIRST_RETRY_MILLIS
         while (true) {
             try {
                 connectAndPoll(adapter) { retryMillis = FIRST_RETRY_MILLIS }
             } catch (e: MissingPermissionException) {
+                log.add("Stopped: Bluetooth access isn't allowed")
                 _status.value = ObdStatus(ObdLink.NeedsPermission, adapter.name)
                 return
             } catch (e: SecurityException) {
+                log.add("Stopped: Bluetooth access isn't allowed")
                 _status.value = ObdStatus(ObdLink.NeedsPermission, adapter.name)
                 return
             } catch (e: BluetoothOffException) {
+                log.add("Bluetooth is off")
                 _status.value = ObdStatus(ObdLink.BluetoothOff, adapter.name)
             } catch (e: NoWifiException) {
+                log.add("Not on the adapter's Wi-Fi network")
                 _status.value = ObdStatus(ObdLink.NoWifi, adapter.name)
             } catch (e: IOException) {
                 currentCoroutineContext().ensureActive()
+                log.add("Failed: ${e.message ?: "connection lost"}")
                 _status.value = ObdStatus(ObdLink.Retrying, adapter.name, problem = e.message ?: "Connection lost")
             }
+            polling = false
             _readings.value = null
+            log.add("Trying again in ${retryMillis / 1000} s")
             delay(retryMillis)
             retryMillis = (retryMillis * 2).coerceAtMost(MAX_RETRY_MILLIS)
         }
@@ -94,26 +125,47 @@ class ObdSession(
 
     private suspend fun connectAndPoll(adapter: ObdAdapter, onLive: () -> Unit) {
         _status.value = ObdStatus(ObdLink.Connecting, adapter.name)
+        log.add("Connecting to ${adapter.name} (${adapter.kind}, ${adapter.address})")
         val link = open(adapter)
         transport = link
         val endpoint = if (adapter.kind == ObdAdapter.Kind.WiFi) lastWifiEndpoint?.toString() else null
         try {
             currentCoroutineContext().ensureActive()
-            val elm = Elm327(link)
-            elm.initialize()
+            val elm = Elm327(link, ::trace)
+            val known = protocols.getInt(protocolKey(adapter), 0).takeIf { it > 0 }
+            known?.let { log.add("Trying ${ObdResponse.protocolName(it)} first, as last time") }
+            elm.initialize(preferredProtocol = known)
             while (true) {
                 val supported = waitForEcu(elm, adapter)
+                elm.protocolNumber?.let { protocols.edit { putInt(protocolKey(adapter), it) } }
+                log.add("Live: ${elm.protocolName ?: "unknown protocol"}, car supports PIDs " + supported.sorted().joinToString(" ") { ObdResponse.hex(it) })
                 _status.value = ObdStatus(ObdLink.Live, adapter.name, protocol = elm.protocolName, endpoint = endpoint)
                 onLive()
+                polling = true
                 poll(elm, supported)
+                polling = false
+                log.add("The car stopped answering")
                 // The car stopped answering (ignition off). Keep the adapter and wait for it again.
                 _readings.value = null
             }
         } finally {
+            polling = false
             runCatching { link.close() }
             if (transport === link) transport = null
         }
     }
+
+    /** Logs the adapter conversation: all of it while connecting, only failures once data flows. */
+    private fun trace(command: String, reply: String?) {
+        val text = reply?.split('\r', '\n')?.map { it.trim() }?.filter { it.isNotEmpty() }?.joinToString(" | ")
+        if (polling && text != null && text.none { it == '?' } && !FAILURES.any { text.contains(it) }) return
+        log.add("> $command   < ${text?.ifEmpty { "(empty)" } ?: "no reply"}")
+    }
+
+    private fun protocolKey(adapter: ObdAdapter) = "protocol.${adapter.kind}.${adapter.address}"
+
+    private fun appVersion(): String =
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
 
     private fun open(adapter: ObdAdapter): ObdTransport = when (adapter.kind) {
         ObdAdapter.Kind.Simulated -> SimulatedElm327(profile)
@@ -124,7 +176,7 @@ class ObdSession(
 
     private fun openBluetooth(adapter: ObdAdapter): ObdTransport {
         val (bluetooth, device) = bluetoothDevice(adapter)
-        return BluetoothObdTransport.connect(bluetooth, device)
+        return BluetoothObdTransport.connect(bluetooth, device, log::add)
     }
 
     private fun openBle(adapter: ObdAdapter): ObdTransport {
@@ -188,9 +240,17 @@ class ObdSession(
     }
 
     private suspend fun waitForEcu(elm: Elm327, adapter: ObdAdapter): Set<Int> {
+        var attempt = 0
         while (true) {
-            elm.connectToEcu()?.let { return it }
-            _status.value = ObdStatus(ObdLink.NoEcu, adapter.name, batteryVolts = elm.readVoltage())
+            // Trying every protocol by hand takes a minute or more with the ignition off, so only
+            // now and then; the adapter's own search runs every time.
+            val probe = attempt % PROBE_EVERY == 0
+            if (probe) log.add("Asking the car for data, trying each protocol if the adapter's search fails")
+            elm.connectToEcu(probe)?.let { return it }
+            attempt++
+            val volts = elm.readVoltage()
+            log.add("The car didn't answer" + (volts?.let { ", adapter reads $it V at the port" } ?: ""))
+            _status.value = ObdStatus(ObdLink.NoEcu, adapter.name, batteryVolts = volts)
             delay(ECU_RETRY_MILLIS)
         }
     }
@@ -201,6 +261,7 @@ class ObdSession(
         var cycle = 0
         var misses = 0
         var lastSample = SystemClock.elapsedRealtime()
+        var lastSnapshot = 0L
         while (true) {
             currentCoroutineContext().ensureActive()
             val speed = elm.readPid(ObdPid.SPEED)?.let(ObdPid::speed)
@@ -245,8 +306,21 @@ class ObdSession(
                 tripEngineSeconds = trip.engineSeconds.toLong(),
             )
             _readings.value = readings
+            if (now - lastSnapshot >= SNAPSHOT_MILLIS) {
+                lastSnapshot = now
+                log.add(snapshot(readings, maf, manifold))
+            }
             cycle++
         }
+    }
+
+    /** One line of what the car reported, so a saved log shows the drive as well as the connection. */
+    private fun snapshot(readings: ObdReadings, maf: Float?, manifoldKpa: Int?): String {
+        fun Any?.or(unit: String) = if (this == null) "-" else "$this$unit"
+        val air = maf?.let { "MAF $it g/s" } ?: manifoldKpa?.let { "MAP $it kPa" } ?: "no air flow"
+        return "Data: ${readings.speedKmh.or(" km/h")}, ${readings.rpm.or(" rpm")}, gear ${readings.gear.or("")}, " +
+            "coolant ${readings.coolantC.or(" C")}, load ${readings.engineLoad.or("%")}, throttle ${readings.throttle.or("%")}, " +
+            "$air, fuel ${readings.fuelLevel.or("%")}, ${readings.batteryVolts.or(" V")}"
     }
 
     /** Fuel flow from the MAF sensor, or estimated from manifold pressure on cars without one. */
@@ -279,6 +353,12 @@ class ObdSession(
         const val FIRST_RETRY_MILLIS = 2_000L
         const val MAX_RETRY_MILLIS = 15_000L
         const val ECU_RETRY_MILLIS = 5_000L
+        const val PROBE_EVERY = 6
+        const val SNAPSHOT_MILLIS = 10_000L
+        const val LOG_FOLDER = "logs"
+
+        /** Adapter replies that mean something went wrong, worth logging even mid-drive. */
+        val FAILURES = listOf("NO DATA", "ERROR", "UNABLE", "STOPPED", "BUFFER FULL", "BUS BUSY", "CAN ERROR")
 
         /** Cycles in a row without speed or rpm before deciding the car has gone quiet. */
         const val MAX_MISSES = 5

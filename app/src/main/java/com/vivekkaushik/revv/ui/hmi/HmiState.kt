@@ -6,6 +6,7 @@ import com.vivekkaushik.revv.media.NowPlaying
 import com.vivekkaushik.revv.nav.Place
 import com.vivekkaushik.revv.obd.ObdAdapter
 import com.vivekkaushik.revv.obd.ObdStatus
+import com.vivekkaushik.revv.phone.PhoneState
 import com.vivekkaushik.revv.settings.HmiSettings
 
 /** The HMI's own full-screen apps, opened from the dock or the Apps screen. */
@@ -51,6 +52,8 @@ data class SystemState(
     val isDefaultHome: Boolean,
     val bluetoothOn: Boolean,
     val hasBluetoothPermission: Boolean,
+    /** Devices paired over Bluetooth; null while Bluetooth is off or Revv may not look. */
+    val pairedDevices: Int?,
     val canScanBle: Boolean,
     /** Before Android 12, Bluetooth LE scans need location services on. */
     val locationBlocksBleScan: Boolean,
@@ -74,6 +77,10 @@ data class HmiUiState(
     val adapterChoices: List<ObdAdapter>,
     val bleScanning: Boolean,
     val recentPlaces: List<Place>,
+    /** What the adapter said on recent connection attempts; changes only while connecting or failing. */
+    val obdLog: List<String>,
+    /** The phone paired over Bluetooth, with the recent calls and favourites read from it. */
+    val phone: PhoneState,
 )
 
 /** Everything the HMI can ask for. Implemented by MainActivity. */
@@ -97,7 +104,11 @@ interface HmiActions {
     fun openPlayer()
     fun openMusic()
 
-    fun dial(number: String)
+    /** Calls [number] on the phone paired over Bluetooth. */
+    fun call(number: String)
+
+    /** Reads the phone's call history and favourites over Bluetooth again. */
+    fun readPhoneAgain()
     fun startProjection()
     fun openNavigationApp()
     fun openRadio()
