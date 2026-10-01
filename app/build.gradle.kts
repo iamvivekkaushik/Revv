@@ -38,8 +38,10 @@ android {
     buildTypes {
         release {
             if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
+            // R8 shrinks and obfuscates with the default keep rules. Play deobfuscates crashes with
+            // the mapping AGP puts in the app bundle.
             optimization {
-                enable = false
+                enable = true
             }
         }
     }

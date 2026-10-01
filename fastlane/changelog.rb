@@ -65,7 +65,11 @@ module RevvChangelog
       lines += ["", "## Downloads", ""]
       assets.each do |path|
         name = File.basename(path)
-        what = name.end_with?(".apk") ? "install this on the head unit" : "app bundle, for app stores"
+        what =
+          if name.end_with?(".apk") then "install this on the head unit"
+          elsif name.end_with?(".aab") then "app bundle, for app stores"
+          else "R8 mapping, to read the APK's crash logs"
+          end
         lines << "- `#{name}`: #{what}"
       end
       lines += ["", "SHA-256 checksums:", "", "```"]

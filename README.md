@@ -73,7 +73,7 @@ Run the unit tests:
 
 ## Releases
 
-Releases are built in CI with [fastlane](https://fastlane.tools). Pushing a `vMAJOR.MINOR.PATCH` tag builds the release APK and app bundle signed with the release keystore and publishes a GitHub release with both attached, a changelog of the commits since the previous tag and SHA-256 checksums. A suffixed tag such as `v1.2.0-beta.1` becomes a pre-release.
+Releases are built in CI with [fastlane](https://fastlane.tools). Pushing a `vMAJOR.MINOR.PATCH` tag builds the release APK and app bundle signed with the release keystore and publishes a GitHub release with both attached (plus the R8 mapping, for reading the APK's crash logs), a changelog of the commits since the previous tag and SHA-256 checksums. A suffixed tag such as `v1.2.0-beta.1` becomes a pre-release.
 
 ```bash
 git tag v1.0.0 && git push origin v1.0.0
