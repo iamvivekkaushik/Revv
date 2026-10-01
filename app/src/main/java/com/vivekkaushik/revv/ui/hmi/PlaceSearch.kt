@@ -162,6 +162,7 @@ private fun KeyboardKey(modifier: Modifier, onClick: () -> Unit, repeatEveryMill
         pressedBackground = Hmi.CyanTint,
         border = Hmi.Line,
         repeatEveryMillis = repeatEveryMillis,
+        sound = UiSound.Key,
     ) {
         content()
     }

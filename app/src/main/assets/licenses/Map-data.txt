@@ -1,0 +1,9 @@
+Map data and services
+
+Map data: (c) OpenStreetMap contributors. Available under the Open Database License (ODbL) 1.0, https://opendatacommons.org/licenses/odbl/
+
+Map tiles: OpenFreeMap (https://openfreemap.org), built on the OpenMapTiles schema (c) OpenMapTiles, https://openmaptiles.org, CC-BY 4.0.
+
+Routing: Valhalla (https://github.com/valhalla/valhalla), an open source routing engine under the MIT License, run as a public service.
+
+Place search: Photon (https://github.com/komoot/photon), an open source geocoder under the Apache License 2.0, run as a public service.

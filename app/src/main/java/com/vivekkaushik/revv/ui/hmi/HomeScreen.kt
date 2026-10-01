@@ -1,5 +1,7 @@
 package com.vivekkaushik.revv.ui.hmi
 
+import com.vivekkaushik.revv.apps.LauncherApp
+import androidx.compose.ui.layout.onPlaced
 import android.os.SystemClock
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -94,23 +96,39 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(28.dp))
                 Cluster(live, framed, state.settings.car.gears, Modifier.weight(1f).fillMaxWidth())
-                Spacer(Modifier.height(28.dp))
-                Row(
-                    Modifier.fillMaxWidth().height(220.dp).reveal(ready, 800, 300, riseBy = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
-                ) {
-                    FuelCard(live, Modifier.weight(1f).fillMaxHeight())
-                    PhoneCard(state.phone, now, timeFormat, actions, Modifier.weight(1f).fillMaxHeight())
-                    MediaCard(state.nowPlaying, state.system.hasMediaAccess, state.phone.link?.name, actions, Modifier.weight(1.4f).fillMaxHeight())
+                val settings = state.settings
+                if (settings.showFuelWidget || settings.showPhoneCard || settings.showMediaCard) {
+                    Spacer(Modifier.height(28.dp))
+                    Row(
+                        Modifier.fillMaxWidth().height(220.dp).reveal(ready, 800, 300, riseBy = 24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(28.dp),
+                    ) {
+                        if (settings.showFuelWidget) {
+                            val shortcut = settings.fuelWidgetApp?.let { key -> state.apps.firstOrNull { it.key == key } }
+                            if (shortcut != null) {
+                                AppShortcutCard(shortcut, actions, Modifier.weight(1f).fillMaxHeight())
+                            } else {
+                                FuelCard(live, Modifier.weight(1f).fillMaxHeight())
+                            }
+                        }
+                        if (settings.showPhoneCard) {
+                            PhoneCard(state.phone, now, timeFormat, actions, Modifier.weight(1f).fillMaxHeight())
+                        }
+                        if (settings.showMediaCard) {
+                            MediaCard(state.nowPlaying, state.system.hasMediaAccess, state.phone.link?.name, actions, Modifier.weight(1.4f).fillMaxHeight())
+                        }
+                    }
                 }
             }
-            NavPanel(
-                navigation,
-                covered = state.screen.app != null,
-                timeFormat = timeFormat,
-                actions = actions,
-                modifier = Modifier.weight(770f).fillMaxHeight().reveal(ready, 1000, 400),
-            )
+            if (state.settings.showMapPanel) {
+                NavPanel(
+                    navigation,
+                    covered = state.screen.app != null,
+                    timeFormat = timeFormat,
+                    actions = actions,
+                    modifier = Modifier.weight(770f).fillMaxHeight().reveal(ready, 1000, 400),
+                )
+            }
         }
     }
 }
@@ -365,6 +383,28 @@ private fun GearPanel(live: LiveTelemetry, gears: Int, modifier: Modifier) {
                     HText(label, size = 20.sp, family = Hmi.Display, color = if (on) Hmi.Bg else Hmi.Muted)
                 }
             }
+        }
+    }
+}
+
+/** The fuel widget's stand-in when the driver has picked an app for it: tap to open the app. */
+@Composable
+private fun AppShortcutCard(app: LauncherApp, actions: HmiActions, modifier: Modifier) {
+    val source = remember { LaunchSource() }
+    Pressable(
+        onClick = { actions.launch(app, source.bounds()) },
+        modifier = modifier.onPlaced { source.coordinates = it },
+        pressedBackground = Hmi.CyanTint,
+        border = Hmi.Line,
+        pressedBorder = Hmi.Cyan,
+    ) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 22.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Caption("SHORTCUT")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                AppIcon(app, 64.dp)
+                HText(app.label, Modifier.weight(1f), size = 26.sp, weight = FontWeight.Medium, maxLines = 2)
+            }
+            HText("TAP TO OPEN", size = 15.sp, color = Hmi.Muted, spacing = 2.sp, maxLines = 1)
         }
     }
 }

@@ -1,5 +1,12 @@
 package com.vivekkaushik.revv.ui.hmi
 
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.size
+import com.vivekkaushik.revv.phone.CallStage
+import com.vivekkaushik.revv.phone.ActiveCall
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableLongStateOf
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -102,7 +109,17 @@ fun HmiRoot(state: HmiUiState, obdReadings: StateFlow<ObdReadings?>, navigation:
     // with pages of their own (Settings) close those first with their own handlers.
     BackHandler { actions.back() }
 
-    CompositionLocalProvider(LocalTouchFeedback provides settings.touchFeedback) {
+    val menuSound = remember(context) { MenuSound(context) }
+    DisposableEffect(menuSound) { onDispose { menuSound.release() } }
+    menuSound.enabled = buildSet {
+        if (settings.menuSound) add(SoundGroup.Menu)
+        if (settings.dialerSound) add(SoundGroup.Dialer)
+        if (settings.keyboardSound) add(SoundGroup.Keyboard)
+    }
+    CompositionLocalProvider(
+        LocalTouchFeedback provides settings.touchFeedback,
+        LocalMenuSound provides menuSound,
+    ) {
         Box(
             Modifier
                 .fillMaxSize()
@@ -125,6 +142,9 @@ fun HmiRoot(state: HmiUiState, obdReadings: StateFlow<ObdReadings?>, navigation:
                     },
                 )
                 AppLayer(state, ignition.live, clock, now, navigation, timeFormat, actions)
+                state.call?.let { call ->
+                    CallBar(call, actions::hangUp, Modifier.align(Alignment.TopCenter))
+                }
                 Dock(
                     current = state.screen.app,
                     visible = ready,
@@ -190,6 +210,49 @@ private fun DemoCarTicker(live: LiveTelemetry, actions: HmiActions) {
 }
 
 private const val DEMO_TICK_MILLIS = 1_000L
+
+/** A strip across the top while a call is on: who, how it is going, and a button to end it. */
+@Composable
+private fun CallBar(call: ActiveCall, onHangUp: () -> Unit, modifier: Modifier) {
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(call.answeredAt) {
+        while (call.answeredAt != null) {
+            now = SystemClock.elapsedRealtime()
+            delay(1000)
+        }
+    }
+    val status = when (call.stage) {
+        CallStage.Dialling -> "CALLING"
+        CallStage.Ringing -> "RINGING"
+        CallStage.Ending -> "ENDING CALL"
+        CallStage.Connected -> {
+            val seconds = ((now - (call.answeredAt ?: now)) / 1000).coerceAtLeast(0)
+            "ON CALL · %d:%02d".format(seconds / 60, seconds % 60)
+        }
+    }
+    Row(
+        modifier
+            .padding(top = 6.dp)
+            .background(Hmi.Bg)
+            .border(1.dp, Hmi.Cyan)
+            .padding(start = 24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        Box(Modifier.size(10.dp).background(Hmi.Cyan))
+        HText(status, size = 16.sp, color = Hmi.Cyan, spacing = 2.sp)
+        HText(call.name ?: call.number, size = 22.sp, weight = FontWeight.Medium, maxLines = 1)
+        Pressable(
+            onClick = onHangUp,
+            Modifier.height(56.dp),
+            background = Hmi.Red,
+            pressedBackground = Hmi.Red.copy(alpha = 0.7f),
+            border = null,
+        ) {
+            HText("END CALL", Modifier.padding(horizontal = 28.dp), size = 16.sp, weight = FontWeight.Bold, color = Color.White, spacing = 2.sp)
+        }
+    }
+}
 
 @Composable
 private fun Dock(current: HmiApp?, visible: Boolean, vehicleAlert: Boolean, actions: HmiActions, modifier: Modifier) {

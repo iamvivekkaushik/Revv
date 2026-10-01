@@ -2,6 +2,7 @@ package com.vivekkaushik.revv.settings
 
 import android.content.Context
 import androidx.core.content.edit
+import com.vivekkaushik.revv.apps.AppKey
 import com.vivekkaushik.revv.obd.ObdAdapter
 import com.vivekkaushik.revv.vehicle.CarColour
 import com.vivekkaushik.revv.vehicle.CarSetup
@@ -17,6 +18,12 @@ data class HmiSettings(
     val levels: Map<String, Int>,
     val obdAdapter: ObdAdapter? = null,
     val car: CarSetup = CarSetup.SWIFT_VXI_2015,
+    /** The app the home screen's fuel widget opens instead of showing the fuel range; null keeps the fuel range. */
+    val fuelWidgetApp: AppKey? = null,
+    /** The app Start projection opens; null picks Android Auto or the head unit's own projection app by name. */
+    val projectionApp: AppKey? = null,
+    /** The camera id the Rear Cam screen shows; null picks an external (USB) camera, else the back one. */
+    val rearCameraId: String? = null,
 ) {
     fun isOn(key: String): Boolean = toggles[key] ?: false
     fun level(key: String): Int = levels[key] ?: 0
@@ -24,6 +31,18 @@ data class HmiSettings(
     val demoDrive: Boolean get() = isOn(SettingsStore.DEMO_DRIVE)
     val reducedMotion: Boolean get() = isOn(SettingsStore.REDUCED_MOTION)
     val touchFeedback: Boolean get() = isOn(SettingsStore.TOUCH_FEEDBACK)
+
+    /** How far the rear camera picture is turned: 0, 90, 180 or 270 degrees. */
+    val rearCameraRotation: Int get() = (level(SettingsStore.CAMERA_ROTATION).coerceIn(0, 3)) * 90
+
+    val menuSound: Boolean get() = isOn(SettingsStore.MENU_SOUND)
+    val dialerSound: Boolean get() = isOn(SettingsStore.DIALER_SOUND)
+    val keyboardSound: Boolean get() = isOn(SettingsStore.KEYBOARD_SOUND)
+
+    val showFuelWidget: Boolean get() = isOn(SettingsStore.HOME_FUEL)
+    val showPhoneCard: Boolean get() = isOn(SettingsStore.HOME_PHONE)
+    val showMediaCard: Boolean get() = isOn(SettingsStore.HOME_MEDIA)
+    val showMapPanel: Boolean get() = isOn(SettingsStore.HOME_MAP)
 
     /** 0 follows the system clock setting, 1 is 12-hour, 2 is 24-hour. */
     val timeFormat: Int get() = level(SettingsStore.TIME_FORMAT)
@@ -71,6 +90,21 @@ class SettingsStore(context: Context) {
         _settings.value = _settings.value.copy(obdAdapter = adapter)
     }
 
+    fun setFuelWidgetApp(app: AppKey?) {
+        prefs.edit { if (app == null) remove(FUEL_WIDGET_APP) else putString(FUEL_WIDGET_APP, app.serialize()) }
+        _settings.value = _settings.value.copy(fuelWidgetApp = app)
+    }
+
+    fun setRearCameraId(id: String?) {
+        prefs.edit { if (id == null) remove(REAR_CAMERA) else putString(REAR_CAMERA, id) }
+        _settings.value = _settings.value.copy(rearCameraId = id)
+    }
+
+    fun setProjectionApp(app: AppKey?) {
+        prefs.edit { if (app == null) remove(PROJECTION_APP) else putString(PROJECTION_APP, app.serialize()) }
+        _settings.value = _settings.value.copy(projectionApp = app)
+    }
+
     fun setCar(car: CarSetup) {
         prefs.edit {
             putString(CAR_MAKE, car.make)
@@ -112,12 +146,23 @@ class SettingsStore(context: Context) {
             ObdAdapter.restore(prefs.getString(OBD_KIND, null), address, prefs.getString(OBD_NAME, null) ?: address)
         },
         car = readCar(),
+        fuelWidgetApp = prefs.getString(FUEL_WIDGET_APP, null)?.let(AppKey::parse),
+        projectionApp = prefs.getString(PROJECTION_APP, null)?.let(AppKey::parse),
+        rearCameraId = prefs.getString(REAR_CAMERA, null),
     )
 
     companion object {
         const val DEMO_DRIVE = "demo"
         const val REDUCED_MOTION = "anim"
         const val TOUCH_FEEDBACK = "haptic"
+        const val HOME_FUEL = "homeFuel"
+        const val MENU_SOUND = "menuSound"
+        const val DIALER_SOUND = "dialerSound"
+        const val KEYBOARD_SOUND = "keyboardSound"
+        const val CAMERA_ROTATION = "cameraRotation"
+        const val HOME_PHONE = "homePhone"
+        const val HOME_MEDIA = "homeMedia"
+        const val HOME_MAP = "homeMap"
         const val BRIGHTNESS = "bright"
 
         /** Auto night mode set to dim from sunset to sunrise; the light sensor overrides it when on. */
@@ -134,6 +179,9 @@ class SettingsStore(context: Context) {
 
         private const val TOGGLE_PREFIX = "toggle."
         private const val LEVEL_PREFIX = "level."
+        private const val REAR_CAMERA = "camera.rearId"
+        private const val PROJECTION_APP = "auto.projectionApp"
+        private const val FUEL_WIDGET_APP = "home.fuelWidgetApp"
         private const val OBD_KIND = "obd.kind"
         private const val OBD_ADDRESS = "obd.address"
         private const val OBD_NAME = "obd.name"
@@ -149,6 +197,13 @@ class SettingsStore(context: Context) {
         // Defaults from the design. Most are placeholders until the matching integration exists.
         private val DEFAULT_TOGGLES = mapOf(
             DEMO_DRIVE to true,
+            HOME_FUEL to true,
+            MENU_SOUND to true,
+            DIALER_SOUND to true,
+            KEYBOARD_SOUND to true,
+            HOME_PHONE to true,
+            HOME_MEDIA to true,
+            HOME_MAP to true,
             SUNSET_DIMMING to false,
             REDUCED_MOTION to false,
             "autoVol" to true,
@@ -161,6 +216,6 @@ class SettingsStore(context: Context) {
             "traffic" to true,
             "autoUpd" to true,
         )
-        private val DEFAULT_LEVELS = mapOf(NAV_VOLUME to 18, DISPLAY_SIZE to DISPLAY_SIZE_DEFAULT, TIME_FORMAT to 0, DATE_FORMAT to 0)
+        private val DEFAULT_LEVELS = mapOf(NAV_VOLUME to 18, DISPLAY_SIZE to DISPLAY_SIZE_DEFAULT, TIME_FORMAT to 0, DATE_FORMAT to 0, CAMERA_ROTATION to 0)
     }
 }

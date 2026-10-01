@@ -13,6 +13,9 @@ data class Call(val number: String, val label: String, val type: CallType, val t
 /** Someone in the favourites grid: a favourite on the phone, or else someone called often. */
 data class Favourite(val name: String, val number: String, val starred: Boolean)
 
+/** Someone in the phone's contact list, with the number to call. */
+data class Contact(val name: String, val number: String)
+
 /** How far reading the phone's calls and contacts over Bluetooth has got. */
 enum class PhoneSync {
     /** Android 12+ hasn't let Revv use Bluetooth yet. */
@@ -66,5 +69,13 @@ data class PhoneState(
     val syncedAt: Long? = null,
     val recents: List<Call> = emptyList(),
     val favourites: List<Favourite> = emptyList(),
+    /** The phone's contacts, A to Z. */
+    val contacts: List<Contact> = emptyList(),
     val pairedPhones: List<PairedPhone> = emptyList(),
 )
+
+/** How far a call placed from Revv has got. */
+enum class CallStage { Dialling, Ringing, Connected, Ending }
+
+/** A call Revv placed through the phone and is following. [answeredAt] is SystemClock.elapsedRealtime when it connected. */
+data class ActiveCall(val number: String, val name: String?, val stage: CallStage, val answeredAt: Long? = null)

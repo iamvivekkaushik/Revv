@@ -24,6 +24,15 @@
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="s" />
 
+    <!-- The rear camera view on the Rear Cam screen. Head units without a camera still install Revv. -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
     <!-- The map and turn-by-turn directions follow the head unit's GPS. -->
     <uses-feature
         android:name="android.hardware.location.gps"

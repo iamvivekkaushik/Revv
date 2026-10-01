@@ -6,6 +6,7 @@ import com.vivekkaushik.revv.media.NowPlaying
 import com.vivekkaushik.revv.nav.Place
 import com.vivekkaushik.revv.obd.ObdAdapter
 import com.vivekkaushik.revv.obd.ObdStatus
+import com.vivekkaushik.revv.phone.ActiveCall
 import com.vivekkaushik.revv.phone.PhoneState
 import com.vivekkaushik.revv.settings.HmiSettings
 import com.vivekkaushik.revv.system.NightMode
@@ -32,6 +33,8 @@ data class ScreenState(
     val app: HmiApp? = null,
     val resetCount: Int = 0,
     val previous: List<HmiApp> = emptyList(),
+    /** Set when Maps was opened to search (the home panel's "Where to?"); Maps clears it once the search is up. */
+    val searchRequested: Boolean = false,
 ) {
     /** [app] opened over this screen. An app already in the stack moves to the top rather than repeating. */
     fun open(app: HmiApp): ScreenState =
@@ -96,6 +99,8 @@ data class HmiUiState(
     val phone: PhoneState,
     /** The connected car's gears as learnt so far, rpm per km/h, first gear first. */
     val learntGears: List<Float>,
+    /** The call Revv placed on the phone, while it lasts. */
+    val call: ActiveCall? = null,
 )
 
 /** Everything the HMI can ask for. Implemented by MainActivity. */
@@ -104,6 +109,12 @@ interface HmiActions {
     fun onHmiReady()
 
     fun open(app: HmiApp)
+
+    /** Opens Maps with its search page up, ready to type a destination. */
+    fun openMapsSearch()
+
+    /** Maps has put its search up for a [ScreenState.searchRequested]. */
+    fun mapsSearchShown()
     fun goHome()
 
     /** Returns to the app the open one was opened from, or home. */
@@ -153,6 +164,18 @@ interface HmiActions {
 
     /** Forgets the learnt gears so the gear indicator learns them afresh. */
     fun relearnGears()
+
+    /** Makes the home screen's fuel widget open [app], or show the fuel range again when null. */
+    /** Chooses which camera the Rear Cam screen shows; null goes back to picking one automatically. */
+    fun setRearCameraId(id: String?)
+
+    /** Makes Start projection open [app], or the usual projection app again when null. */
+    fun setProjectionApp(app: LauncherApp?)
+
+    fun setFuelWidgetApp(app: LauncherApp?)
+
+    /** Ends the call in progress. */
+    fun hangUp()
 
     /** Erases the car fault codes and turns its check-engine light off. */
     fun clearTroubleCodes()

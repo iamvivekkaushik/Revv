@@ -45,6 +45,13 @@ class PhoneMonitor(private val context: Context, private val scope: CoroutineSco
     private val _state = MutableStateFlow(PhoneState())
     val state: StateFlow<PhoneState> = _state.asStateFlow()
 
+    private val _call = MutableStateFlow<ActiveCall?>(null)
+
+    /** The call Revv placed on the phone, while it is dialling, ringing or connected. */
+    val call: StateFlow<ActiveCall?> = _call.asStateFlow()
+
+    @Volatile private var hangUpRequested = false
+
     private var started = false
     private var linkJob: Job? = null
     private var readJob: Job? = null
@@ -98,18 +105,50 @@ class PhoneMonitor(private val context: Context, private val scope: CoroutineSco
         val adapter = bluetooth
         if (link == null || adapter == null || !BluetoothAccess.granted(context)) return CallRoute.None
         if (headUnitHandsFree(adapter)) return CallRoute.HeadUnit
+        if (_call.value != null) return CallRoute.Phone
+        hangUpRequested = false
+        _call.value = ActiveCall(number, nameFor(number), CallStage.Dialling)
         scope.launch(Dispatchers.IO) {
             val problem = try {
-                HandsFreeLink.dial(adapter, adapter.getRemoteDevice(link.address), number)
+                HandsFreeLink.dial(adapter, adapter.getRemoteDevice(link.address), number, ::onCallIndicators) { hangUpRequested }
                 null
             } catch (e: HandsFreeException) {
                 callProblem(e.stage, link.name)
             } catch (e: SecurityException) {
                 "Revv may no longer use Bluetooth."
             }
+            _call.value = null
             if (problem != null) withContext(Dispatchers.Main) { onFailed(problem) }
         }
         return CallRoute.Phone
+    }
+
+    /** Ends the call Revv placed. */
+    fun hangUp() {
+        hangUpRequested = true
+        _call.update { it?.copy(stage = CallStage.Ending) }
+    }
+
+    private fun onCallIndicators(indicators: CallIndicators) {
+        _call.update { active ->
+            active ?: return@update null
+            when {
+                active.stage == CallStage.Ending -> active
+                indicators.call > 0 -> active.copy(stage = CallStage.Connected, answeredAt = active.answeredAt ?: SystemClock.elapsedRealtime())
+                indicators.setup == 3 -> active.copy(stage = CallStage.Ringing)
+                else -> active
+            }
+        }
+    }
+
+    /** The contact the number belongs to, if it is in the recent calls or favourites. */
+    private fun nameFor(number: String): String? {
+        fun digits(text: String) = text.filter(Char::isDigit).takeLast(10)
+        val wanted = digits(number)
+        if (wanted.isEmpty()) return null
+        val state = _state.value
+        return state.favourites.firstOrNull { digits(it.number) == wanted }?.name
+            ?: state.recents.firstOrNull { digits(it.number) == wanted && it.label != it.number }?.label
     }
 
     /** Whether the head unit's own Bluetooth is linked to a phone as its hands-free kit. */
@@ -187,6 +226,7 @@ class PhoneMonitor(private val context: Context, private val scope: CoroutineSco
             val country = networkCountry()
             val calls = data.calls.mapNotNull { call(it, country) }
             val favourites = data.favourites.orEmpty().mapNotNull { favourite(it, country) }
+            val contacts = data.contacts.mapNotNull { contact(it) }
             val now = System.currentTimeMillis()
             prefs.edit { putString(LAST_PHONE, address) }
             if (phoneAddress == address) readAt = SystemClock.elapsedRealtime()
@@ -197,6 +237,7 @@ class PhoneMonitor(private val context: Context, private val scope: CoroutineSco
                     syncedAt = now,
                     recents = PhoneBook.recents(calls),
                     favourites = PhoneBook.favourites(favourites, calls, now),
+                    contacts = PhoneBook.contacts(contacts),
                 )
             }
         } catch (e: PbapException) {
@@ -223,6 +264,12 @@ class PhoneMonitor(private val context: Context, private val scope: CoroutineSco
         val number = entry.numbers.firstOrNull().orEmpty()
         val label = entry.name ?: if (number.isBlank()) "Unknown number" else readable(number, country)
         return Call(number, label, type, entry.timeMillis ?: 0L)
+    }
+
+    private fun contact(entry: PbapEntry): Contact? {
+        val name = entry.name ?: return null
+        val number = entry.numbers.firstOrNull() ?: return null
+        return Contact(name, number)
     }
 
     private fun favourite(entry: PbapEntry, country: String?): Favourite? {

@@ -107,11 +107,12 @@ class MainActivity : ComponentActivity(), HmiActions {
             val obdLog by viewModel.obdLog.collectAsStateWithLifecycle()
             val phone by viewModel.phone.collectAsStateWithLifecycle()
             val learntGears by viewModel.learntGears.collectAsStateWithLifecycle()
+            val activeCall by viewModel.activeCall.collectAsStateWithLifecycle()
             CompositionLocalProvider(LocalIconProvider provides viewModel.icons) {
                 HmiRoot(
                     state = HmiUiState(
                         apps, nowPlaying, system, settings, screen, obdStatus, adapterChoices, bleScanning, recentPlaces, obdLog, phone,
-                        learntGears,
+                        learntGears, activeCall,
                     ),
                     obdReadings = viewModel.obdReadings,
                     navigation = viewModel.navigation,
@@ -157,6 +158,8 @@ class MainActivity : ComponentActivity(), HmiActions {
     }
 
     override fun open(app: HmiApp) = viewModel.open(app)
+    override fun openMapsSearch() = viewModel.openMapsSearch()
+    override fun mapsSearchShown() = viewModel.mapsSearchShown()
 
     override fun goHome() = viewModel.goHome()
 
@@ -202,7 +205,9 @@ class MainActivity : ComponentActivity(), HmiActions {
     override fun readPhoneAgain() = viewModel.readPhoneAgain()
 
     override fun startProjection() {
-        val projection = ExternalApps.findProjectionApp(viewModel.apps.value)
+        val apps = viewModel.apps.value
+        val chosen = viewModel.settings.value.projectionApp?.let { key -> apps.firstOrNull { it.key == key } }
+        val projection = chosen ?: ExternalApps.findProjectionApp(apps)
         if (projection != null) launch(projection, null) else toast(R.string.no_projection_app)
     }
 
@@ -271,6 +276,10 @@ class MainActivity : ComponentActivity(), HmiActions {
     override fun toggleSetting(key: String) = viewModel.toggleSetting(key)
     override fun clearTroubleCodes() = viewModel.clearTroubleCodes()
     override fun setChoice(key: String, index: Int) = viewModel.setChoice(key, index)
+    override fun setRearCameraId(id: String?) = viewModel.setRearCameraId(id)
+    override fun setProjectionApp(app: LauncherApp?) = viewModel.setProjectionApp(app)
+    override fun setFuelWidgetApp(app: LauncherApp?) = viewModel.setFuelWidgetApp(app)
+    override fun hangUp() = viewModel.hangUp()
     override fun setDisplaySize(percent: Int) = viewModel.setDisplaySize(percent)
 
     override fun changeLevel(key: String, direction: Int) = viewModel.changeLevel(key, direction)

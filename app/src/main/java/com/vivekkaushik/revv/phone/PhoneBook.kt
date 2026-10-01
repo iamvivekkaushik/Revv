@@ -26,6 +26,64 @@ object PhoneBook {
         return (starred.distinctBy { numberKey(it.number) } + frequent).take(limit)
     }
 
+    /** Contacts A to Z, those not starting with a letter last, one line per name and number. */
+    fun contacts(all: List<Contact>): List<Contact> =
+        all.distinctBy { it.name.lowercase() to numberKey(it.number) }
+            .sortedWith(compareBy<Contact> { initial(it.name) == OTHER_INITIAL }.thenBy { it.name.lowercase() })
+
+    /** The letter [name] is filed under in the contact list: its first letter, or # for numbers and symbols. */
+    fun initial(name: String): Char {
+        val first = name.trim().firstOrNull()?.uppercaseChar() ?: return OTHER_INITIAL
+        return if (first in 'A'..'Z') first else OTHER_INITIAL
+    }
+
+    /** The keypad digit for each letter: 2 is ABC, 3 is DEF, and so on. */
+    fun t9(text: String): String = buildString {
+        for (c in text.lowercase()) {
+            when (c) {
+                in 'a'..'c' -> append('2')
+                in 'd'..'f' -> append('3')
+                in 'g'..'i' -> append('4')
+                in 'j'..'l' -> append('5')
+                in 'm'..'o' -> append('6')
+                in 'p'..'s' -> append('7')
+                in 't'..'v' -> append('8')
+                in 'w'..'z' -> append('9')
+                in '0'..'9' -> append(c)
+            }
+        }
+    }
+
+    /**
+     * Who the keys typed so far could be, T9 style: contacts whose name, or one of its words, starts
+     * with letters on those keys, then anyone whose number contains the digits. Contacts first, then
+     * names from recent calls; [typed] may hold any dialler characters, and only digits count.
+     */
+    fun suggestions(typed: String, contacts: List<Contact>, recents: List<Call>, limit: Int = SUGGESTIONS): List<Contact> {
+        val digits = typed.filter(Char::isDigit)
+        if (digits.isEmpty()) return emptyList()
+        val everyone = (contacts + recents.filter { it.number.isNotBlank() && it.label != it.number }.map { Contact(it.label, it.number) })
+            .distinctBy { numberKey(it.number) }
+        fun rank(person: Contact): Int {
+            val words = person.name.split(' ', '-', '.').filter(String::isNotBlank).map(::t9)
+            return when {
+                t9(person.name).startsWith(digits) -> 0
+                words.any { it.startsWith(digits) } -> 1
+                person.number.filter(Char::isDigit).contains(digits) -> 2
+                else -> 3
+            }
+        }
+        return everyone.map { it to rank(it) }
+            .filter { it.second < 3 }
+            .sortedWith(compareBy({ it.second }, { it.first.name.lowercase() }))
+            .map { it.first }
+            .take(limit)
+    }
+
+    private const val SUGGESTIONS = 30
+
+    const val OTHER_INITIAL = '#'
+
     private fun weight(timeMillis: Long, nowMillis: Long): Double =
         0.5.pow((nowMillis - timeMillis).coerceAtLeast(0L) / HALF_LIFE_MILLIS)
 

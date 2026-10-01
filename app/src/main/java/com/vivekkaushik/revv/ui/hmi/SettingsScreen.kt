@@ -66,6 +66,7 @@ import java.util.Locale
 
 private enum class Category(val title: String, val icon: String) {
     Display("DISPLAY", HmiIcons.DISPLAY),
+    Home("HOME", HmiIcons.HOME),
     Sound("SOUND", HmiIcons.SOUND),
     Connectivity("CONNECTIVITY", HmiIcons.BLUETOOTH),
     Vehicle("VEHICLE", HmiIcons.VEHICLE),
@@ -143,9 +144,12 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
     BackHandler(enabled = editingCar) { editingCar = false }
     var settingUpGears by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = settingUpGears) { settingUpGears = false }
+    var viewingLicenses by rememberSaveable { mutableStateOf(false) }
+    var choosingFuelApp by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = choosingFuelApp) { choosingFuelApp = false }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         Column(
-            Modifier.width(420.dp).fillMaxHeight().border(1.dp, Hmi.Line).padding(16.dp),
+            Modifier.width(420.dp).fillMaxHeight().border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Category.entries.forEach { entry ->
@@ -155,6 +159,8 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                     viewingLog = false
                     editingCar = false
                     settingUpGears = false
+                    choosingFuelApp = false
+                    viewingLicenses = false
                 }
             }
         }
@@ -164,6 +170,8 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                 viewingLog -> AdapterLog(state.obdLog, onDone = { viewingLog = false })
                 editingCar -> CarPanel(state, actions, onDone = { editingCar = false })
                 settingUpGears -> GearIndicatorPanel(state, actions, onDone = { settingUpGears = false })
+                viewingLicenses -> OpenSourceLicenses(onDone = { viewingLicenses = false })
+                choosingFuelApp -> FuelWidgetPicker(state, actions, onDone = { choosingFuelApp = false })
                 else -> {
                     HText(category.title, Modifier.padding(bottom = 16.dp), size = 26.sp, family = Hmi.Display)
                     val rows = rowsFor(
@@ -176,6 +184,8 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                         showLog = { viewingLog = true },
                         editCar = { editingCar = true },
                         setUpGears = { settingUpGears = true },
+                        chooseFuelApp = { choosingFuelApp = true },
+                        showLicenses = { viewingLicenses = true },
                     )
                     // Vehicle has more rows than fit.
                     LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
@@ -441,6 +451,7 @@ private fun AddressEditor(initial: String, onUse: (WifiEndpoint) -> Unit, onCanc
                     modifier = Modifier.size(52.dp),
                     border = null,
                     repeatEveryMillis = 70,
+                    sound = UiSound.DialDelete,
                 ) {
                     PathIcon(HmiIcons.BACKSPACE, 28.dp, Hmi.Muted, strokeWidth = 1.8f)
                 }
@@ -599,6 +610,8 @@ private fun rowsFor(
     showLog: () -> Unit,
     editCar: () -> Unit,
     setUpGears: () -> Unit,
+    chooseFuelApp: () -> Unit,
+    showLicenses: () -> Unit,
 ): List<SettingRow> {
     val settings = state.settings
     val system = state.system
@@ -616,11 +629,21 @@ private fun rowsFor(
             ToggleRow(SettingsStore.REDUCED_MOTION, "Reduced motion", "Fewer animations while driving"),
             ValueRow("Theme", "Cluster · dark"),
         )
+        Category.Home -> listOf(
+            ToggleRow(SettingsStore.HOME_FUEL, "Fuel widget", "Fuel range, or the app chosen below"),
+            fuelWidgetRow(state, actions, chooseFuelApp),
+            ToggleRow(SettingsStore.HOME_PHONE, "Phone card", "Last call and call back"),
+            ToggleRow(SettingsStore.HOME_MEDIA, "Media card", "Now playing"),
+            ToggleRow(SettingsStore.HOME_MAP, "Map panel", "Navigation beside the cluster"),
+        )
         Category.Sound -> listOf(
             LevelRow(SettingsStore.MEDIA_VOLUME, "Media volume", "Spotify, radio, phone", system.mediaVolume, system.mediaVolumeMax),
             LevelRow(SettingsStore.NAV_VOLUME, "Navigation volume", "Turn prompts", settings.level(SettingsStore.NAV_VOLUME), 30),
             ToggleRow("autoVol", "Speed-sensitive volume", "Raise volume with road noise"),
             ToggleRow(SettingsStore.TOUCH_FEEDBACK, "Touch feedback", "Click on every tap"),
+            ToggleRow(SettingsStore.MENU_SOUND, "Menu sounds", "A short blip when you tap a button"),
+            ToggleRow(SettingsStore.DIALER_SOUND, "Dialer sounds", "A touch-tone for each key on the number pad"),
+            ToggleRow(SettingsStore.KEYBOARD_SOUND, "Keyboard sounds", "A soft tick for each key on the keyboard"),
         )
         Category.Connectivity -> listOf(
             ActionRow("Bluetooth", if (system.bluetoothOn) "On" else "Off", "OPEN", actions::openBluetoothSettings),
@@ -668,6 +691,7 @@ private fun rowsFor(
             },
             ActionRow("Android settings", "Apps, display, network", "OPEN", actions::openSystemSettings),
             ValueRow("Software", "Revv ${about.version}"),
+            ActionRow("Open source licenses", "Libraries, fonts and map data Revv is built with", "VIEW", showLicenses),
             ValueRow("Storage", "${about.freeStorage} free"),
         )
     }
@@ -788,6 +812,32 @@ private fun gearIndicatorDetail(car: CarSetup, learnt: List<Float>): String = wh
     } else {
         "Learning as you drive · ${minOf(learnt.size, car.gears)} of ${car.gears} gears learnt"
     }
+}
+
+private fun fuelWidgetRow(state: HmiUiState, actions: HmiActions, choose: () -> Unit): SettingRow {
+    val app = state.settings.fuelWidgetApp?.let { key -> state.apps.firstOrNull { it.key == key } }
+    return ActionRow(
+        "Home fuel widget",
+        if (app == null) "Showing fuel range" else "Opens ${app.label}",
+        "CHANGE",
+        choose,
+        secondary = if (app != null) "FUEL RANGE" to { actions.setFuelWidgetApp(null) } else null,
+    )
+}
+
+/** Settings › Home › Home fuel widget: pick the installed app the widget opens, or go back to the fuel range. */
+@Composable
+private fun FuelWidgetPicker(state: HmiUiState, actions: HmiActions, onDone: () -> Unit) {
+    AppChooser(
+        title = "FUEL WIDGET",
+        hint = "Pick an app for the home screen widget to open instead of the fuel range.",
+        apps = state.apps,
+        chosen = state.settings.fuelWidgetApp,
+        defaultTitle = "Fuel range",
+        defaultDetail = "Fuel level and distance left",
+        onChoose = actions::setFuelWidgetApp,
+        onDone = onDone,
+    )
 }
 
 /** Settings › Vehicle › Car: which car this is, for the Vehicle screen and the gear indicator. */

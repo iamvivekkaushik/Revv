@@ -14,7 +14,7 @@ import java.util.UUID
 data class PbapEntry(val name: String?, val numbers: List<String>, val call: CallType?, val timeMillis: Long?)
 
 /** What a phone shared: its call history, newest first, and its favourites if it keeps any for PBAP. */
-class PhoneBookData(val calls: List<PbapEntry>, val favourites: List<PbapEntry>?)
+class PhoneBookData(val calls: List<PbapEntry>, val favourites: List<PbapEntry>?, val contacts: List<PbapEntry> = emptyList())
 
 /** Reading the phone failed while [stage]: reaching it, being let in, or reading. */
 class PbapException(val stage: Stage, cause: IOException) : IOException(cause.message, cause) {
@@ -40,6 +40,13 @@ class PbapSession(private val obex: ObexClient, private val zone: ZoneId = ZoneI
     } catch (e: ObexException) {
         // Only PBAP 1.2 phones have a favourites folder.
         null
+    }
+
+    /** Every contact the phone shares, in no particular order; empty when it will not share them. */
+    fun contacts(): List<PbapEntry> = try {
+        pull(CONTACTS, MAX_CONTACTS, CONTACT_PROPERTIES).filter { it.call == null && it.numbers.isNotEmpty() }
+    } catch (e: ObexException) {
+        emptyList()
     }
 
     fun disconnect() = obex.disconnect(REPLY_TIMEOUT_MILLIS)
@@ -71,7 +78,7 @@ class PbapSession(private val obex: ObexClient, private val zone: ZoneId = ZoneI
                 val session = PbapSession(ObexClient(socket.inputStream, socket.outputStream))
                 stage(PbapException.Stage.Asking) { session.connect(onWaiting) }
                 onReading()
-                val data = stage(PbapException.Stage.Reading) { PhoneBookData(session.callHistory(), session.favourites()) }
+                val data = stage(PbapException.Stage.Reading) { PhoneBookData(session.callHistory(), session.favourites(), session.contacts()) }
                 runCatching { session.disconnect() }
                 return data
             } finally {
@@ -144,6 +151,7 @@ class PbapSession(private val obex: ObexClient, private val zone: ZoneId = ZoneI
         private const val PHONEBOOK_TYPE = "x-bt/phonebook"
         private const val CALL_HISTORY = "telecom/cch.vcf"
         private const val FAVOURITES = "telecom/fav.vcf"
+        private const val CONTACTS = "telecom/pb.vcf"
 
         private const val MAX_LIST_COUNT = 0x04
         private const val PROPERTY_SELECTOR = 0x06
@@ -158,6 +166,7 @@ class PbapSession(private val obex: ObexClient, private val zone: ZoneId = ZoneI
 
         private const val MAX_CALLS = 500
         private const val MAX_FAVOURITES = 50
+        private const val MAX_CONTACTS = 3000
 
         /** Android phones give their owner 30 seconds to answer. */
         private const val APPROVAL_TIMEOUT_MILLIS = 45_000L

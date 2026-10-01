@@ -1,5 +1,6 @@
 package com.vivekkaushik.revv.ui.hmi
 
+import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -99,9 +100,9 @@ fun NavPanel(
             )
         }
         MapAttribution(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp))
-        // Anywhere on the panel opens the full Navigation screen.
+        // Anywhere on the panel opens the full Navigation screen; with no trip, "Where to?" goes straight to search.
         Pressable(
-            onClick = { actions.open(HmiApp.Maps) },
+            onClick = { if (trip == null) actions.openMapsSearch() else actions.open(HmiApp.Maps) },
             modifier = Modifier.fillMaxSize(),
             pressedBackground = Hmi.Cyan.copy(alpha = 0.04f),
             border = null,
@@ -125,6 +126,12 @@ fun MapsScreen(
     var zoom by rememberSaveable { mutableDoubleStateOf(SCREEN_ZOOM) }
     var searching by rememberSaveable { mutableStateOf(false) }
     val bearing = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(state.screen.searchRequested) {
+        if (state.screen.searchRequested) {
+            searching = true
+            actions.mapsSearchShown()
+        }
+    }
     BackHandler(enabled = searching) {
         searching = false
         actions.clearPlaceSearch()

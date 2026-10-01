@@ -1,5 +1,10 @@
 package com.vivekkaushik.revv.ui.hmi
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -77,10 +82,10 @@ fun AppOverlay(
             screens.SaveableStateProvider(app) {
                 when (app) {
                     HmiApp.Phone -> PhoneScreen(state.phone, now, timeFormat, actions)
-                    HmiApp.Auto -> AutoScreen(state.phone, state.system.hasBluetoothPermission, actions)
+                    HmiApp.Auto -> AutoScreen(state, actions)
                     HmiApp.Maps -> MapsScreen(state, navigation, timeFormat, actions)
                     HmiApp.Vehicle -> VehicleScreen(live, state.settings.car, actions)
-                    HmiApp.Camera -> CameraScreen(live)
+                    HmiApp.Camera -> CameraScreen(live, state.settings.rearCameraId, state.settings.rearCameraRotation, actions)
                     HmiApp.Apps -> AppsScreen(state.apps, actions)
                     HmiApp.Settings -> SettingsScreen(state, actions)
                     HmiApp.Radio -> StubScreen(app.title, "NO RADIO APP FOUND ON THIS HEAD UNIT")
@@ -106,7 +111,27 @@ private fun StubScreen(name: String, message: String) {
 }
 
 @Composable
-private fun AutoScreen(phone: PhoneState, canSeeBluetooth: Boolean, actions: HmiActions) {
+private fun AutoScreen(state: HmiUiState, actions: HmiActions) {
+    val phone = state.phone
+    val canSeeBluetooth = state.system.hasBluetoothPermission
+    var choosingApp by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = choosingApp) { choosingApp = false }
+    val chosen = state.settings.projectionApp?.let { key -> state.apps.firstOrNull { it.key == key } }
+    if (choosingApp) {
+        Column(Modifier.fillMaxSize().border(1.dp, Hmi.Line).padding(horizontal = 36.dp, vertical = 32.dp)) {
+            AppChooser(
+                title = "PROJECTION APP",
+                hint = "The app Start projection opens on this screen.",
+                apps = state.apps,
+                chosen = state.settings.projectionApp,
+                defaultTitle = "Automatic",
+                defaultDetail = "Android Auto, or this head unit's own projection app",
+                onChoose = actions::setProjectionApp,
+                onDone = { choosingApp = false },
+            )
+        }
+        return
+    }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         Column(
             Modifier.weight(1f).fillMaxHeight().border(1.dp, Hmi.Line).padding(56.dp),
@@ -128,7 +153,17 @@ private fun AutoScreen(phone: PhoneState, canSeeBluetooth: Boolean, actions: Hmi
                 color = Hmi.Muted,
                 lineHeight = 30.sp,
             )
-            SolidButton("START PROJECTION", actions::startProjection, Modifier.padding(top = 8.dp).size(360.dp, 72.dp))
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                SolidButton("START PROJECTION", actions::startProjection, Modifier.size(360.dp, 72.dp))
+                GhostButton("CHOOSE APP", { choosingApp = true }, Modifier.height(72.dp))
+            }
+            HText(
+                "OPENS · " + (chosen?.label?.uppercase() ?: "AUTOMATIC"),
+                size = 14.sp,
+                color = Hmi.Muted,
+                spacing = 2.sp,
+                maxLines = 1,
+            )
         }
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(Modifier.weight(1f).fillMaxWidth().border(1.dp, Hmi.Line).padding(32.dp)) {

@@ -130,7 +130,7 @@ private fun AppTile(app: LauncherApp, actions: HmiActions, modifier: Modifier) {
 }
 
 /** Where a tile sits on screen, so the launched app can scale up out of it. */
-private class LaunchSource {
+class LaunchSource {
     var coordinates: LayoutCoordinates? = null
 
     fun bounds(): Rect? = coordinates?.takeIf { it.isAttached }?.boundsInWindow()
@@ -138,7 +138,7 @@ private class LaunchSource {
 
 /** The app's real icon; a monogram, as in the design's tiles, until it loads. */
 @Composable
-private fun AppIcon(app: LauncherApp, size: Dp) {
+fun AppIcon(app: LauncherApp, size: Dp) {
     val provider = LocalIconProvider.current
     val sizePx = with(LocalDensity.current) { size.roundToPx() }
     val icon by produceState(provider?.cachedIcon(app, sizePx), app.key, sizePx, provider) {

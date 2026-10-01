@@ -249,6 +249,8 @@ fun Pressable(
     contentAlignment: Alignment = Alignment.Center,
     /** When above zero, holding the button repeats the click this often (after a short pause), like a held key. */
     repeatEveryMillis: Long = 0,
+    /** What tapping it sounds like; null for silence. */
+    sound: UiSound? = UiSound.Menu,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -256,6 +258,7 @@ fun Pressable(
     val scope = rememberCoroutineScope()
     val pressed by interactionSource.collectIsPressedAsState()
     val touchFeedback = LocalTouchFeedback.current
+    val menuSound = LocalMenuSound.current
     val view = LocalView.current
     val borderColor = if (pressed) pressedBorder else border
     Box(
@@ -273,11 +276,12 @@ fun Pressable(
                             detectTapGestures(onPress = { offset ->
                                 val press = PressInteraction.Press(offset)
                                 interactionSource.emit(press)
-                                fun fire() {
+                                fun fire(first: Boolean = false) {
                                     if (touchFeedback) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                                    if (first && sound != null) menuSound?.play(sound)
                                     currentOnClick()
                                 }
-                                fire()
+                                fire(first = true)
                                 val repeating = scope.launch {
                                     delay(HOLD_DELAY_MILLIS)
                                     while (true) {
@@ -298,6 +302,7 @@ fun Pressable(
                         onLongClick = onLongClick,
                         onClick = {
                             if (touchFeedback) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                            if (sound != null) menuSound?.play(sound)
                             onClick()
                         },
                     )
@@ -320,6 +325,7 @@ fun KeyPad(keys: List<Pair<String, String>>, onKey: (String) -> Unit, modifier: 
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         pressedBackground = Hmi.CyanTint,
                         border = Hmi.Line,
+                        sound = UiSound.dial(key),
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             HText(key, size = 30.sp, family = Hmi.Display, lineHeight = 30.sp)

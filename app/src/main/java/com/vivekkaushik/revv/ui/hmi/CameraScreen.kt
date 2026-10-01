@@ -1,5 +1,21 @@
 package com.vivekkaushik.revv.ui.hmi
 
+import com.vivekkaushik.revv.settings.SettingsStore
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.core.content.ContextCompat
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.BoxScope
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import android.content.pm.PackageManager
+import android.Manifest
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -33,9 +49,25 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.hypot
 
 @Composable
-fun CameraScreen(live: LiveTelemetry) {
+fun CameraScreen(live: LiveTelemetry, chosenCameraId: String?, rotation: Int, actions: HmiActions) {
+    val context = LocalContext.current
+    var granted by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+    }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
+    val cameras = remember { RearCameras.list(context) }
+    val camera = cameras.firstOrNull { it.id == chosenCameraId } ?: cameras.firstOrNull()
+    var guides by rememberSaveable { mutableStateOf(true) }
+    // Reset when the camera changes, so a camera that failed can be tried again by switching.
+    var failedId by remember { mutableStateOf<String?>(null) }
+    val feed = when {
+        camera == null -> Feed.NoCamera
+        !granted -> Feed.NeedsPermission
+        failedId == camera.id -> Feed.Failed
+        else -> Feed.Live(camera)
+    }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-        CameraFeed(live, Modifier.weight(1f).fillMaxHeight())
+        CameraFeed(live, feed, guides, rotation, { permission.launch(Manifest.permission.CAMERA) }, { failedId = it }, Modifier.weight(1f).fillMaxHeight())
         Column(Modifier.width(400.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(
                 Modifier.fillMaxWidth().border(1.dp, Hmi.Line).padding(28.dp),
@@ -59,21 +91,56 @@ fun CameraScreen(live: LiveTelemetry) {
                 }
             }
             Column(
-                Modifier.weight(1f).fillMaxWidth().border(1.dp, Hmi.Line).padding(28.dp),
+                Modifier.weight(1f).fillMaxWidth().border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(28.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Caption("VIEW", Modifier.padding(bottom = 6.dp))
-                AccentButton("STANDARD", {}, Modifier.fillMaxWidth().height(60.dp))
-                GhostButton("WIDE", {}, Modifier.fillMaxWidth().height(60.dp))
-                GhostButton("GUIDELINES OFF", {}, Modifier.fillMaxWidth().height(60.dp))
+                if (guides) {
+                    AccentButton("GUIDELINES ON", { guides = false }, Modifier.fillMaxWidth().height(60.dp))
+                } else {
+                    GhostButton("GUIDELINES OFF", { guides = true }, Modifier.fillMaxWidth().height(60.dp))
+                }
+                Caption("PICTURE", Modifier.padding(top = 10.dp, bottom = 6.dp))
+                GhostButton(
+                    "ROTATE · $rotation°",
+                    { actions.setChoice(SettingsStore.CAMERA_ROTATION, (rotation / 90 + 1) % 4) },
+                    Modifier.fillMaxWidth().height(60.dp),
+                )
+                if (cameras.size > 1 && camera != null) {
+                    Caption("CAMERA", Modifier.padding(top = 10.dp, bottom = 6.dp))
+                    GhostButton(
+                        camera.label,
+                        {
+                            failedId = null
+                            actions.setRearCameraId(cameras[(cameras.indexOf(camera) + 1) % cameras.size].id)
+                        },
+                        Modifier.fillMaxWidth().height(60.dp),
+                    )
+                }
             }
         }
     }
 }
 
-/** A placeholder for the reversing camera: parking guides over a dark, scan-lined backdrop. */
+/** What the feed area shows. */
+private sealed interface Feed {
+    data class Live(val camera: CameraOption) : Feed
+    data object NeedsPermission : Feed
+    data object NoCamera : Feed
+    data object Failed : Feed
+}
+
+/** The reversing camera's picture with the parking guides over it; a dark backdrop saying why when there is no picture. */
 @Composable
-private fun CameraFeed(live: LiveTelemetry, modifier: Modifier) {
+private fun CameraFeed(
+    live: LiveTelemetry,
+    feed: Feed,
+    guides: Boolean,
+    rotation: Int,
+    onAllow: () -> Unit,
+    onFailed: (String) -> Unit,
+    modifier: Modifier,
+) {
     Box(
         modifier
             .border(1.dp, Hmi.Line)
@@ -91,18 +158,43 @@ private fun CameraFeed(live: LiveTelemetry, modifier: Modifier) {
                 }
             },
     ) {
-        Canvas(Modifier.fillMaxSize()) { drawGuides() }
-        Canvas(Modifier.fillMaxSize().graphicsLayer()) { drawSteeringGuides(live.steer) }
+        if (feed is Feed.Live) {
+            CameraPreview(feed.camera.id, rotation, onFailed = { onFailed(feed.camera.id) }, modifier = Modifier.fillMaxSize())
+        }
+        if (guides) {
+            Canvas(Modifier.fillMaxSize()) { drawGuides() }
+            Canvas(Modifier.fillMaxSize().graphicsLayer()) { drawSteeringGuides(live.steer) }
+        }
+        when (feed) {
+            Feed.NeedsPermission -> FeedMessage("Allow Revv to use the camera to show the rear view.", "ALLOW", onAllow)
+            Feed.NoCamera -> FeedMessage("No camera found on this head unit.", null, {})
+            Feed.Failed -> FeedMessage("The camera could not be opened. Something else may be using it.", null, {})
+            is Feed.Live -> Unit
+        }
         Row(
             Modifier.padding(start = 28.dp, top = 24.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(Modifier.size(10.dp).background(Hmi.Red))
-            Caption("REAR CAMERA · LIVE")
+            Caption(if (feed is Feed.Live) "REAR CAMERA · LIVE" else "REAR CAMERA")
         }
-        Caption("FEED PLACEHOLDER", Modifier.align(Alignment.TopEnd).padding(end = 28.dp, top = 24.dp))
+        if (feed is Feed.Live) {
+            Caption(feed.camera.label, Modifier.align(Alignment.TopEnd).padding(end = 28.dp, top = 24.dp))
+        }
         Caption("CHECK SURROUNDINGS FOR SAFETY", Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp))
+    }
+}
+
+@Composable
+private fun BoxScope.FeedMessage(text: String, button: String?, onClick: () -> Unit) {
+    Column(
+        Modifier.align(Alignment.Center).padding(48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        HText(text, size = 22.sp, color = Hmi.Muted, align = TextAlign.Center, lineHeight = 30.sp)
+        if (button != null) AccentButton(button, onClick, Modifier.height(56.dp))
     }
 }
 

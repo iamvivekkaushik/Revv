@@ -28,6 +28,7 @@ import com.vivekkaushik.revv.obd.ObdLink
 import com.vivekkaushik.revv.obd.ObdReadings
 import com.vivekkaushik.revv.obd.ObdSession
 import com.vivekkaushik.revv.obd.ObdStatus
+import com.vivekkaushik.revv.phone.ActiveCall
 import com.vivekkaushik.revv.phone.CallRoute
 import com.vivekkaushik.revv.phone.PhoneMonitor
 import com.vivekkaushik.revv.phone.PhoneState
@@ -111,6 +112,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val recentPlaces: StateFlow<List<Place>> = navigator.recents
 
     val phone: StateFlow<PhoneState> = phoneMonitor.state
+    val activeCall: StateFlow<ActiveCall?> = phoneMonitor.call
 
     init {
         // First, so the adapter log knows whether to save before the adapter says anything.
@@ -197,6 +199,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun updateCar(car: CarSetup) = settingsStore.setCar(car)
 
+    fun setRearCameraId(id: String?) = settingsStore.setRearCameraId(id)
+
+    fun setProjectionApp(app: LauncherApp?) = settingsStore.setProjectionApp(app?.key)
+
+    fun setFuelWidgetApp(app: LauncherApp?) = settingsStore.setFuelWidgetApp(app?.key)
+
     fun relearnGears() = obd.relearnGears()
 
     fun clearTroubleCodes() = obd.clearTroubleCodes()
@@ -208,6 +216,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun onLocationPermissionResult() = refreshSystemState()
+
+    fun hangUp() = phoneMonitor.hangUp()
 
     fun readPhoneAgain() = phoneMonitor.readAgain()
 
@@ -248,6 +258,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun open(app: HmiApp) = _screen.update { it.open(app) }
 
+    fun openMapsSearch() = _screen.update { it.open(HmiApp.Maps).copy(searchRequested = true) }
+
+    fun mapsSearchShown() = _screen.update { it.copy(searchRequested = false) }
+
     fun back() = _screen.update { it.back() }
 
     /** [animate] false removes the open screen at once, for when Revv isn't on screen to show it. */
@@ -271,7 +285,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     /** Saves the chosen option of a list setting such as the date format. */
     fun setChoice(key: String, index: Int) {
-        if (key == SettingsStore.TIME_FORMAT || key == SettingsStore.DATE_FORMAT) settingsStore.setLevel(key, index.coerceAtLeast(0))
+        if (key == SettingsStore.TIME_FORMAT || key == SettingsStore.DATE_FORMAT || key == SettingsStore.CAMERA_ROTATION) settingsStore.setLevel(key, index.coerceAtLeast(0))
     }
 
     fun setDisplaySize(percent: Int) {

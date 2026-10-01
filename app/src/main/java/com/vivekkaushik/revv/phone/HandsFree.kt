@@ -14,6 +14,11 @@ class HandsFreeException(val stage: Stage, message: String, cause: Throwable? = 
     enum class Stage { Reaching, Linking, Dialling }
 }
 
+/** The call indicators of the phone's hands-free profile: 0 means none. [setup] is 1 incoming, 2 dialling, 3 ringing at the far end. */
+data class CallIndicators(val call: Int = 0, val setup: Int = 0, val held: Int = 0) {
+    val live: Boolean get() = call > 0 || setup > 0 || held > 0
+}
+
 /**
  * The hands-free end of HFP over a byte stream to a phone's audio gateway: the AT commands a car
  * kit sends to set up the link, then to dial. Calls block, one at a time.
@@ -26,15 +31,52 @@ class HandsFreeLink(
 
     private val pending = StringBuilder()
 
+    /** The phone's indicator names in the order it lists them, and what each last reported. */
+    private var indicatorNames = emptyList<String>()
+    private val indicatorValues = mutableMapOf<String, Int>()
+
+    /** Whether a call is under way, being set up, or on hold, as far as the phone has said. */
+    val call: CallIndicators
+        get() = CallIndicators(
+            call = indicatorValues["call"] ?: 0,
+            setup = indicatorValues["callsetup"] ?: 0,
+            held = indicatorValues["callheld"] ?: 0,
+        )
+
     /**
      * Sets up the service level connection: features (none, so neither side expects codec or
      * three-way calling talks), the phone's indicators, and event reporting.
      */
     fun establish() {
         command("AT+BRSF=0")
-        command("AT+CIND=?")
-        command("AT+CIND?")
+        command("AT+CIND=?").firstOrNull { it.startsWith("+CIND:") }?.let { definition ->
+            indicatorNames = INDICATOR.findAll(definition).map { it.groupValues[1].lowercase() }.toList()
+        }
+        command("AT+CIND?").firstOrNull { it.startsWith("+CIND:") }?.let { current ->
+            current.removePrefix("+CIND:").split(',').map { it.trim().toIntOrNull() }.forEachIndexed { index, value ->
+                val name = indicatorNames.getOrNull(index)
+                if (name != null && value != null) indicatorValues[name] = value
+            }
+        }
         command("AT+CMER=3,0,0,1")
+    }
+
+    /** Hangs up, or turns down a call that is still ringing. */
+    fun hangUp() {
+        command("AT+CHUP")
+    }
+
+    /** Takes in whatever the phone has said since, such as call events; waits briefly when it has said nothing. */
+    fun listen() {
+        readAvailable()
+        while (true) handleEvent(nextLine() ?: break)
+    }
+
+    private fun handleEvent(line: String) {
+        if (!line.startsWith("+CIEV:")) return
+        val (index, value) = line.removePrefix("+CIEV:").split(',').map { it.trim().toIntOrNull() }.let { it.getOrNull(0) to it.getOrNull(1) }
+        val name = index?.let { indicatorNames.getOrNull(it - 1) } ?: return
+        if (value != null) indicatorValues[name] = value
     }
 
     /** Has the phone dial [number]: digits, and any of + * #. */
@@ -58,7 +100,11 @@ class HandsFreeLink(
             when {
                 line == "OK" -> return lines
                 line == "ERROR" || line.startsWith("+CME ERROR") -> throw IOException("The phone said $line to $text")
-                else -> lines += line
+                else -> {
+                    // Events can arrive between a command and its reply; keep the call's state current.
+                    handleEvent(line)
+                    lines += line
+                }
             }
         }
     }
@@ -91,6 +137,38 @@ class HandsFreeLink(
         /** The phone's hands-free audio gateway, as its Bluetooth service record names it. */
         val AUDIO_GATEWAY: UUID = UUID.fromString("0000111F-0000-1000-8000-00805F9B34FB")
 
+        private val INDICATOR = Regex("""\("([A-Za-z]+)",""")
+
+        /** How long to wait for the phone to report the call at all before leaving it be. */
+        private const val CALL_START_MILLIS = 10_000L
+
+        /** Follows the call until the phone says it is over, hanging up when asked. */
+        private fun follow(link: HandsFreeLink, onCall: (CallIndicators) -> Unit, hangUpRequested: () -> Boolean) {
+            val started = System.nanoTime()
+            var last: CallIndicators? = null
+            var seenCall = false
+            var hungUp = false
+            try {
+                while (true) {
+                    link.listen()
+                    val now = link.call
+                    if (now != last) {
+                        last = now
+                        onCall(now)
+                    }
+                    if (now.live) seenCall = true
+                    if (seenCall && !now.live) return
+                    if (!seenCall && (System.nanoTime() - started) / 1_000_000 > CALL_START_MILLIS) return
+                    if (!hungUp && now.live && hangUpRequested()) {
+                        hungUp = true
+                        link.hangUp()
+                    }
+                }
+            } catch (e: IOException) {
+                // The phone dropped the link; whatever the call is doing, Revv can no longer follow it.
+            }
+        }
+
         private const val REPLY_TIMEOUT_MILLIS = 5_000L
         private const val POLL_MILLIS = 5L
 
@@ -99,7 +177,15 @@ class HandsFreeLink(
          * the call's audio. Takes a second or two. Needs BLUETOOTH_CONNECT on Android 12+.
          */
         @SuppressLint("MissingPermission")
-        fun dial(bluetooth: BluetoothAdapter, device: BluetoothDevice, number: String) {
+        fun dial(
+            bluetooth: BluetoothAdapter,
+            device: BluetoothDevice,
+            number: String,
+            /** Called with the call's state as the phone reports it; when given, the link stays up until the call ends. */
+            onCall: ((CallIndicators) -> Unit)? = null,
+            /** Whether the driver has asked to hang up. */
+            hangUpRequested: () -> Boolean = { false },
+        ) {
             runCatching { bluetooth.cancelDiscovery() }
             val socket = try {
                 device.createRfcommSocketToServiceRecord(AUDIO_GATEWAY).also { it.connect() }
@@ -118,6 +204,7 @@ class HandsFreeLink(
                 } catch (e: IOException) {
                     throw HandsFreeException(HandsFreeException.Stage.Dialling, e.message ?: "didn't dial", e)
                 }
+                if (onCall != null) follow(link, onCall, hangUpRequested)
             } finally {
                 runCatching { socket.close() }
             }
