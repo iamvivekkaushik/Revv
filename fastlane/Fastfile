@@ -58,7 +58,8 @@ platform :android do
 
     set_github_release(
       repository_name: repository,
-      api_token: ENV.fetch("GITHUB_TOKEN"),
+      # Actions' GITHUB_TOKEN is an app token, which GitHub accepts only as a Bearer token.
+      api_bearer: ENV.fetch("GITHUB_TOKEN"),
       name: "Revv #{version[:name]}",
       tag_name: tag,
       description: notes,
