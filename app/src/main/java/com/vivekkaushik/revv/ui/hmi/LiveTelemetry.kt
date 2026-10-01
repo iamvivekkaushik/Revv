@@ -189,7 +189,12 @@ class Ignition(private val simulator: DriveSimulator, private val profile: Vehic
         return simulated.copy(
             speedFraction = shownSpeed / DriveSimulator.MAX_SPEED,
             rpmFraction = shownRpm / DriveSimulator.MAX_RPM,
-            gearIndex = readings.gear?.takeIf { it > 0 } ?: DriveSimulator.GEAR_NEUTRAL,
+            gearIndex = when (val gear = readings.gear) {
+                // Neither known nor neutral: nothing lit rather than a wrong N.
+                null -> DriveSimulator.GEAR_NONE
+                0 -> DriveSimulator.GEAR_NEUTRAL
+                else -> gear
+            },
             kmPerLitre = readings.kmPerLitre,
             engineLoad = readings.engineLoad ?: 0,
             throttle = readings.throttle ?: 0,

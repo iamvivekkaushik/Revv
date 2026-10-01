@@ -145,15 +145,24 @@ fun TextKeyboard(onKey: (String) -> Unit, onSpace: () -> Unit, onBackspace: () -
             }
         }
         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            KeyboardKey(Modifier.weight(7f), onClick = onSpace) { Caption("SPACE") }
-            KeyboardKey(Modifier.weight(3f), onClick = onBackspace) { PathIcon(HmiIcons.BACKSPACE, 28.dp, Hmi.Text) }
+            KeyboardKey(Modifier.weight(7f), onClick = onSpace, repeatEveryMillis = KEY_REPEAT_MILLIS) { Caption("SPACE") }
+            KeyboardKey(Modifier.weight(3f), onClick = onBackspace, repeatEveryMillis = KEY_REPEAT_MILLIS) { PathIcon(HmiIcons.BACKSPACE, 28.dp, Hmi.Text) }
         }
     }
 }
 
+/** How often a held Space or Backspace key repeats. */
+private const val KEY_REPEAT_MILLIS = 70L
+
 @Composable
-private fun KeyboardKey(modifier: Modifier, onClick: () -> Unit, content: @Composable () -> Unit) {
-    Pressable(onClick = onClick, modifier = modifier.fillMaxHeight(), pressedBackground = Hmi.CyanTint, border = Hmi.Line) {
+private fun KeyboardKey(modifier: Modifier, onClick: () -> Unit, repeatEveryMillis: Long = 0, content: @Composable () -> Unit) {
+    Pressable(
+        onClick = onClick,
+        modifier = modifier.fillMaxHeight(),
+        pressedBackground = Hmi.CyanTint,
+        border = Hmi.Line,
+        repeatEveryMillis = repeatEveryMillis,
+    ) {
         content()
     }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.StatFs
+import android.text.format.DateFormat
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.CubicBezierEasing
@@ -11,6 +12,8 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,13 +34,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -48,6 +54,14 @@ import com.vivekkaushik.revv.obd.ObdAdapter
 import com.vivekkaushik.revv.obd.ObdLink
 import com.vivekkaushik.revv.obd.WifiEndpoint
 import com.vivekkaushik.revv.settings.SettingsStore
+import com.vivekkaushik.revv.system.NightMode
+import com.vivekkaushik.revv.system.NightSchedule
+import com.vivekkaushik.revv.vehicle.CarColour
+import com.vivekkaushik.revv.vehicle.CarSetup
+import com.vivekkaushik.revv.vehicle.GearSource
+import com.vivekkaushik.revv.vehicle.TyreSize
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private enum class Category(val title: String, val icon: String) {
@@ -74,8 +88,29 @@ private class LevelRow(
     val max: Int,
 ) : SettingRow
 
+/** A whole number stepped within [range], e.g. how many gears. */
+private class StepperRow(
+    override val name: String,
+    override val detail: String,
+    val value: Int,
+    val range: IntRange,
+    val step: Int = 1,
+    /** Whether holding − or + keeps stepping. */
+    val holdToRepeat: Boolean = true,
+    val onChange: (Int) -> Unit,
+) : SettingRow
+
 /** The design repeats a read-only row's description as its value. */
 private class ValueRow(override val name: String, override val detail: String, val value: String = detail) : SettingRow
+
+/** A setting with a short list of named options, stepped with − and +. */
+private class OptionRow(
+    override val name: String,
+    override val detail: String,
+    val options: List<String>,
+    val selected: Int,
+    val onChange: (Int) -> Unit,
+) : SettingRow
 
 private class ActionRow(
     override val name: String,
@@ -94,6 +129,9 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
     var choosingAdapter by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val about = remember { About(versionName(context), freeStorage(context)) }
+    val locale = LocalConfiguration.current.locales[0]
+    val is24Hour = ClockFormats.is24Hour(state.settings, DateFormat.is24HourFormat(context))
+    val clock = remember(is24Hour, locale) { DateTimeFormatter.ofPattern(ClockFormats.timePattern(is24Hour), locale) }
     val chooseAdapter = {
         actions.refreshAdapterChoices()
         choosingAdapter = true
@@ -101,6 +139,10 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
     BackHandler(enabled = choosingAdapter) { choosingAdapter = false }
     var viewingLog by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = viewingLog) { viewingLog = false }
+    var editingCar by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = editingCar) { editingCar = false }
+    var settingUpGears by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = settingUpGears) { settingUpGears = false }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         Column(
             Modifier.width(420.dp).fillMaxHeight().border(1.dp, Hmi.Line).padding(16.dp),
@@ -111,6 +153,8 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                     category = entry
                     choosingAdapter = false
                     viewingLog = false
+                    editingCar = false
+                    settingUpGears = false
                 }
             }
         }
@@ -118,10 +162,25 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
             when {
                 choosingAdapter -> AdapterPicker(state, actions, onDone = { choosingAdapter = false })
                 viewingLog -> AdapterLog(state.obdLog, onDone = { viewingLog = false })
+                editingCar -> CarPanel(state, actions, onDone = { editingCar = false })
+                settingUpGears -> GearIndicatorPanel(state, actions, onDone = { settingUpGears = false })
                 else -> {
                     HText(category.title, Modifier.padding(bottom = 16.dp), size = 26.sp, family = Hmi.Display)
-                    rowsFor(category, state, actions, about, chooseAdapter, showLog = { viewingLog = true })
-                        .forEach { row -> SettingRowView(row, state, actions) }
+                    val rows = rowsFor(
+                        category,
+                        state,
+                        actions,
+                        about,
+                        clock,
+                        chooseAdapter,
+                        showLog = { viewingLog = true },
+                        editCar = { editingCar = true },
+                        setUpGears = { settingUpGears = true },
+                    )
+                    // Vehicle has more rows than fit.
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                        items(rows) { row -> SettingRowView(row, state, actions) }
+                    }
                 }
             }
         }
@@ -381,6 +440,7 @@ private fun AddressEditor(initial: String, onUse: (WifiEndpoint) -> Unit, onCanc
                     },
                     modifier = Modifier.size(52.dp),
                     border = null,
+                    repeatEveryMillis = 70,
                 ) {
                     PathIcon(HmiIcons.BACKSPACE, 28.dp, Hmi.Muted, strokeWidth = 1.8f)
                 }
@@ -451,7 +511,9 @@ private fun SettingRowView(row: SettingRow, state: HmiUiState, actions: HmiActio
         when (row) {
             is ToggleRow -> Toggle(state.settings.isOn(row.key)) { actions.toggleSetting(row.key) }
             is LevelRow -> Level(row.value, row.max) { direction -> actions.changeLevel(row.key, direction) }
+            is StepperRow -> Stepper(row.value, row.range, row.step, row.holdToRepeat, row.onChange)
             is ValueRow -> HText(row.value, size = 19.sp, color = Hmi.Muted)
+            is OptionRow -> OptionStepper(row.options, row.selected, row.onChange)
             is ActionRow -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.secondary?.let { (label, onClick) -> GhostButton(label, onClick, Modifier.height(52.dp)) }
                 AccentButton(row.button, row.onClick, Modifier.height(52.dp))
@@ -484,14 +546,44 @@ private fun Toggle(on: Boolean, onClick: () -> Unit) {
 private fun Level(value: Int, max: Int, onStep: (Int) -> Unit) {
     val lit = if (max > 0) Math.round(value * 10f / max) else 0
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Pressable(onClick = { onStep(-1) }, Modifier.size(52.dp)) { HText("−", size = 24.sp) }
+        Pressable(onClick = { onStep(-1) }, Modifier.size(52.dp), repeatEveryMillis = 120) { HText("−", size = 24.sp) }
         Row(Modifier.size(220.dp, 14.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             repeat(10) { cell ->
                 Box(Modifier.weight(1f).fillMaxHeight().background(if (cell < lit) Hmi.Cyan else Hmi.Line))
             }
         }
-        Pressable(onClick = { onStep(1) }, Modifier.size(52.dp)) { HText("+", size = 24.sp) }
+        Pressable(onClick = { onStep(1) }, Modifier.size(52.dp), repeatEveryMillis = 120) { HText("+", size = 24.sp) }
         HText(value.toString(), Modifier.width(56.dp), size = 20.sp, align = TextAlign.End)
+    }
+}
+
+@Composable
+private fun OptionStepper(options: List<String>, selected: Int, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        val canLower = selected > 0
+        val canRaise = selected < options.lastIndex
+        Pressable(onClick = { if (canLower) onChange(selected - 1) }, Modifier.size(52.dp)) {
+            HText("<", size = 24.sp, color = if (canLower) Hmi.Text else Hmi.Faint)
+        }
+        HText(options.getOrElse(selected) { "" }, Modifier.width(260.dp), size = 18.sp, family = Hmi.Display, align = TextAlign.Center, maxLines = 1)
+        Pressable(onClick = { if (canRaise) onChange(selected + 1) }, Modifier.size(52.dp)) {
+            HText(">", size = 24.sp, color = if (canRaise) Hmi.Text else Hmi.Faint)
+        }
+    }
+}
+
+@Composable
+private fun Stepper(value: Int, range: IntRange, step: Int, holdToRepeat: Boolean, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        val canLower = value > range.first
+        val canRaise = value < range.last
+        Pressable(onClick = { if (canLower) onChange(value - step) }, Modifier.size(52.dp), repeatEveryMillis = if (holdToRepeat) 250 else 0) {
+            HText("−", size = 24.sp, color = if (canLower) Hmi.Text else Hmi.Faint)
+        }
+        HText(value.toString(), Modifier.width(72.dp), size = 24.sp, family = Hmi.Display, align = TextAlign.Center)
+        Pressable(onClick = { if (canRaise) onChange(value + step) }, Modifier.size(52.dp), repeatEveryMillis = if (holdToRepeat) 250 else 0) {
+            HText("+", size = 24.sp, color = if (canRaise) Hmi.Text else Hmi.Faint)
+        }
     }
 }
 
@@ -502,15 +594,25 @@ private fun rowsFor(
     state: HmiUiState,
     actions: HmiActions,
     about: About,
+    clock: DateTimeFormatter,
     chooseAdapter: () -> Unit,
     showLog: () -> Unit,
+    editCar: () -> Unit,
+    setUpGears: () -> Unit,
 ): List<SettingRow> {
     val settings = state.settings
     val system = state.system
     return when (category) {
         Category.Display -> listOf(
-            LevelRow(SettingsStore.BRIGHTNESS, "Brightness", "Screen backlight", settings.level(SettingsStore.BRIGHTNESS), 100),
-            ToggleRow("night", "Auto night mode", "Dim with ambient light sensor"),
+            brightnessRow(state, actions),
+            StepperRow("Display size", "Scale of everything on screen, in percent", settings.displaySize, SettingsStore.DISPLAY_SIZES.first()..SettingsStore.DISPLAY_SIZES.last(), step = 10, holdToRepeat = false, onChange = actions::setDisplaySize),
+            OptionRow("Time format", "Clock on the home screen and trip times", ClockFormats.timeLabels, settings.timeFormat) {
+                actions.setChoice(SettingsStore.TIME_FORMAT, it)
+            },
+            OptionRow("Date format", "Date on the home screen", ClockFormats.dateLabels, settings.dateFormat) {
+                actions.setChoice(SettingsStore.DATE_FORMAT, it)
+            },
+            autoNightRow(state, actions, clock),
             ToggleRow(SettingsStore.REDUCED_MOTION, "Reduced motion", "Fewer animations while driving"),
             ValueRow("Theme", "Cluster · dark"),
         )
@@ -531,7 +633,8 @@ private fun rowsFor(
             settings.obdAdapter?.let { ActionRow("Adapter log", "What the adapter said, for when a car won't connect", "VIEW", showLog) },
             settings.obdAdapter?.let { ToggleRow(SettingsStore.SAVE_OBD_LOG, "Save adapter logs", "One file a day on this device, for troubleshooting later") },
             ToggleRow(SettingsStore.DEMO_DRIVE, "Demo drive", "Simulated car data while no OBD-II adapter is set up"),
-            ValueRow("Model", "Swift VXi 2015 · 5MT"),
+            ActionRow("Car", "${settings.car.name} · ${settings.car.colour.label} · ${settings.car.gears} gears", "EDIT", editCar),
+            ActionRow("Gear indicator", gearIndicatorDetail(settings.car, state.learntGears), "SET UP", setUpGears),
             ToggleRow("tpms", "Tyre pressure alerts", "Warn below 28 psi"),
             ToggleRow("shiftL", "Shift lights", "Above 4,000 rpm"),
         )
@@ -567,6 +670,59 @@ private fun rowsFor(
             ValueRow("Software", "Revv ${about.version}"),
             ValueRow("Storage", "${about.freeStorage} free"),
         )
+    }
+}
+
+/** The screen's backlight, a system setting Revv needs Android's leave to change. */
+private fun brightnessRow(state: HmiUiState, actions: HmiActions): SettingRow {
+    val system = state.system
+    if (!system.canChangeBrightness) {
+        return ActionRow("Brightness", "Screen backlight · needs access to modify system settings", "ALLOW", actions::requestBrightnessAccess)
+    }
+    val detail = when (nightMode(state)) {
+        NightMode.Off -> "Screen backlight"
+        NightMode.Sunset -> if (system.nightSchedule.night) "Night level · kept for every night" else "Day level · kept for every day"
+        // Under adaptive brightness, Android takes the level set as the one to adapt from.
+        NightMode.LightSensor -> "Screen backlight · the light sensor adjusts from here"
+    }
+    return LevelRow(SettingsStore.BRIGHTNESS, "Brightness", detail, system.brightness, 100)
+}
+
+/** How the screen dims at night: not at all, from sunset to sunrise, or by the light sensor if there is one. */
+private fun autoNightRow(state: HmiUiState, actions: HmiActions, clock: DateTimeFormatter): SettingRow {
+    val system = state.system
+    if (!system.canChangeBrightness) {
+        return ActionRow("Auto night mode", "Dims the screen at night · needs access to modify system settings", "ALLOW", actions::requestBrightnessAccess)
+    }
+    val modes = listOfNotNull(NightMode.Off, NightMode.Sunset, NightMode.LightSensor.takeIf { system.autoBrightnessAvailable })
+    val mode = nightMode(state)
+    val detail = when (mode) {
+        NightMode.Off -> "Brightness stays where you set it"
+        NightMode.Sunset -> sunsetDetail(system.nightSchedule, clock)
+        NightMode.LightSensor -> "Dims with the ambient light sensor"
+    }
+    val labels = modes.map {
+        when (it) {
+            NightMode.Off -> "Off"
+            NightMode.Sunset -> "Sunset"
+            NightMode.LightSensor -> "Light sensor"
+        }
+    }
+    return OptionRow("Auto night mode", detail, labels, modes.indexOf(mode)) { actions.setNightMode(modes[it]) }
+}
+
+private fun nightMode(state: HmiUiState): NightMode =
+    NightMode.of(lightSensor = state.system.autoBrightness, sunset = state.settings.isOn(SettingsStore.SUNSET_DIMMING))
+
+/** When sunset dimming next changes, e.g. "Dims at sunset, 18:26". */
+private fun sunsetDetail(schedule: NightSchedule, clock: DateTimeFormatter): String {
+    val at = schedule.until?.atZone(ZoneId.systemDefault())?.format(clock)
+        ?: return if (schedule.night) "Dimmed: the sun doesn't rise today" else "The sun doesn't set today"
+    return when {
+        !schedule.located && schedule.night -> "Dimmed until $at · a guess until GPS finds the car"
+        !schedule.located -> "Dims at $at · a guess until GPS finds the car"
+        schedule.night -> "Dimmed until sunrise, $at"
+        else -> "Dims at sunset, $at"
     }
 }
 
@@ -623,3 +779,326 @@ private fun versionName(context: Context): String {
 
 private fun freeStorage(context: Context): String =
     Formatter.formatShortFileSize(context, StatFs(context.filesDir.path).availableBytes)
+
+/** Under the Gear indicator row: where the gears come from and how far learning has got. */
+private fun gearIndicatorDetail(car: CarSetup, learnt: List<Float>): String = when (car.gearSource) {
+    GearSource.Ratios -> "From tyre size and gear ratios · ${car.tyre}"
+    GearSource.Learnt -> if (learnt.isEmpty()) {
+        "Learning as you drive · nothing learnt yet"
+    } else {
+        "Learning as you drive · ${minOf(learnt.size, car.gears)} of ${car.gears} gears learnt"
+    }
+}
+
+/** Settings › Vehicle › Car: which car this is, for the Vehicle screen and the gear indicator. */
+@Composable
+private fun CarPanel(state: HmiUiState, actions: HmiActions, onDone: () -> Unit) {
+    val car = state.settings.car
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    BackHandler(enabled = editing != null) { editing = null }
+    when (editing) {
+        EDIT_MAKE -> {
+            TextEditor("MAKE", "Who makes the car, e.g. Maruti Suzuki or Mahindra.", car.make, onCancel = { editing = null }) {
+                actions.updateCar(car.copy(make = it))
+                editing = null
+            }
+            return
+        }
+        EDIT_MODEL -> {
+            TextEditor("MODEL", "The model and version, e.g. Swift VXi 2015.", car.model, onCancel = { editing = null }) {
+                actions.updateCar(car.copy(model = it))
+                editing = null
+            }
+            return
+        }
+    }
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+            HText("CAR", size = 26.sp, family = Hmi.Display)
+            HText(
+                "Shown on the Vehicle screen. The number of gears sets the home screen's gear strip and the gear indicator.",
+                Modifier.padding(top = 6.dp),
+                size = 15.sp,
+                color = Hmi.Muted,
+            )
+            SettingRowView(ActionRow("Make", car.make, "EDIT", { editing = EDIT_MAKE }), state, actions)
+            SettingRowView(ActionRow("Model", car.model, "EDIT", { editing = EDIT_MODEL }), state, actions)
+            SettingRowView(
+                StepperRow("Gears", "Forward gears in the gearbox", car.gears, CarSetup.MIN_GEARS..CarSetup.MAX_GEARS) {
+                    actions.updateCar(car.withGears(it))
+                },
+                state,
+                actions,
+            )
+            Caption("COLOUR", Modifier.padding(top = 20.dp, bottom = 12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                CarColour.entries.chunked(5).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { colour ->
+                            val selected = colour == car.colour
+                            Pressable(
+                                onClick = { actions.updateCar(car.copy(colour = colour)) },
+                                modifier = Modifier.weight(1f).height(64.dp),
+                                background = if (selected) Hmi.Cyan.copy(alpha = 0.10f) else Color.Transparent,
+                                pressedBackground = Hmi.CyanTint,
+                                border = if (selected) Hmi.Cyan else Hmi.Line,
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Box(Modifier.size(22.dp).background(Color(colour.argb)).border(1.dp, Hmi.LineStrong))
+                                    HText(colour.label, size = 17.sp, color = if (selected) Hmi.Text else Hmi.Muted)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Row(Modifier.padding(top = 16.dp)) {
+            AccentButton("DONE", onDone, Modifier.height(56.dp))
+        }
+    }
+}
+
+/**
+ * Settings › Vehicle › Gear indicator. OBD-II doesn't report the gear, so Revv tells it from engine
+ * and road speed: from the gearbox ratios and tyre size, or by learning the gears as the car is driven.
+ */
+@Composable
+private fun GearIndicatorPanel(state: HmiUiState, actions: HmiActions, onDone: () -> Unit) {
+    val car = state.settings.car
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    BackHandler(enabled = editing != null) { editing = null }
+    when (editing) {
+        EDIT_TYRE -> {
+            NumberEditor(
+                title = "TYRE SIZE",
+                hint = "As on the tyre's sidewall: 165/80 R14 is 165 mm wide, its sidewall 80% of that, on a 14-inch rim.",
+                fields = listOf(
+                    NumberField("WIDTH · MM", "${car.tyre.widthMm}"),
+                    NumberField("SIDEWALL · %", "${car.tyre.aspectPercent}"),
+                    NumberField("RIM · INCHES", "${car.tyre.rimInches}"),
+                ),
+                decimals = false,
+                onCancel = { editing = null },
+            ) { values ->
+                val (width, sidewall, rim) = values.map { it.toIntOrNull() ?: 0 }
+                val tyre = TyreSize(width, sidewall, rim)
+                tyre.valid.also { valid ->
+                    if (valid) {
+                        actions.updateCar(car.copy(tyre = tyre))
+                        editing = null
+                    }
+                }
+            }
+            return
+        }
+        EDIT_RATIOS -> {
+            NumberEditor(
+                title = "GEAR RATIOS",
+                hint = "Each gear's ratio and the final drive, from the owner's manual or a spec sheet. First gear is usually 3 to 4.",
+                fields = (1..car.gears).map { gear -> NumberField(ordinal(gear), car.ratios[gear - 1].toString()) } +
+                    NumberField("FINAL DRIVE", car.finalDrive.toString()),
+                decimals = true,
+                onCancel = { editing = null },
+            ) { values ->
+                val ratios = values.dropLast(1).map { it.toFloatOrNull() ?: 0f }
+                val finalDrive = values.last().toFloatOrNull() ?: 0f
+                // Each gear lower than the one before, all within what gearboxes use.
+                val valid = ratios.all { it in 0.3f..8f } && ratios.zipWithNext().all { (low, high) -> low > high } && finalDrive in 1f..10f
+                valid.also {
+                    if (valid) {
+                        actions.updateCar(car.copy(ratios = ratios + car.ratios.drop(car.gears), finalDrive = finalDrive))
+                        editing = null
+                    }
+                }
+            }
+            return
+        }
+    }
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        HText("GEAR INDICATOR", size = 26.sp, family = Hmi.Display)
+        HText(
+            "OBD-II doesn't report the gear, so Revv works it out from engine speed and road speed.",
+            Modifier.padding(bottom = 8.dp),
+            size = 15.sp,
+            color = Hmi.Muted,
+        )
+        val fromRatios = car.gearSource == GearSource.Ratios
+        ChoiceRow(
+            icon = HmiIcons.VEHICLE,
+            title = "From tyre size and gear ratios",
+            detail = "Right from the start, with figures from the owner's manual or a spec sheet",
+            selected = fromRatios,
+            tag = if (fromRatios) "IN USE" else null,
+            onClick = { actions.updateCar(car.copy(gearSource = GearSource.Ratios)) },
+        )
+        ChoiceRow(
+            icon = HmiIcons.VEHICLE,
+            title = "Learn automatically",
+            detail = "Learns each gear as you drive in it, and which is first from moving off",
+            selected = !fromRatios,
+            tag = if (!fromRatios) "IN USE" else null,
+            onClick = { actions.updateCar(car.copy(gearSource = GearSource.Learnt)) },
+        )
+        if (fromRatios) {
+            SettingRowView(ActionRow("Tyre size", car.tyre.toString(), "EDIT", { editing = EDIT_TYRE }), state, actions)
+            SettingRowView(
+                ActionRow(
+                    "Gear ratios",
+                    car.ratios.take(car.gears).joinToString(" · ") + " · final drive ${car.finalDrive}",
+                    "EDIT",
+                    { editing = EDIT_RATIOS },
+                ),
+                state,
+                actions,
+            )
+            Caption("RPM PER KM/H · " + car.rpmPerKmh().joinToString(" · ") { oneDecimal(it) }, size = 13.sp)
+        } else {
+            val learnt = state.learntGears.take(car.gears)
+            SettingRowView(
+                ActionRow(
+                    "Learnt so far",
+                    if (learnt.isEmpty()) {
+                        "Nothing yet: drive through the gears, moving off from a stop at least once"
+                    } else {
+                        "${learnt.size} of ${car.gears} gears · " + learnt.joinToString(" · ") { oneDecimal(it) } + " rpm per km/h"
+                    },
+                    "RELEARN",
+                    actions::relearnGears,
+                ),
+                state,
+                actions,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        Row(Modifier.padding(top = 8.dp)) {
+            AccentButton("DONE", onDone, Modifier.height(56.dp))
+        }
+    }
+}
+
+/** A short name typed on the HMI keyboard: the car's make or model. */
+@Composable
+private fun TextEditor(title: String, hint: String, initial: String, onCancel: () -> Unit, onSave: (String) -> Unit) {
+    var text by rememberSaveable { mutableStateOf(initial) }
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            HText(title, size = 26.sp, family = Hmi.Display)
+            HText(hint, size = 16.sp, color = Hmi.Muted)
+            Row(Modifier.fillMaxWidth().height(72.dp).edgeLine(), verticalAlignment = Alignment.CenterVertically) {
+                HText(text.ifEmpty { title }, Modifier.weight(1f), size = 28.sp, color = if (text.isEmpty()) Hmi.Faint else Hmi.Text, maxLines = 1)
+                if (text.isNotEmpty()) {
+                    Pressable(onClick = { text = "" }, Modifier.height(52.dp), border = null) {
+                        Caption("CLEAR", Modifier.padding(horizontal = 12.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GhostButton("CANCEL", onCancel, Modifier.height(56.dp))
+                SolidButton("SAVE", onClick = { text.trim().takeIf { it.isNotEmpty() }?.let(onSave) }, modifier = Modifier.height(56.dp).width(240.dp))
+            }
+        }
+        TextKeyboard(
+            onKey = { text = (text + it).take(MAX_NAME) },
+            onSpace = { if (text.isNotEmpty() && !text.endsWith(" ")) text += " " },
+            onBackspace = { text = text.dropLast(1) },
+            modifier = Modifier.width(720.dp).fillMaxHeight(),
+        )
+    }
+}
+
+private class NumberField(val label: String, val initial: String)
+
+/**
+ * A few numbers typed on a keypad: a tyre size, or gear ratios. A tap on a field types into it;
+ * [onSave] gets every field's text and says whether it all made sense.
+ */
+@Composable
+private fun NumberEditor(
+    title: String,
+    hint: String,
+    fields: List<NumberField>,
+    decimals: Boolean,
+    onCancel: () -> Unit,
+    onSave: (List<String>) -> Boolean,
+) {
+    val values = remember { fields.map { it.initial }.toMutableStateList() }
+    var active by remember { mutableIntStateOf(0) }
+    var invalid by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            HText(title, size = 26.sp, family = Hmi.Display)
+            HText(hint, size = 16.sp, color = Hmi.Muted)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                fields.indices.chunked(2).forEach { pair ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        pair.forEach { index ->
+                            val selected = index == active
+                            Pressable(
+                                onClick = { active = index },
+                                modifier = Modifier.weight(1f).height(64.dp),
+                                background = if (selected) Hmi.Cyan.copy(alpha = 0.10f) else Color.Transparent,
+                                pressedBackground = Hmi.CyanTint,
+                                border = if (selected) Hmi.Cyan else Hmi.Line,
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Caption(fields[index].label, Modifier.weight(1f), size = 13.sp)
+                                    HText(
+                                        values[index].ifEmpty { "–" },
+                                        size = 24.sp,
+                                        family = Hmi.Display,
+                                        color = if (values[index].isEmpty()) Hmi.Faint else Hmi.Text,
+                                    )
+                                }
+                            }
+                        }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+            if (invalid) HText("Some of these don't look right. Check them against the manual.", size = 16.sp, color = Hmi.Red)
+            Spacer(Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GhostButton("CANCEL", onCancel, Modifier.height(56.dp))
+                SolidButton("SAVE", onClick = { invalid = !onSave(values.toList()) }, modifier = Modifier.height(56.dp).width(240.dp))
+            }
+        }
+        KeyPad(
+            if (decimals) DECIMAL_KEYS else WHOLE_KEYS,
+            onKey = { key ->
+                invalid = false
+                val value = values[active]
+                when (key) {
+                    KEY_DELETE -> values[active] = value.dropLast(1)
+                    KEY_NEXT -> active = (active + 1) % fields.size
+                    "." -> if ('.' !in value) values[active] = value.ifEmpty { "0" } + "."
+                    else -> values[active] = (value + key).take(MAX_DIGITS)
+                }
+            },
+            modifier = Modifier.width(420.dp).fillMaxHeight(),
+        )
+    }
+}
+
+private fun ordinal(gear: Int): String = gear.toString() + when (gear) {
+    1 -> "ST"
+    2 -> "ND"
+    3 -> "RD"
+    else -> "TH"
+}
+
+private fun oneDecimal(value: Float): String = String.format(Locale.ROOT, "%.1f", value)
+
+private const val EDIT_MAKE = "make"
+private const val EDIT_MODEL = "model"
+private const val EDIT_TYRE = "tyre"
+private const val EDIT_RATIOS = "ratios"
+private const val MAX_NAME = 30
+private const val MAX_DIGITS = 6
+private const val KEY_DELETE = "DEL"
+private const val KEY_NEXT = "NEXT"
+private val DIGIT_KEYS = (1..9).map { "$it" to "" }
+private val DECIMAL_KEYS = DIGIT_KEYS + listOf("." to "POINT", "0" to "", KEY_DELETE to "")
+private val WHOLE_KEYS = DIGIT_KEYS + listOf(KEY_NEXT to "", "0" to "", KEY_DELETE to "")

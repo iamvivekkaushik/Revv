@@ -16,9 +16,6 @@ object DemoData {
     const val INTAKE_AIR_C = "41"
     const val BATTERY_VOLTS = "14.2"
 
-    const val MODEL = "SWIFT VXi 2015"
-    const val ENGINE = "K12M 1.2 PETROL"
-    const val GEARBOX = "5MT"
     const val TRIP_A_KM = "128.4"
     const val DRIVE_TIME = "3:12"
 

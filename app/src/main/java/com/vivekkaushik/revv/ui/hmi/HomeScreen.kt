@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,14 +48,12 @@ import com.vivekkaushik.revv.obd.ObdLink
 import com.vivekkaushik.revv.phone.CallType
 import com.vivekkaushik.revv.phone.PhoneState
 import com.vivekkaushik.revv.phone.PhoneSync
-import com.vivekkaushik.revv.vehicle.DemoData
 import com.vivekkaushik.revv.vehicle.DriveSimulator
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 
-private val GEARS = listOf("R", "1", "2", "3", "4", "5", "6", "N")
 private val MajorTick = Color(0xCCE6EDF3)
 private val MinorTick = Color.White.copy(alpha = 0.25f)
 
@@ -94,7 +93,7 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxWidth().height(44.dp).reveal(ready, 800, 200),
                 )
                 Spacer(Modifier.height(28.dp))
-                Cluster(live, framed, Modifier.weight(1f).fillMaxWidth())
+                Cluster(live, framed, state.settings.car.gears, Modifier.weight(1f).fillMaxWidth())
                 Spacer(Modifier.height(28.dp))
                 Row(
                     Modifier.fillMaxWidth().height(220.dp).reveal(ready, 800, 300, riseBy = 24.dp),
@@ -178,7 +177,7 @@ private fun StatusBar(
 }
 
 @Composable
-private fun Cluster(live: LiveTelemetry, visible: Boolean, modifier: Modifier) {
+private fun Cluster(live: LiveTelemetry, visible: Boolean, gears: Int, modifier: Modifier) {
     val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(600, easing = Hmi.Ease), label = "frame")
     Row(
         modifier
@@ -192,7 +191,7 @@ private fun Cluster(live: LiveTelemetry, visible: Boolean, modifier: Modifier) {
         SpeedPanel(live, Modifier.weight(1f).fillMaxHeight().edgeLine(bottom = false))
         Column(Modifier.width(400.dp).fillMaxHeight()) {
             RpmPanel(live, Modifier.weight(1f).fillMaxWidth().edgeLine())
-            GearPanel(live, Modifier.fillMaxWidth())
+            GearPanel(live, gears, Modifier.fillMaxWidth())
         }
     }
 }
@@ -218,21 +217,25 @@ private fun DrawScope.drawCornerBrackets(introSeconds: Float, phase: Int) {
 
 @Composable
 private fun SpeedPanel(live: LiveTelemetry, modifier: Modifier) {
-    Column(modifier.padding(horizontal = 40.dp, vertical = 36.dp), verticalArrangement = Arrangement.SpaceBetween) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Caption("SPEED · KM/H")
-            Caption("MAX 200")
-        }
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            SpeedReadout(live, Modifier.width(400.dp))
-            Column(Modifier.padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                EconomyLine(live)
-                CoolantLine(live)
+    BoxWithConstraints(modifier) {
+        // The digits shrink from the design's 150 when the panel is squeezed, so they never run into the side readings or the scale.
+        val digitSize = minOf(150f, maxHeight.value * 0.4f, (maxWidth.value - 80f - 20f - 190f) / 2.7f).coerceAtLeast(60f)
+        Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 36.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Caption("SPEED · KM/H")
+                Caption("MAX 200")
             }
-        }
-        SpeedScale({ live.speedFraction }, Modifier.fillMaxWidth().height(44.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            listOf("0", "50", "100", "150", "200").forEach { HText(it, size = 14.sp, color = Hmi.Muted) }
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                SpeedReadout(live, digitSize, Modifier.width((digitSize * 2.7f).dp))
+                Column(Modifier.padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    EconomyLine(live)
+                    CoolantLine(live)
+                }
+            }
+            SpeedScale({ live.speedFraction }, Modifier.fillMaxWidth().height(44.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                listOf("0", "50", "100", "150", "200").forEach { HText(it, size = 14.sp, color = Hmi.Muted) }
+            }
         }
     }
 }
@@ -241,14 +244,14 @@ private fun SpeedPanel(live: LiveTelemetry, modifier: Modifier) {
 private fun LiveTelemetry.hasNoData() = source == DataSource.None && isReady
 
 @Composable
-private fun SpeedReadout(live: LiveTelemetry, modifier: Modifier) {
+private fun SpeedReadout(live: LiveTelemetry, digitSize: Float, modifier: Modifier) {
     HText(
         if (live.hasNoData()) "--" else live.speedKmh.toString(),
         modifier,
-        size = 150.sp,
+        size = digitSize.sp,
         family = Hmi.Display,
-        spacing = (-5).sp,
-        lineHeight = 135.sp,
+        spacing = (-digitSize / 30f).sp,
+        lineHeight = (digitSize * 0.9f).sp,
         maxLines = 1,
         overflow = TextOverflow.Visible,
     )
@@ -334,20 +337,21 @@ private fun RpmSegments(fraction: () -> Float, modifier: Modifier) {
 }
 
 @Composable
-private fun GearPanel(live: LiveTelemetry, modifier: Modifier) {
+private fun GearPanel(live: LiveTelemetry, gears: Int, modifier: Modifier) {
     val selected = live.gearIndex
+    val strip = remember(gears) {
+        listOf(DriveSimulator.GEAR_REVERSE to "R") + (1..gears).map { it to "$it" } + (DriveSimulator.GEAR_NEUTRAL to "N")
+    }
     Column(
         modifier.padding(start = 32.dp, end = 32.dp, top = 24.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Caption("GEAR")
-            Caption(DemoData.GEARBOX)
+            Caption("$gears-SPEED")
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            GEARS.forEachIndexed { index, label ->
-                // The 5-speed Swift has no sixth gear.
-                if (index == 6) return@forEachIndexed
+            strip.forEach { (index, label) ->
                 val on = index == selected
                 val accent = if (index == DriveSimulator.GEAR_REVERSE) Hmi.Red else Hmi.Cyan
                 Box(

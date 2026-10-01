@@ -33,11 +33,13 @@ import com.vivekkaushik.revv.obd.BluetoothAccess
 import com.vivekkaushik.revv.obd.ObdAdapter
 import com.vivekkaushik.revv.system.ExternalApps
 import com.vivekkaushik.revv.system.HomeRole
+import com.vivekkaushik.revv.system.NightMode
 import com.vivekkaushik.revv.ui.hmi.HmiActions
 import com.vivekkaushik.revv.ui.hmi.HmiApp
 import com.vivekkaushik.revv.ui.hmi.HmiRoot
 import com.vivekkaushik.revv.ui.hmi.HmiUiState
 import com.vivekkaushik.revv.ui.hmi.LocalIconProvider
+import com.vivekkaushik.revv.vehicle.CarSetup
 
 class MainActivity : ComponentActivity(), HmiActions {
 
@@ -104,10 +106,12 @@ class MainActivity : ComponentActivity(), HmiActions {
             val recentPlaces by viewModel.recentPlaces.collectAsStateWithLifecycle()
             val obdLog by viewModel.obdLog.collectAsStateWithLifecycle()
             val phone by viewModel.phone.collectAsStateWithLifecycle()
+            val learntGears by viewModel.learntGears.collectAsStateWithLifecycle()
             CompositionLocalProvider(LocalIconProvider provides viewModel.icons) {
                 HmiRoot(
                     state = HmiUiState(
                         apps, nowPlaying, system, settings, screen, obdStatus, adapterChoices, bleScanning, recentPlaces, obdLog, phone,
+                        learntGears,
                     ),
                     obdReadings = viewModel.obdReadings,
                     navigation = viewModel.navigation,
@@ -227,6 +231,18 @@ class MainActivity : ComponentActivity(), HmiActions {
         }
     }
 
+    override fun requestBrightnessAccess() {
+        // Revv's own switch, else the list of apps, for builds that lack the per-app page.
+        val revv = "package:$packageName".toUri()
+        startFirstAvailable(
+            Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, revv),
+            Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, revv),
+        )
+    }
+
+    override fun setNightMode(mode: NightMode) = viewModel.setNightMode(mode)
+
     override fun requestDefaultHome() = askToBeHome(fromTap = true)
 
     private fun askToBeHome(fromTap: Boolean) {
@@ -253,6 +269,9 @@ class MainActivity : ComponentActivity(), HmiActions {
     }
 
     override fun toggleSetting(key: String) = viewModel.toggleSetting(key)
+    override fun clearTroubleCodes() = viewModel.clearTroubleCodes()
+    override fun setChoice(key: String, index: Int) = viewModel.setChoice(key, index)
+    override fun setDisplaySize(percent: Int) = viewModel.setDisplaySize(percent)
 
     override fun changeLevel(key: String, direction: Int) = viewModel.changeLevel(key, direction)
 
@@ -261,6 +280,10 @@ class MainActivity : ComponentActivity(), HmiActions {
     override fun chooseObdAdapter(adapter: ObdAdapter) = viewModel.chooseObdAdapter(adapter)
 
     override fun forgetObdAdapter() = viewModel.forgetObdAdapter()
+
+    override fun updateCar(car: CarSetup) = viewModel.updateCar(car)
+
+    override fun relearnGears() = viewModel.relearnGears()
 
     override fun requestBleScanPermission() = bleScanPermission.launch(BluetoothAccess.scanPermissions())
 

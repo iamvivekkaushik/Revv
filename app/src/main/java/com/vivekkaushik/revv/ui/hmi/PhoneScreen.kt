@@ -78,6 +78,7 @@ fun PhoneScreen(phone: PhoneState, now: LocalDateTime, timeFormat: DateTimeForma
                     modifier = Modifier.size(52.dp),
                     pressedBackground = Hmi.PressedWhite,
                     border = null,
+                    repeatEveryMillis = 70,
                 ) {
                     PathIcon(HmiIcons.BACKSPACE, 28.dp, Hmi.Muted, strokeWidth = 1.8f)
                 }

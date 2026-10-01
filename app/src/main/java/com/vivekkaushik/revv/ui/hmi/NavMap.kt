@@ -180,8 +180,8 @@ fun MapsScreen(
             )
         }
         Column(Modifier.align(Alignment.TopEnd).padding(32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MapButton(onClick = { zoom = (zoom + 1).coerceAtMost(19.0) }) { HText("+", size = 24.sp, spacing = 1.sp) }
-            MapButton(onClick = { zoom = (zoom - 1).coerceAtLeast(4.0) }) { HText("−", size = 24.sp, spacing = 1.sp) }
+            MapButton(onClick = { zoom = (zoom + 1).coerceAtMost(19.0) }, repeatEveryMillis = 350) { HText("+", size = 24.sp, spacing = 1.sp) }
+            MapButton(onClick = { zoom = (zoom - 1).coerceAtLeast(4.0) }, repeatEveryMillis = 350) { HText("−", size = 24.sp, spacing = 1.sp) }
             // Points north as the map turns; a tap puts north back at the top.
             MapButton(onClick = { follow(MapCamera.NorthUp) }) {
                 HText("N", Modifier.graphicsLayer { rotationZ = -bearing.floatValue }, size = 14.sp, color = Hmi.Cyan, spacing = 1.sp)
@@ -406,6 +406,6 @@ private fun ModeButton(text: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MapButton(onClick: () -> Unit, content: @Composable () -> Unit) {
-    Pressable(onClick = onClick, Modifier.size(56.dp), background = Hmi.MapBg.copy(alpha = 0.9f)) { content() }
+private fun MapButton(onClick: () -> Unit, repeatEveryMillis: Long = 0, content: @Composable () -> Unit) {
+    Pressable(onClick = onClick, Modifier.size(56.dp), background = Hmi.MapBg.copy(alpha = 0.9f), repeatEveryMillis = repeatEveryMillis) { content() }
 }

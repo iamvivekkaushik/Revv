@@ -33,11 +33,20 @@ import com.vivekkaushik.revv.phone.PhoneMonitor
 import com.vivekkaushik.revv.phone.PhoneState
 import com.vivekkaushik.revv.settings.HmiSettings
 import com.vivekkaushik.revv.settings.SettingsStore
+import com.vivekkaushik.revv.system.BrightnessScale
 import com.vivekkaushik.revv.system.FirstRun
 import com.vivekkaushik.revv.system.HomeRole
+import com.vivekkaushik.revv.system.NightDimmer
+import com.vivekkaushik.revv.system.NightMode
+import com.vivekkaushik.revv.system.NightSchedule
+import com.vivekkaushik.revv.system.ScreenBrightness
 import com.vivekkaushik.revv.ui.hmi.HmiApp
 import com.vivekkaushik.revv.ui.hmi.ScreenState
 import com.vivekkaushik.revv.ui.hmi.SystemState
+import com.vivekkaushik.revv.vehicle.CarSetup
+import java.time.Duration
+import java.time.Instant
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -61,6 +70,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val bleScanner = BleScanner(application)
     private val navigator = Navigator(application, viewModelScope)
     private val phoneMonitor = PhoneMonitor(application, viewModelScope)
+    private val nightDimmer = NightDimmer(application)
     private val isDebugBuild = application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     val icons: IconProvider = appRepository
@@ -81,6 +91,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val obdStatus: StateFlow<ObdStatus> = obd.status
     val obdReadings: StateFlow<ObdReadings?> = obd.readings
     val obdLog: StateFlow<List<String>> = obd.adapterLog
+    val learntGears: StateFlow<List<Float>> = obd.learntGears
 
     private val pairedAdapters = MutableStateFlow<List<ObdAdapter>>(emptyList())
 
@@ -106,6 +117,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             settings.map { it.isOn(SettingsStore.SAVE_OBD_LOG) }.distinctUntilChanged().collect(obd::saveLogs)
         }
+        // The gear estimate follows the car set up in Settings.
+        viewModelScope.launch {
+            settings.map { it.car }.distinctUntilChanged().collect(obd::setCar)
+        }
         // Stay connected to whichever adapter is chosen, from launch onwards.
         viewModelScope.launch {
             settings.map { it.obdAdapter }.distinctUntilChanged().collect { adapter ->
@@ -120,6 +135,19 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     navigator.setDemoAllowed(demo)
                     navigator.avoidTolls = avoidTolls
                 }
+        }
+        // Sunset dimming goes by the sun where the car is, as GPS has it rather than the demo car.
+        viewModelScope.launch {
+            navigator.state.collect { state -> if (!state.demo) state.fix?.position?.let(nightDimmer::locate) }
+        }
+        // Dims the screen at sunset and brightens it at sunrise, looking again every few minutes in
+        // case the car or the clock has moved meanwhile.
+        viewModelScope.launch {
+            while (true) {
+                val schedule = updateNightDimming()
+                val untilChange = schedule.until?.let { Duration.between(Instant.now(), it).plusSeconds(1) } ?: NIGHT_CHECK
+                delay(untilChange.coerceIn(Duration.ofSeconds(1), NIGHT_CHECK).toMillis())
+            }
         }
     }
 
@@ -144,6 +172,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun refreshSystemState() {
+        // First, so the brightness read below is the one on screen.
+        nightDimmer.update(sunsetDimming())
         _system.value = readSystemState()
         navigator.refreshAccess()
         // Bluetooth access may have been granted from Android's settings while Revv was away.
@@ -164,6 +194,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun chooseObdAdapter(adapter: ObdAdapter) = settingsStore.setObdAdapter(adapter)
 
     fun forgetObdAdapter() = settingsStore.setObdAdapter(null)
+
+    fun updateCar(car: CarSetup) = settingsStore.setCar(car)
+
+    fun relearnGears() = obd.relearnGears()
+
+    fun clearTroubleCodes() = obd.clearTroubleCodes()
 
     fun onBluetoothPermissionResult() {
         refreshSystemState()
@@ -233,6 +269,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun toggleSetting(key: String) = settingsStore.toggle(key)
 
+    /** Saves the chosen option of a list setting such as the date format. */
+    fun setChoice(key: String, index: Int) {
+        if (key == SettingsStore.TIME_FORMAT || key == SettingsStore.DATE_FORMAT) settingsStore.setLevel(key, index.coerceAtLeast(0))
+    }
+
+    fun setDisplaySize(percent: Int) {
+        if (percent in SettingsStore.DISPLAY_SIZES) settingsStore.setLevel(SettingsStore.DISPLAY_SIZE, percent)
+    }
+
     /** Steps a level setting by one notch in [direction] (-1 or 1). */
     fun changeLevel(key: String, direction: Int) {
         if (key == SettingsStore.MEDIA_VOLUME) {
@@ -243,9 +288,35 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             refreshSystemState()
             return
         }
+        if (key == SettingsStore.BRIGHTNESS) {
+            // From the brightness now, which Android's own slider may have moved since Revv looked.
+            val context = getApplication<Application>()
+            ScreenBrightness.set(context, BrightnessScale.step(ScreenBrightness.percent(context), direction))
+            refreshSystemState()
+            return
+        }
         val max = LEVEL_MAX[key] ?: return
         val step = if (max > 50) 10 else 3
         settingsStore.setLevel(key, (settings.value.level(key) + direction * step).coerceIn(0, max))
+    }
+
+    fun setNightMode(mode: NightMode) {
+        ScreenBrightness.setAdaptive(getApplication(), mode == NightMode.LightSensor)
+        settingsStore.setToggle(SettingsStore.SUNSET_DIMMING, mode == NightMode.Sunset)
+        refreshSystemState()
+    }
+
+    /** Whether Auto night mode is dimming by the sun: set to, and Android's light sensor not doing it instead. */
+    private fun sunsetDimming(): Boolean = NightMode.of(
+        lightSensor = ScreenBrightness.isAdaptive(getApplication()),
+        sunset = settings.value.isOn(SettingsStore.SUNSET_DIMMING),
+    ) == NightMode.Sunset
+
+    /** Dims or brightens the screen if the sun has set or risen since Revv last looked. */
+    private fun updateNightDimming(): NightSchedule {
+        val schedule = nightDimmer.update(sunsetDimming())
+        _system.update { it.copy(nightSchedule = schedule, brightness = ScreenBrightness.percent(getApplication())) }
+        return schedule
     }
 
     private fun readSystemState() = SystemState(
@@ -260,10 +331,18 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         locationOn = DeviceLocation.enabled(getApplication()),
         mediaVolume = audio.getStreamVolume(AudioManager.STREAM_MUSIC),
         mediaVolumeMax = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC),
+        brightness = ScreenBrightness.percent(getApplication()),
+        canChangeBrightness = ScreenBrightness.canChange(getApplication()),
+        autoBrightnessAvailable = ScreenBrightness.canAdapt(getApplication()),
+        autoBrightness = ScreenBrightness.isAdaptive(getApplication()),
+        nightSchedule = nightDimmer.schedule(),
     )
 
     private companion object {
         const val ASK_TO_BE_HOME = "ask_to_be_home"
-        val LEVEL_MAX = mapOf(SettingsStore.BRIGHTNESS to 100, SettingsStore.NAV_VOLUME to 30)
+        val LEVEL_MAX = mapOf(SettingsStore.NAV_VOLUME to 30)
+
+        /** How often sunset dimming looks again between sunrise and sunset. */
+        val NIGHT_CHECK: Duration = Duration.ofMinutes(5)
     }
 }

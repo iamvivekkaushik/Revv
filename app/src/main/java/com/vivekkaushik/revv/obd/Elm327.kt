@@ -77,6 +77,14 @@ class Elm327(
     fun readTroubleCodes(): List<String> =
         command("03", SEARCH_TIMEOUT_MILLIS)?.let { ObdResponse.troubleCodes(it, canBus) }.orEmpty()
 
+    /** Codes the car has seen fail once but not yet confirmed, so the check-engine light is still off. */
+    fun readPendingCodes(): List<String> =
+        command("07", SEARCH_TIMEOUT_MILLIS)?.let { ObdResponse.troubleCodes(it, canBus, ObdResponse.PENDING_CODES_REPLY) }.orEmpty()
+
+    /** Erases the stored codes and turns the check-engine light off; true if the car said it did. */
+    fun clearTroubleCodes(): Boolean =
+        command("04", SEARCH_TIMEOUT_MILLIS)?.let(ObdResponse::clearAcknowledged) == true
+
     /**
      * Asks for the supported PIDs on each protocol in turn. Cheap clones often fail their own
      * automatic search on K-line cars (ISO 9141-2 and KWP2000, common on older Indian and Japanese

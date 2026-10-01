@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -85,10 +86,11 @@ fun HmiRoot(state: HmiUiState, obdReadings: StateFlow<ObdReadings?>, navigation:
     val now by rememberCurrentTime()
     val context = LocalContext.current
     val locale = LocalConfiguration.current.locales[0]
-    val is24Hour = DateFormat.is24HourFormat(context)
-    val timeFormat = remember(is24Hour, locale) { DateTimeFormatter.ofPattern(if (is24Hour) "HH:mm" else "h:mm", locale) }
+    val is24Hour = ClockFormats.is24Hour(settings, DateFormat.is24HourFormat(context))
+    val datePattern = ClockFormats.datePattern(settings)
+    val timeFormat = remember(is24Hour, locale) { DateTimeFormatter.ofPattern(ClockFormats.timePattern(is24Hour), locale) }
     val clock = remember(now, timeFormat) { now.format(timeFormat) }
-    val date = remember(now, locale) { now.format(DateTimeFormatter.ofPattern("EEE dd MMM", locale)).uppercase(locale) }
+    val date = remember(now, locale, datePattern) { now.format(DateTimeFormatter.ofPattern(datePattern, locale)).uppercase(locale) }
 
     val ready = ignition.live.isReady
     LaunchedEffect(ready) {
@@ -107,7 +109,7 @@ fun HmiRoot(state: HmiUiState, obdReadings: StateFlow<ObdReadings?>, navigation:
                 .background(Hmi.Black)
                 .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)),
         ) {
-            DesignCanvas {
+            DesignCanvas(sizePercent = settings.displaySize) {
                 HomeScreen(
                     state = state,
                     live = ignition.live,
@@ -126,6 +128,7 @@ fun HmiRoot(state: HmiUiState, obdReadings: StateFlow<ObdReadings?>, navigation:
                 Dock(
                     current = state.screen.app,
                     visible = ready,
+                    vehicleAlert = ignition.live.figures.health == Health.Alert,
                     actions = actions,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 28.dp),
                 )
@@ -189,7 +192,7 @@ private fun DemoCarTicker(live: LiveTelemetry, actions: HmiActions) {
 private const val DEMO_TICK_MILLIS = 1_000L
 
 @Composable
-private fun Dock(current: HmiApp?, visible: Boolean, actions: HmiActions, modifier: Modifier) {
+private fun Dock(current: HmiApp?, visible: Boolean, vehicleAlert: Boolean, actions: HmiActions, modifier: Modifier) {
     Row(
         modifier
             .reveal(visible, 800, 500, riseBy = 40.dp)
@@ -210,9 +213,14 @@ private fun Dock(current: HmiApp?, visible: Boolean, actions: HmiActions, modifi
                 pressedBackground = Hmi.CyanPressed,
                 border = null,
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PathIcon(item.icon, 26.dp, tint)
-                    HText(item.label, size = 13.sp, color = tint, spacing = 2.sp)
+                Box {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PathIcon(item.icon, 26.dp, tint)
+                        HText(item.label, size = 13.sp, color = tint, spacing = 2.sp)
+                    }
+                    if (item == DockItem.Vehicle && vehicleAlert) {
+                        AlertBadge(Modifier.align(Alignment.TopEnd).offset(x = 14.dp, y = (-6).dp), 20.dp)
+                    }
                 }
             }
         }

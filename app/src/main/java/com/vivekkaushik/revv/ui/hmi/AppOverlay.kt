@@ -73,13 +73,13 @@ fun AppOverlay(
             HText(clock, size = 22.sp, weight = FontWeight.Medium)
         }
         // The bottom 120px belong to the dock, which stays on top of every app.
-        Box(Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 112.dp, bottom = 160.dp)) {
+        Box(Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 112.dp, bottom = if (app == HmiApp.Maps) MAPS_BOTTOM_MARGIN else 160.dp)) {
             screens.SaveableStateProvider(app) {
                 when (app) {
                     HmiApp.Phone -> PhoneScreen(state.phone, now, timeFormat, actions)
                     HmiApp.Auto -> AutoScreen(state.phone, state.system.hasBluetoothPermission, actions)
                     HmiApp.Maps -> MapsScreen(state, navigation, timeFormat, actions)
-                    HmiApp.Vehicle -> VehicleScreen(live)
+                    HmiApp.Vehicle -> VehicleScreen(live, state.settings.car, actions)
                     HmiApp.Camera -> CameraScreen(live)
                     HmiApp.Apps -> AppsScreen(state.apps, actions)
                     HmiApp.Settings -> SettingsScreen(state, actions)
@@ -89,6 +89,9 @@ fun AppOverlay(
         }
     }
 }
+
+/** The dock is 78dp tall and sits 28dp up, so this leaves the map a 16dp gap above it. */
+private val MAPS_BOTTOM_MARGIN = 122.dp
 
 @Composable
 private fun StubScreen(name: String, message: String) {

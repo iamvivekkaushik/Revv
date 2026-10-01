@@ -66,6 +66,8 @@ data class ObdStatus(
     val milOn: Boolean = false,
     val troubleCodeCount: Int = 0,
     val troubleCodes: List<String> = emptyList(),
+    /** Faults seen once but not yet confirmed; they do not light the check-engine light. */
+    val pendingCodes: List<String> = emptyList(),
 )
 
 /** The latest live values; null fields weren't reported. Updated several times a second. */
@@ -81,7 +83,7 @@ data class ObdReadings(
     val batteryVolts: Float? = null,
     /** Instantaneous economy; null while stationary or when fuel flow can't be worked out. */
     val kmPerLitre: Float? = null,
-    /** Estimated forward gear, or 0 for neutral / clutch down. */
+    /** Estimated forward gear, 0 for neutral (standing still), or null while the car's gears aren't known. */
     val gear: Int? = null,
     val tripKm: Float = 0f,
     val tripFuelLitres: Float = 0f,

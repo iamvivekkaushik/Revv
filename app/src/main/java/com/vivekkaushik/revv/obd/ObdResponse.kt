@@ -88,11 +88,11 @@ object ObdResponse {
      * Stored trouble codes from a mode 03 reply. CAN replies start with a code count; the older
      * protocols always send three code slots per line, padded with zeros.
      */
-    fun troubleCodes(raw: String, can: Boolean): List<String> {
+    fun troubleCodes(raw: String, can: Boolean, reply: String = STORED_CODES_REPLY): List<String> {
         val codes = mutableListOf<String>()
         for (message in messages(raw)) {
-            if (!message.startsWith("43")) continue
-            var data = bytes(message.substring(2))
+            if (!message.startsWith(reply)) continue
+            var data = bytes(message.substring(reply.length))
             if (can && data.isNotEmpty()) data = data.copyOfRange(1, data.size)
             for (i in 0 until data.size - 1 step 2) {
                 val high = data[i].toInt() and 0xFF
@@ -103,6 +103,9 @@ object ObdResponse {
         return codes.distinct()
     }
 
+    /** Whether the car acknowledged a mode 04 "clear codes" request. */
+    fun clearAcknowledged(raw: String): Boolean = messages(raw).any { it.startsWith(CLEARED_REPLY) }
+
     /** Decodes two bytes into a code like P0171: two bits of system, then four hex digits. */
     fun troubleCode(high: Int, low: Int): String {
         val system = "PCBU"[high shr 6]
@@ -110,6 +113,10 @@ object ObdResponse {
         val secondDigit = (high and 0x0F).toString(16)
         return "$system$firstDigit$secondDigit${hex(low)}".uppercase()
     }
+
+    const val STORED_CODES_REPLY = "43"
+    const val PENDING_CODES_REPLY = "47"
+    private const val CLEARED_REPLY = "44"
 
     fun hex(value: Int): String = value.toString(16).padStart(2, '0').uppercase()
 

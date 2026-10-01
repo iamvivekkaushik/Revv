@@ -40,9 +40,16 @@ data class VehicleFigures(
     val health: Health = Health.Unknown,
     val healthText: String = "NO VEHICLE DATA",
     val troubleCodes: List<String> = emptyList(),
+    /** Faults not yet confirmed; shown as a heads-up only. */
+    val pendingCodes: List<String> = emptyList(),
+    /** Whether there is a check-engine light or fault codes that clearing could erase. */
+    val clearable: Boolean = false,
 ) {
     companion object {
         const val DASH = "--"
+
+        /** A healthy battery reads about 12.4 V at rest and 13.5 V or more while charging. */
+        const val LOW_BATTERY_VOLTS = 12.0f
 
         val Empty = VehicleFigures()
 
@@ -69,11 +76,14 @@ data class VehicleFigures(
             val average = readings.tripAverageKmPerLitre
             val averageText = average?.let(::oneDecimal) ?: DASH
             val codeCount = maxOf(status.troubleCodeCount, status.troubleCodes.size)
-            val alert = status.milOn || codeCount > 0
+            val engineAlert = status.milOn || codeCount > 0
+            val battery = readings.batteryVolts?.let(::oneDecimal) ?: DASH
+            val batteryLow = readings.batteryVolts?.let { it < LOW_BATTERY_VOLTS } == true
+            val alert = engineAlert || batteryLow
             return VehicleFigures(
                 coolant = readings.coolantC?.toString() ?: DASH,
                 intakeAir = readings.intakeAirC?.toString() ?: DASH,
-                battery = readings.batteryVolts?.let(::oneDecimal) ?: DASH,
+                battery = battery,
                 outsideTemperature = readings.ambientC?.let { "$it°C" },
                 outsidePlace = "OUTSIDE",
                 fuelBars = readings.fuelLevel?.let { (it / 10f).roundToInt() } ?: 0,
@@ -91,11 +101,14 @@ data class VehicleFigures(
                 health = if (alert) Health.Alert else Health.Normal,
                 healthText = when {
                     !alert -> "ALL SYSTEMS NORMAL"
+                    !engineAlert -> "LOW BATTERY · $battery V"
                     codeCount == 0 -> "CHECK ENGINE"
                     codeCount == 1 -> "CHECK ENGINE · 1 CODE"
                     else -> "CHECK ENGINE · $codeCount CODES"
                 },
                 troubleCodes = status.troubleCodes,
+                pendingCodes = status.pendingCodes,
+                clearable = engineAlert || status.pendingCodes.isNotEmpty(),
             )
         }
 

@@ -9,6 +9,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -103,6 +112,8 @@ object Hmi {
     const val DESIGN_HEIGHT = 1080f
 }
 
+private const val HOLD_DELAY_MILLIS = 450L
+
 /** Whether taps give haptic feedback (Settings → Sound → Touch feedback). */
 val LocalTouchFeedback = compositionLocalOf { true }
 
@@ -111,9 +122,9 @@ val LocalTouchFeedback = compositionLocalOf { true }
  * over instead of letterboxing, so wide 1920×720 head units still fill the screen.
  */
 @Composable
-fun DesignCanvas(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+fun DesignCanvas(modifier: Modifier = Modifier, sizePercent: Int = 100, content: @Composable BoxScope.() -> Unit) {
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val scale = min(constraints.maxWidth / Hmi.DESIGN_WIDTH, constraints.maxHeight / Hmi.DESIGN_HEIGHT)
+        val scale = min(constraints.maxWidth / Hmi.DESIGN_WIDTH, constraints.maxHeight / Hmi.DESIGN_HEIGHT) * sizePercent / 100f
         CompositionLocalProvider(LocalDensity provides Density(scale, fontScale = 1f)) {
             Box(Modifier.fillMaxSize(), content = content)
         }
@@ -236,9 +247,13 @@ fun Pressable(
     border: Color? = Hmi.LineStrong,
     pressedBorder: Color? = border,
     contentAlignment: Alignment = Alignment.Center,
+    /** When above zero, holding the button repeats the click this often (after a short pause), like a held key. */
+    repeatEveryMillis: Long = 0,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val currentOnClick by rememberUpdatedState(onClick)
+    val scope = rememberCoroutineScope()
     val pressed by interactionSource.collectIsPressedAsState()
     val touchFeedback = LocalTouchFeedback.current
     val view = LocalView.current
@@ -247,14 +262,45 @@ fun Pressable(
         modifier
             .background(if (pressed) pressedBackground else background)
             .then(if (borderColor != null) Modifier.border(1.dp, borderColor) else Modifier)
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = null,
-                role = Role.Button,
-                onLongClick = onLongClick,
-                onClick = {
-                    if (touchFeedback) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                    onClick()
+            .then(
+                if (repeatEveryMillis > 0) {
+                    Modifier
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            this.onClick { currentOnClick(); true }
+                        }
+                        .pointerInput(repeatEveryMillis) {
+                            detectTapGestures(onPress = { offset ->
+                                val press = PressInteraction.Press(offset)
+                                interactionSource.emit(press)
+                                fun fire() {
+                                    if (touchFeedback) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                                    currentOnClick()
+                                }
+                                fire()
+                                val repeating = scope.launch {
+                                    delay(HOLD_DELAY_MILLIS)
+                                    while (true) {
+                                        fire()
+                                        delay(repeatEveryMillis)
+                                    }
+                                }
+                                tryAwaitRelease()
+                                repeating.cancel()
+                                interactionSource.emit(PressInteraction.Release(press))
+                            })
+                        }
+                } else {
+                    Modifier.combinedClickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        role = Role.Button,
+                        onLongClick = onLongClick,
+                        onClick = {
+                            if (touchFeedback) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                            onClick()
+                        },
+                    )
                 },
             ),
         contentAlignment = contentAlignment,

@@ -99,9 +99,9 @@ class DriveSimulator(private val sixSpeed: Boolean = false) {
         const val PHASE_SWEEP = 2
         const val PHASE_READY = 3
 
-        /** Indexes into the gear strip R 1 2 3 4 5 6 N. */
+        /** Positions in the gear strip: R, the forward gears 1 to 8 at their own numbers, then N. */
         const val GEAR_REVERSE = 0
-        const val GEAR_NEUTRAL = 7
+        const val GEAR_NEUTRAL = 9
 
         /** No gear lit: nothing is reporting one. */
         const val GEAR_NONE = -1

@@ -1,5 +1,6 @@
 package com.vivekkaushik.revv.obd
 
+import com.vivekkaushik.revv.vehicle.CarSetup
 import com.vivekkaushik.revv.vehicle.DriveSimulator
 import com.vivekkaushik.revv.vehicle.VehicleProfile
 import kotlin.math.min
@@ -12,9 +13,13 @@ import kotlin.math.roundToInt
 class SimulatedElm327(private val profile: VehicleProfile = VehicleProfile.SWIFT_VXI_2015) : ObdTransport {
 
     private val car = DriveSimulator().apply { ignite(skipSequence = true) }
-    private var lastStepNanos = System.nanoTime()
+    private val startNanos = System.nanoTime()
+    private var lastStepNanos = startNanos
     private var reply: String? = null
     private var searched = false
+
+    /** Codes cleared by the driver stay away until the next two-minute cycle begins. */
+    private var clearedCycle = -1L
 
     override fun send(command: String) {
         Thread.sleep(LATENCY_MILLIS)
@@ -27,10 +32,12 @@ class SimulatedElm327(private val profile: VehicleProfile = VehicleProfile.SWIFT
 
     private fun answer(command: String): String = when {
         command == "ATZ" -> "\r\rELM327 v1.5\r\r"
-        command == "ATRV" -> "14.1V\r\r"
+        command == "ATRV" -> "${if (batteryLow()) "11.4" else "14.1"}V\r\r"
         command == "ATDPN" -> "A6\r\r"
         command.startsWith("AT") -> "OK\r\r"
-        command == "03" -> "4300\r\r"
+        command == "04" -> "44\r\r".also { clearedCycle = cycle() }
+        command == "07" -> if (pending()) "47010420\r\r" else "4700\r\r"
+        command == "03" -> if (faulty()) "430201710301\r\r" else "4300\r\r"
         command.length == 4 && command.startsWith("01") -> {
             val pid = command.substring(2)
             val data = data(pid.toInt(16))
@@ -40,13 +47,26 @@ class SimulatedElm327(private val profile: VehicleProfile = VehicleProfile.SWIFT
         else -> "?\r\r"
     }
 
+    /** The battery sags for half of every minute, so the low-battery warning can be seen without a faulty car. */
+    private fun batteryLow(): Boolean = (System.nanoTime() - startNanos) / 1_000_000_000L % 60 >= 30
+
+    /** Two faults (P0171, P0301) for the second minute of every two, so the codes can be seen on a healthy demo car. */
+    private fun faulty(): Boolean = secondInCycle() >= 60 && cycle() != clearedCycle
+
+    /** An unconfirmed catalytic converter fault (P0420) shows up for the half minute before the real ones. */
+    private fun pending(): Boolean = secondInCycle() in 30..59 && cycle() != clearedCycle
+
+    private fun elapsedSeconds() = (System.nanoTime() - startNanos) / 1_000_000_000L
+    private fun secondInCycle() = elapsedSeconds() % 120
+    private fun cycle() = elapsedSeconds() / 120
+
     private fun data(pid: Int): String? {
         val frame = advance()
         val speed = frame.speedKmh
         val gear = frame.gearIndex
         // Rpm from the gear ratios rather than the demo's own curve, so the gear estimate works.
-        val rpm = if (speed >= 1 && gear in 1..profile.rpmPerKmh.size) {
-            (speed * profile.rpmPerKmh[gear - 1]).roundToInt()
+        val rpm = if (speed >= 1 && gear in 1..GEARING.size) {
+            (speed * GEARING[gear - 1]).roundToInt()
         } else {
             DriveSimulator.IDLE_RPM.roundToInt()
         }
@@ -54,7 +74,7 @@ class SimulatedElm327(private val profile: VehicleProfile = VehicleProfile.SWIFT
             ObdPid.SUPPORTED_01_20 -> "983A8001"
             0x20 -> "00020001"
             0x40 -> "44000000"
-            ObdPid.MONITOR_STATUS -> "00076500"
+            ObdPid.MONITOR_STATUS -> if (faulty()) "82076500" else "00076500"
             ObdPid.ENGINE_LOAD -> byte(frame.engineLoad * 255 / 100)
             ObdPid.COOLANT_TEMP -> byte(90 + 40)
             ObdPid.INTAKE_PRESSURE -> byte(30 + frame.throttle * 7 / 10)
@@ -84,6 +104,9 @@ class SimulatedElm327(private val profile: VehicleProfile = VehicleProfile.SWIFT
     private fun byte(value: Int): String = ObdResponse.hex(value.coerceIn(0, 255))
 
     private companion object {
+        /** The demo drive is a Swift's: rpm per km/h in each of its gears. */
+        val GEARING = CarSetup.SWIFT_VXI_2015.rpmPerKmh()
+
         /** Roughly what a Bluetooth clone on a CAN car takes per command. */
         const val LATENCY_MILLIS = 40L
     }

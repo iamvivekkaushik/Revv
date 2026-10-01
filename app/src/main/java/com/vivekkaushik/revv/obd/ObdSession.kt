@@ -8,12 +8,15 @@ import android.net.Network
 import android.os.Build
 import android.os.SystemClock
 import androidx.core.content.edit
+import com.vivekkaushik.revv.vehicle.CarSetup
 import com.vivekkaushik.revv.vehicle.FuelMath
 import com.vivekkaushik.revv.vehicle.GearEstimator
 import com.vivekkaushik.revv.vehicle.TripComputer
 import com.vivekkaushik.revv.vehicle.VehicleProfile
 import java.io.File
 import java.io.IOException
+import java.util.Locale
+import kotlin.math.round
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,8 +47,20 @@ class ObdSession(
     val readings: StateFlow<ObdReadings?> = _readings.asStateFlow()
 
     private val trip = TripComputer()
-    private val gears = GearEstimator(profile)
     private var job: Job? = null
+
+    /** The car as set up in Settings, which says how to tell its gears. */
+    @Volatile
+    private var car = CarSetup.SWIFT_VXI_2015
+
+    /** The gear estimate for the car connected now. */
+    @Volatile
+    private var gears: GearEstimator? = null
+
+    private val _learntGears = MutableStateFlow<List<Float>>(emptyList())
+
+    /** The gears learnt for the car last connected, rpm per km/h, first gear first. */
+    val learntGears: StateFlow<List<Float>> = _learntGears.asStateFlow()
 
     /** Saved where USB can reach it (Android/data/<app>/files/logs), for drives with no laptop along. */
     private val log = ObdLog(context.getExternalFilesDir(LOG_FOLDER) ?: File(context.filesDir, LOG_FOLDER)).also {
@@ -74,11 +89,31 @@ class ObdSession(
     @Volatile
     private var transport: ObdTransport? = null
 
+    fun setCar(car: CarSetup) {
+        this.car = car
+        gears?.setup = car
+    }
+
+    /** Forgets every car's learnt gears, to learn them afresh. */
+    fun relearnGears() {
+        gears?.forget()
+        protocols.edit { protocols.all.keys.filter { it.startsWith(GEARS_PREFIX) }.forEach(::remove) }
+        _learntGears.value = emptyList()
+    }
+
     /** Connects to [adapter] and stays connected, reconnecting as needed, until [stop]. */
     fun start(adapter: ObdAdapter) {
         stop()
         job = scope.launch(Dispatchers.IO) { keepConnected(adapter) }
     }
+
+    /** Asks the car to erase its fault codes, on the next pass of the polling loop. */
+    fun clearTroubleCodes() {
+        clearRequested = true
+    }
+
+    @Volatile
+    private var clearRequested = false
 
     fun stop() {
         job?.cancel()
@@ -141,8 +176,15 @@ class ObdSession(
                 log.add("Live: ${elm.protocolName ?: "unknown protocol"}, car supports PIDs " + supported.sorted().joinToString(" ") { ObdResponse.hex(it) })
                 _status.value = ObdStatus(ObdLink.Live, adapter.name, protocol = elm.protocolName, endpoint = endpoint)
                 onLive()
+                val gearsKey = gearsKey(elm.protocolNumber, supported)
+                val estimator = GearEstimator(car, savedGears(gearsKey)).also { gears = it }
+                _learntGears.value = rounded(estimator.learnt())
                 polling = true
-                poll(elm, supported)
+                try {
+                    poll(elm, supported, estimator) { keepLearntGears(gearsKey, estimator) }
+                } finally {
+                    keepLearntGears(gearsKey, estimator)
+                }
                 polling = false
                 log.add("The car stopped answering")
                 // The car stopped answering (ignition off). Keep the adapter and wait for it again.
@@ -163,6 +205,25 @@ class ObdSession(
     }
 
     private fun protocolKey(adapter: ObdAdapter) = "protocol.${adapter.kind}.${adapter.address}"
+
+    /** Learnt gears are kept per car, told apart by its protocol and the readings it supports. */
+    private fun gearsKey(protocol: Int?, supported: Set<Int>) =
+        GEARS_PREFIX + "${protocol ?: 0}." + Integer.toHexString(supported.sorted().hashCode())
+
+    private fun savedGears(key: String): List<Float> =
+        protocols.getString(key, null)?.split(',')?.mapNotNull(String::toFloatOrNull).orEmpty()
+
+    /** To a tenth: finer changes aren't worth saving or logging. */
+    private fun rounded(gears: List<Float>) = gears.map { round(it * 10) / 10 }
+
+    /** Saves what's been learnt about the car's gears, and logs it when it changes. */
+    private fun keepLearntGears(key: String, estimator: GearEstimator) {
+        val learnt = rounded(estimator.learnt())
+        if (learnt == _learntGears.value) return
+        protocols.edit { putString(key, learnt.joinToString(",")) }
+        _learntGears.value = learnt
+        log.add("Gears learnt: " + learnt.joinToString(" · ") { String.format(Locale.ROOT, "%.1f", it) } + " rpm per km/h")
+    }
 
     private fun appVersion(): String =
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
@@ -255,8 +316,11 @@ class ObdSession(
         }
     }
 
-    /** Reads speed and rpm every cycle and everything else less often. Returns when the car goes quiet. */
-    private suspend fun poll(elm: Elm327, supported: Set<Int>) {
+    /**
+     * Reads speed and rpm every cycle and everything else less often, estimating the gear with
+     * [estimator]. Returns when the car goes quiet. [everyFewSeconds] runs alongside the log snapshot.
+     */
+    private suspend fun poll(elm: Elm327, supported: Set<Int>, estimator: GearEstimator, everyFewSeconds: () -> Unit) {
         var readings = ObdReadings()
         var cycle = 0
         var misses = 0
@@ -289,7 +353,14 @@ class ObdSession(
                     batteryVolts = elm.readVoltage(),
                 )
             }
-            if (cycle % HEALTH_EVERY == 0) checkHealth(elm)
+            if (clearRequested) {
+                clearRequested = false
+                val cleared = elm.clearTroubleCodes()
+                log.add(if (cleared) "Fault codes cleared" else "The car did not clear its fault codes")
+                checkHealth(elm)
+            } else if (cycle % HEALTH_EVERY == 0) {
+                checkHealth(elm)
+            }
 
             val now = SystemClock.elapsedRealtime()
             val flow = fuelFlow(maf, manifold, rpm, readings.intakeAirC)
@@ -299,7 +370,7 @@ class ObdSession(
                 speedKmh = speed,
                 rpm = rpm,
                 kmPerLitre = if (speed != null && flow != null) FuelMath.kmPerLitre(speed, flow) else null,
-                gear = if (speed != null && rpm != null) gears.estimate(speed, rpm) else null,
+                gear = if (speed != null && rpm != null) estimator.update(speed, rpm, now) else null,
                 tripKm = trip.distanceKm.toFloat(),
                 tripFuelLitres = trip.fuelLitres.toFloat(),
                 tripAverageKmPerLitre = trip.averageKmPerLitre,
@@ -309,6 +380,7 @@ class ObdSession(
             if (now - lastSnapshot >= SNAPSHOT_MILLIS) {
                 lastSnapshot = now
                 log.add(snapshot(readings, maf, manifold))
+                everyFewSeconds()
             }
             cycle++
         }
@@ -335,8 +407,9 @@ class ObdSession(
         val monitor = elm.readPid(ObdPid.MONITOR_STATUS) ?: return
         val count = ObdPid.troubleCodeCount(monitor) ?: 0
         val codes = if (count > 0) elm.readTroubleCodes() else emptyList()
+        val pending = elm.readPendingCodes().filter { it !in codes }
         _status.update {
-            it.copy(milOn = ObdPid.milOn(monitor) == true, troubleCodeCount = count, troubleCodes = codes)
+            it.copy(milOn = ObdPid.milOn(monitor) == true, troubleCodeCount = count, troubleCodes = codes, pendingCodes = pending)
         }
     }
 
@@ -355,6 +428,7 @@ class ObdSession(
         const val ECU_RETRY_MILLIS = 5_000L
         const val PROBE_EVERY = 6
         const val SNAPSHOT_MILLIS = 10_000L
+        const val GEARS_PREFIX = "gears."
         const val LOG_FOLDER = "logs"
 
         /** Adapter replies that mean something went wrong, worth logging even mid-drive. */

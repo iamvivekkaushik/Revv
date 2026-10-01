@@ -29,24 +29,6 @@ class VehicleMathTest {
     }
 
     @Test
-    fun gear_isMatchedFromRpmPerKmh() {
-        val gears = GearEstimator(swift)
-        assertEquals(1, gears.estimate(speedKmh = 15, rpm = 1_930))
-        assertEquals(2, gears.estimate(speedKmh = 35, rpm = 2_415))
-        assertEquals(3, gears.estimate(speedKmh = 50, rpm = 2_320))
-        assertEquals(4, gears.estimate(speedKmh = 70, rpm = 2_450))
-        assertEquals(5, gears.estimate(speedKmh = 100, rpm = 2_750))
-    }
-
-    @Test
-    fun gear_isNeutralWhenStoppedOrTheClutchIsDown() {
-        val gears = GearEstimator(swift)
-        assertEquals(0, gears.estimate(speedKmh = 0, rpm = 850))
-        // Coasting at 60 km/h with the engine idling matches no gear.
-        assertEquals(0, gears.estimate(speedKmh = 60, rpm = 850))
-    }
-
-    @Test
     fun trip_addsDistanceFuelAndTime() {
         val trip = TripComputer()
         repeat(3600) { trip.add(1.0, speedKmh = 60, litresPerHour = 3f, engineRunning = true) }

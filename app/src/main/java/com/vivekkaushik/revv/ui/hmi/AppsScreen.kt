@@ -2,6 +2,8 @@ package com.vivekkaushik.revv.ui.hmi
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -53,7 +55,7 @@ private val CAR_APPS = listOf(
 fun AppsScreen(apps: List<LauncherApp>, actions: HmiActions) {
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         Column(
-            Modifier.weight(1f).fillMaxHeight().border(1.dp, Hmi.Line).padding(24.dp),
+            Modifier.weight(1f).fillMaxHeight().border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Caption("CAR", Modifier.padding(bottom = 6.dp))
