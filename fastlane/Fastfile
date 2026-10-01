@@ -1,0 +1,79 @@
+require "fileutils"
+# FastlaneFolder.path finds this folder whether fastlane runs from the project or from inside it.
+require File.expand_path("changelog", FastlaneCore::FastlaneFolder.path)
+
+default_platform(:android)
+
+platform :android do
+  desc "Run the unit tests"
+  lane :test do
+    gradle(task: ":app:testDebugUnitTest")
+  end
+
+  desc "Build the debug APK (app/build/outputs/apk/debug/app-debug.apk)"
+  lane :debug do
+    gradle(task: ":app:assembleDebug")
+  end
+
+  desc "Run the unit tests, then install the debug build on the connected device (ANDROID_SERIAL picks one)"
+  lane :install do
+    test
+    gradle(task: ":app:installDebug")
+  end
+
+  desc "Build the release APK; signed when REVV_KEYSTORE_PATH and its passwords are set, unsigned otherwise"
+  lane :release do
+    test
+    gradle(task: ":app:assembleRelease")
+  end
+
+  desc "Build the release app bundle (app/build/outputs/bundle/release/app-release.aab)"
+  lane :bundle do
+    test
+    gradle(task: ":app:bundleRelease")
+  end
+
+  desc "CI only: build a signed release from the pushed tag (vMAJOR.MINOR.PATCH) and publish it as a GitHub release"
+  lane :publish do
+    tag = ENV["GITHUB_REF_NAME"].to_s
+    UI.user_error!("GITHUB_REF_NAME is not set; publish runs from the release workflow on a tag push") if tag.empty?
+    parts = tag.match(/\Av(\d+)\.(\d+)\.(\d+)/)
+    UI.user_error!("Tag #{tag} isn't vMAJOR.MINOR.PATCH, e.g. v1.2.0 or v1.2.0-beta.1") unless parts
+    major, minor, patch = parts.captures.map(&:to_i)
+    version_name = tag.delete_prefix("v")
+    version_code = major * 1_000_000 + minor * 1_000 + patch
+
+    keystore = ENV["REVV_KEYSTORE_PATH"].to_s
+    UI.user_error!("No release keystore: set the REVV_KEYSTORE_* secrets so the release is signed") unless File.exist?(keystore)
+
+    test
+    gradle(
+      tasks: [":app:assembleRelease", ":app:bundleRelease"],
+      properties: { "revv.versionName" => version_name, "revv.versionCode" => version_code },
+    )
+
+    # Named after the version, so downloads from different releases don't all read app-release.
+    assets = [
+      lane_context[SharedValues::GRADLE_APK_OUTPUT_PATH],
+      lane_context[SharedValues::GRADLE_AAB_OUTPUT_PATH],
+    ].compact.map do |built|
+      named = File.join(File.dirname(built), "revv-#{version_name}#{File.extname(built)}")
+      FileUtils.cp(built, named)
+      named
+    end
+
+    repository = ENV.fetch("GITHUB_REPOSITORY")
+    notes = RevvChangelog.notes(tag, repository: repository, assets: assets)
+    UI.message("Release notes:\n#{notes}")
+
+    set_github_release(
+      repository_name: repository,
+      api_token: ENV.fetch("GITHUB_TOKEN"),
+      name: "Revv #{version_name}",
+      tag_name: tag,
+      description: notes,
+      is_prerelease: version_name.include?("-"),
+      upload_assets: assets,
+    )
+  end
+end

@@ -1,0 +1,64 @@
+name: Publish release
+
+# Pushing a tag such as v1.2.0 builds a signed release with fastlane and publishes it, with the APK
+# and app bundle attached, as a GitHub release. A tag with a suffix (v1.2.0-beta.1) is a pre-release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The whole history and its tags, for the release notes since the previous tag.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: android-actions/setup-android@v4
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Restore the release keystore
+        env:
+          REVV_KEYSTORE_BASE64: ${{ secrets.REVV_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$REVV_KEYSTORE_BASE64" ]; then
+            echo "::error::Add the REVV_KEYSTORE_BASE64, REVV_KEYSTORE_PASSWORD, REVV_KEY_ALIAS and REVV_KEY_PASSWORD secrets to sign releases."
+            exit 1
+          fi
+          echo "$REVV_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/revv-release.jks"
+          echo "REVV_KEYSTORE_PATH=$RUNNER_TEMP/revv-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build and publish with fastlane
+        run: bundle exec fastlane publish
+        env:
+          REVV_KEYSTORE_PASSWORD: ${{ secrets.REVV_KEYSTORE_PASSWORD }}
+          REVV_KEY_ALIAS: ${{ secrets.REVV_KEY_ALIAS }}
+          REVV_KEY_PASSWORD: ${{ secrets.REVV_KEY_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/revv-release.jks"

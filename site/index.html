@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Revv · Car launcher for Android head units</title>
+  <meta name="description" content="Revv turns an Android head unit into a driver's dashboard: live OBD-II gauges and fault codes, maps and directions, your phone's calls and contacts over Bluetooth, the rear camera and your apps.">
+  <meta name="theme-color" content="#05070a">
+  <meta property="og:title" content="Revv · Car launcher for Android head units">
+  <meta property="og:description" content="Live OBD-II gauges, maps, calls from your phone and your apps, on one home screen built for driving.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./" aria-label="Revv home">
+        <img src="assets/icon.svg" alt="">
+        <span>REVV</span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a class="hide-small" href="#features">Features</a>
+        <a class="hide-small" href="#requirements">Requirements</a>
+        <a href="privacy.html">Privacy</a>
+        <a class="button small" href="https://github.com/iamvivekkaushik/Revv/releases/latest">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div class="wrap">
+        <p class="caption">Car launcher · Android head units</p>
+        <h1>The home screen your head unit should have shipped with.</h1>
+        <p class="lede">Revv replaces your Android head unit's launcher with a dashboard built for driving: live gauges from the engine, maps and directions, calls from your phone, the rear camera and your apps, each one tap away and sized for a glance.</p>
+        <div class="actions">
+          <a class="button solid" href="https://github.com/iamvivekkaushik/Revv/releases/latest">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+            Download the APK
+          </a>
+          <a class="button" href="https://github.com/iamvivekkaushik/Revv">Source on GitHub</a>
+        </div>
+        <p class="meta">Free · Android 9 or newer · No account, no ads, no tracking</p>
+
+        <figure class="hmi" aria-label="Revv's home screen: speed, engine speed and gear, fuel range, now playing, and a map asking where to">
+          <div class="hmi-grid">
+            <div class="hmi-left">
+              <div class="hmi-status">
+                <div><b>18:40</b>FRI 02 OCT</div>
+                <div>28°C OUTSIDE<span class="gap on">BT</span><span class="gap">OBD-II</span><span class="dot"></span></div>
+              </div>
+              <div class="hmi-cluster">
+                <div class="hmi-speed">
+                  <div class="hmi-row"><span>SPEED · KM/H</span><span>MAX 200</span></div>
+                  <div class="hmi-readout">
+                    <span class="big">107</span>
+                    <div class="side">22.5 <span>KM/L</span><br>90 <span>°C COOLANT</span></div>
+                  </div>
+                  <div>
+                    <div class="hmi-scale"></div>
+                    <div class="hmi-scale-bar"></div>
+                    <div class="hmi-scale-labels"><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div>
+                  </div>
+                </div>
+                <div class="hmi-side">
+                  <div class="hmi-rpm">
+                    <div class="hmi-row"><span>RPM ×1000</span><span class="red">RED 6.0</span></div>
+                    <div class="big">2.8</div>
+                    <div class="hmi-segments"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="redline"></i><i class="redline"></i></div>
+                  </div>
+                  <div class="hmi-gears">
+                    <div class="hmi-row"><span>GEAR</span><span>5-SPEED</span></div>
+                    <div class="strip"><span>R</span><span>1</span><span>2</span><span>3</span><span>4</span><span class="on">5</span><span>N</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="hmi-cards">
+                <div class="hmi-card">
+                  <div class="hmi-row"><span>FUEL · RANGE</span></div>
+                  <div class="big">469<span>KM</span></div>
+                  <div class="hmi-bars"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i></i><i></i><i></i><i></i></div>
+                </div>
+                <div class="hmi-card">
+                  <div class="hmi-row"><span>MEDIA</span></div>
+                  <div>
+                    <div class="title">Night Drive</div>
+                    <div class="sub">CITY LIGHTS · RADIO MIX</div>
+                  </div>
+                  <div class="hmi-progress"><i></i></div>
+                </div>
+              </div>
+            </div>
+            <div class="hmi-map">
+              <svg viewBox="0 0 400 450" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+                <g fill="none" stroke="rgba(230,237,243,0.22)" stroke-width="1.2">
+                  <path d="M-20 300 C 80 280, 150 330, 230 300 S 360 250, 420 270"/>
+                  <path d="M60 -10 L 110 470"/>
+                  <path d="M250 -10 C 240 120, 300 200, 290 470"/>
+                  <path d="M-20 150 L 420 120"/>
+                  <path d="M-20 400 L 420 380"/>
+                  <path d="M160 120 L 180 470"/>
+                  <path d="M330 0 L 380 470"/>
+                </g>
+                <g fill="none" stroke="rgba(77,216,255,0.14)" stroke-width="0.8">
+                  <path d="M120 170 h 34 v 26 h -34z M190 200 h 44 v 30 h -44z M270 320 h 40 v 30 h -40z M60 330 h 30 v 40 h -30z M300 150 h 30 v 22 h -30z M200 410 h 50 v 24 h -50z"/>
+                </g>
+                <path d="M175 470 L 168 330 C 165 300, 200 296, 230 300 S 280 284, 300 270" fill="none" stroke="#4dd8ff" stroke-width="3.5" stroke-linecap="round"/>
+                <path d="M171 372 l -9 18 l 9 -5 l 9 5 z" fill="#e6edf3"/>
+              </svg>
+              <div class="hmi-where">
+                <div class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#4dd8ff" stroke-width="1.8"><path d="M10.5 17a6.5 6.5 0 1 1 0-13 6.5 6.5 0 0 1 0 13zM15.5 15.5 21 21"/></svg></div>
+                <div>
+                  <div class="caption">Navigation</div>
+                  <div class="q">WHERE TO?</div>
+                  <div class="hint">Tap to search a place</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="hmi-dock" aria-hidden="true">
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 3h3.5l2 5-2.5 1.6a11 11 0 0 0 6.4 6.4L16 13.5l5 2V19a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2z"/></svg>PHONE</span>
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 11 21 3l-8 18-2-8z"/></svg>MAPS</span>
+            <span class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 11l9-8 9 8M5 10v10h14V10M10 20v-6h4v6"/></svg>HOME</span>
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.5 17a9 9 0 1 1 17 0M12 15l4.5-5M13.6 16a1.6 1.6 0 1 1-3.2 0 1.6 1.6 0 0 1 3.2 0"/></svg>VEHICLE</span>
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>APPS</span>
+          </div>
+        </figure>
+        <p class="hmi-note">Illustration of the home screen with demo figures.</p>
+      </div>
+    </div>
+
+    <section id="features">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="caption">What it does</p>
+          <h2>Everything for the drive, on one screen.</h2>
+          <p>Big targets, high contrast and nothing that needs a second look. Tap a card to go deeper; the dock is always there to come back.</p>
+        </div>
+        <div class="features">
+          <article class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17a9 9 0 1 1 17 0M12 15l4.5-5M13.6 16a1.6 1.6 0 1 1-3.2 0 1.6 1.6 0 0 1 3.2 0"/></svg></div>
+            <h3>LIVE OBD-II GAUGES</h3>
+            <p>Plug a low-cost ELM327 adapter into the car's diagnostic port and the cluster comes alive.</p>
+            <ul>
+              <li>Bluetooth, Bluetooth LE and Wi-Fi adapters</li>
+              <li>Speed, rpm, load, coolant, intake air and battery</li>
+              <li>A gear indicator from your gearbox ratios, or learnt as you drive</li>
+              <li>Fault codes in plain English, pending codes, and clearing them</li>
+              <li>Low battery and check-engine warnings</li>
+            </ul>
+          </article>
+          <article class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 21 3l-8 18-2-8z"/></svg></div>
+            <h3>MAPS AND DIRECTIONS</h3>
+            <p>OpenStreetMap maps drawn in the cluster's own style, with the next turn shown right on the home screen.</p>
+            <ul>
+              <li>Search for places, addresses and areas</li>
+              <li>Turn-by-turn routes, with tolls avoided if you like</li>
+              <li>North-up or heading-up, and your recent places</li>
+            </ul>
+          </article>
+          <article class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h3.5l2 5-2.5 1.6a11 11 0 0 0 6.4 6.4L16 13.5l5 2V19a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2z"/></svg></div>
+            <h3>YOUR PHONE, OVER BLUETOOTH</h3>
+            <p>Revv reads the paired phone's calls and contacts the way a car kit does, and has the phone place calls for you.</p>
+            <ul>
+              <li>Recent calls, favourites and contacts with A–Z quick scroll</li>
+              <li>A T9 dialer that finds people as you type</li>
+              <li>A call bar with an end-call button while you talk</li>
+            </ul>
+          </article>
+          <article class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h2l2-2h6l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0"/></svg></div>
+            <h3>REAR CAMERA</h3>
+            <p>The head unit's own camera, live, with parking guide lines over the picture.</p>
+            <ul>
+              <li>Picks a USB or external camera first</li>
+              <li>Rotate the picture and switch cameras</li>
+              <li>Guide lines on or off</li>
+            </ul>
+          </article>
+          <article class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></div>
+            <h3>APPS AND PROJECTION</h3>
+            <p>Every installed app is a tap away, and phone projection starts from its own screen.</p>
+            <ul>
+              <li>Start Android Auto, or the projection app you choose</li>
+              <li>Now playing from your music app on the home screen</li>
+              <li>Turn the fuel card into a shortcut to any app</li>
+            </ul>
+          </article>
+          <article class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></div>
+            <h3>MADE FOR YOUR CAR</h3>
+            <p>Set it up once for your car and your screen, then forget about it.</p>
+            <ul>
+              <li>Choose which cards and panels the home screen shows</li>
+              <li>Display size from 80% to 130%, date and time formats</li>
+              <li>Dims at sunset or with the light sensor</li>
+              <li>Tap, dialer and keyboard sounds, each on or off</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="requirements">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="caption">Before you install</p>
+          <h2>What you need.</h2>
+        </div>
+        <div class="facts">
+          <div class="fact">
+            <p class="caption">Android</p>
+            <div class="value">9 or newer</div>
+            <p>Built for landscape head units, from 16:9 screens to wide 1920×720 ones.</p>
+          </div>
+          <div class="fact">
+            <p class="caption">OBD-II</p>
+            <div class="value">ELM327</div>
+            <p>Optional. Without an adapter, a demo drive shows what the gauges do. OBD-II support is new: tell us how it goes with your adapter and car.</p>
+          </div>
+          <div class="fact">
+            <p class="caption">Phone</p>
+            <div class="value">Bluetooth</div>
+            <p>Pair your phone with the head unit and allow it to share contacts and call history.</p>
+          </div>
+          <div class="fact">
+            <p class="caption">Internet</p>
+            <div class="value">For maps</div>
+            <p>Map tiles, routes and place search come from online OpenStreetMap services.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="wrap">
+        <div class="panel">
+          <div>
+            <h2>Give your head unit a proper home screen.</h2>
+            <p>Install the APK on the head unit, then pick Revv when Android asks which app should be the home app.</p>
+          </div>
+          <a class="button solid" href="https://github.com/iamvivekkaushik/Revv/releases/latest">Download the APK</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <span>Revv · Made by Vivek Kaushik</span>
+      <nav aria-label="Footer">
+        <a href="privacy.html">Privacy policy</a>
+        <a href="https://github.com/iamvivekkaushik/Revv/releases">Releases</a>
+        <a href="https://github.com/iamvivekkaushik/Revv/issues">Report a problem</a>
+        <a href="https://github.com/iamvivekkaushik/Revv">GitHub</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

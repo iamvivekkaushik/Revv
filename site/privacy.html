@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy policy · Revv</title>
+  <meta name="description" content="What Revv, the car launcher for Android head units, reads, keeps on the head unit, and sends to the online map services it uses.">
+  <meta name="theme-color" content="#05070a">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./" aria-label="Revv home">
+        <img src="assets/icon.svg" alt="">
+        <span>REVV</span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a class="hide-small" href="./#features">Features</a>
+        <a href="privacy.html" aria-current="page">Privacy</a>
+        <a class="button small" href="https://github.com/iamvivekkaushik/Revv/releases/latest">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="policy">
+    <div class="wrap">
+      <p class="caption">Revv for Android</p>
+      <h1>Privacy policy</h1>
+      <p class="effective">Effective 2 October 2026</p>
+
+      <div class="summary">
+        <strong>In short</strong>
+        <ul>
+          <li>Revv has no accounts, no ads, no analytics and no tracking, and there is no Revv server.</li>
+          <li>Your phone's calls and contacts, your car's readings and the camera picture stay on the head unit.</li>
+          <li>To show maps, plan routes and search for places, Revv asks public OpenStreetMap services, which see the map area, the route's start and end, or what you searched for.</li>
+          <li>Nothing is sold or shared for advertising.</li>
+        </ul>
+      </div>
+
+      <p>This policy covers the Revv app ("Revv", "the app") for Android head units, made by Vivek Kaushik. It explains what the app reads, what it keeps on the head unit, and what leaves it.</p>
+
+      <h2>What Revv reads, and why</h2>
+
+      <h3>Your phone, over Bluetooth</h3>
+      <p>When you pair a phone with the head unit and allow it to share contacts and call history, Revv reads the phone's <strong>call history, favourites and contacts</strong> (names and phone numbers) over Bluetooth, the way a car kit does. It uses them to show recent calls, favourites and the contact list, and to find people as you type in the dialer.</p>
+      <p>When you call someone from Revv, it asks the phone over Bluetooth to dial the number, and follows the call so it can show how it is going and let you end it.</p>
+      <p>The calls and contacts are held in memory only and are read again from the phone when needed. Revv remembers just which phone it read last (its Bluetooth address), so it can read the same phone next time. It also reads the phone's name, battery level and connection state to show them.</p>
+
+      <h3>Your car, over OBD-II</h3>
+      <p>If you set up an OBD-II adapter, Revv reads <strong>vehicle data</strong> from it: speed, engine speed, engine load, throttle, temperatures, fuel level, battery voltage, the check-engine light and fault codes. It uses them for the gauges, the gear indicator, trip figures and warnings. If you ask, it also tells the car to clear its fault codes.</p>
+      <p>Revv keeps the gear ratios it learns and the protocol each adapter uses. If "Save adapter logs" is on, it writes one log file a day of what the adapter replied, for troubleshooting, and keeps the latest 14 days.</p>
+
+      <h3>Location</h3>
+      <p>With your permission, Revv uses the head unit's <strong>location</strong> to show the car on the map, give turn-by-turn directions and rank nearby search results. For dimming the screen at sunset, it keeps an approximate position, rounded to about 10 km, to work out sunset on the head unit itself.</p>
+
+      <h3>Camera</h3>
+      <p>The Rear Cam screen shows the head unit's camera live, with your permission. The picture is shown only while that screen is open and is never recorded, saved or sent anywhere.</p>
+
+      <h3>Media and notifications</h3>
+      <p>If you allow media access (Android's notification access), Revv sees what your music or media app is playing so it can show it and control playback. It does not read, keep or send other notifications.</p>
+
+      <h3>Screen brightness and system settings</h3>
+      <p>If you allow it, Revv changes the screen's brightness and adaptive-brightness setting from its Display settings and for night dimming.</p>
+
+      <h2>What leaves the head unit</h2>
+      <p>Revv sends nothing to its developer. To show maps, it uses these public services over the internet, which, like any website, also see the head unit's IP address:</p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Service</th><th>Used for</th><th>What it receives</th></tr>
+          </thead>
+          <tbody>
+            <tr><td data-label="Service"><a href="https://openfreemap.org">OpenFreeMap</a></td><td data-label="Used for">Map tiles and map lettering</td><td data-label="What it receives">Requests for the parts of the map on screen, which show roughly where the map is looking</td></tr>
+            <tr><td data-label="Service"><a href="https://valhalla1.openstreetmap.de">Valhalla on openstreetmap.de</a> (FOSSGIS)</td><td data-label="Used for">Planning routes</td><td data-label="What it receives">The route's start (your position and heading), its destination, and whether to avoid tolls</td></tr>
+            <tr><td data-label="Service"><a href="https://photon.komoot.io">Photon</a> (komoot)</td><td data-label="Used for">Searching for places</td><td data-label="What it receives">What you type in the search, and your approximate position to rank results nearby</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>These services are run by others under their own privacy policies. Revv does not send them your name, phone contacts, call history, vehicle data or camera picture.</p>
+      <p>Bluetooth and Wi-Fi connections to your phone and OBD-II adapter are direct, local links; they do not go through the internet.</p>
+
+      <h2>What is kept on the head unit</h2>
+      <ul>
+        <li>Your settings, including the car's details, the chosen adapter and apps for the fuel widget and projection</li>
+        <li>Up to six recent places you navigated to</li>
+        <li>The Bluetooth address of the phone read last</li>
+        <li>Learnt gear ratios and adapter protocols</li>
+        <li>An approximate position for sunset times, rounded to about 10 km</li>
+        <li>Adapter logs for up to 14 days, if "Save adapter logs" is on</li>
+      </ul>
+      <p>All of it stays in Revv's own storage on the head unit. If the head unit's Android backup is turned on, Android may include Revv's settings and recent places in that backup, under the terms of the backup service you use.</p>
+
+      <h2>Permissions</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Permission</th><th>Why Revv asks</th></tr></thead>
+          <tbody>
+            <tr><td data-label="Permission">Nearby devices (Bluetooth)</td><td data-label="Why Revv asks">Reading the paired phone, placing calls through it, and connecting to Bluetooth OBD-II adapters</td></tr>
+            <tr><td data-label="Permission">Location</td><td data-label="Why Revv asks">The car on the map, directions, nearby search results and sunset dimming; before Android 12, also needed to find Bluetooth LE adapters</td></tr>
+            <tr><td data-label="Permission">Camera</td><td data-label="Why Revv asks">The live rear camera picture</td></tr>
+            <tr><td data-label="Permission">Internet and network state</td><td data-label="Why Revv asks">Map tiles, routes and place search; Wi-Fi OBD-II adapters</td></tr>
+            <tr><td data-label="Permission">Modify system settings</td><td data-label="Why Revv asks">Screen brightness and night dimming</td></tr>
+            <tr><td data-label="Permission">Notification access</td><td data-label="Why Revv asks">What is playing in your media app</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>You can refuse or withdraw any of these in Android's settings; the matching feature then stops working and the rest of Revv carries on.</p>
+
+      <h2>Your choices</h2>
+      <ul>
+        <li>Clear recent places from Settings › Navigation.</li>
+        <li>Turn off "Save adapter logs" in Settings › Vehicle.</li>
+        <li>Stop sharing contacts and call history in the phone's Bluetooth settings for the head unit.</li>
+        <li>Clear Revv's storage in Android's app settings, or uninstall Revv, to remove everything it keeps.</li>
+      </ul>
+
+      <h2>Children</h2>
+      <p>Revv is a car launcher meant for drivers and is not directed at children.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>If Revv starts handling data differently, this page will be updated and its effective date changed. Significant changes will also be noted in the release notes.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about privacy or this policy can be raised on <a href="https://github.com/iamvivekkaushik/Revv/issues">Revv's GitHub issues</a>.</p>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <span>Revv · Made by Vivek Kaushik</span>
+      <nav aria-label="Footer">
+        <a href="./">Home</a>
+        <a href="https://github.com/iamvivekkaushik/Revv/releases">Releases</a>
+        <a href="https://github.com/iamvivekkaushik/Revv/issues">Report a problem</a>
+        <a href="https://github.com/iamvivekkaushik/Revv">GitHub</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>
