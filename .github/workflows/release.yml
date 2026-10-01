@@ -2,6 +2,11 @@ name: Publish release
 
 # Pushing a tag such as v1.2.0 builds a signed release with fastlane and publishes it, with the APK
 # and app bundle attached, as a GitHub release. A tag with a suffix (v1.2.0-beta.1) is a pre-release.
+#
+# With a PLAY_STORE_JSON_KEY secret set, the app bundle also goes to Google Play: the internal track
+# unless the PLAY_TRACK repository variable says otherwise (alpha, beta or production), released
+# straight away unless PLAY_RELEASE_STATUS is draft. Pre-releases stay off Play, since a beta and its
+# final release share a version code and Play takes each code only once.
 on:
   push:
     tags: ["v*"]
@@ -58,6 +63,34 @@ jobs:
           REVV_KEY_ALIAS: ${{ secrets.REVV_KEY_ALIAS }}
           REVV_KEY_PASSWORD: ${{ secrets.REVV_KEY_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check whether to upload to Google Play
+        id: play
+        env:
+          PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "$PLAY_STORE_JSON_KEY" ]; then
+            echo "No PLAY_STORE_JSON_KEY secret, so this release stays off Google Play."
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$TAG" == *-* ]]; then
+            echo "$TAG is a pre-release, so it stays off Google Play."
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Gradle finds the bundle already built for the GitHub release, so this mostly just uploads.
+      - name: Upload to Google Play with fastlane
+        if: steps.play.outputs.upload == 'true'
+        run: bundle exec fastlane play track:"$PLAY_TRACK" status:"$PLAY_RELEASE_STATUS"
+        env:
+          PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
+          PLAY_TRACK: ${{ vars.PLAY_TRACK || 'internal' }}
+          PLAY_RELEASE_STATUS: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
+          REVV_KEYSTORE_PASSWORD: ${{ secrets.REVV_KEYSTORE_PASSWORD }}
+          REVV_KEY_ALIAS: ${{ secrets.REVV_KEY_ALIAS }}
+          REVV_KEY_PASSWORD: ${{ secrets.REVV_KEY_PASSWORD }}
 
       - name: Remove the keystore
         if: always()

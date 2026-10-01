@@ -1,6 +1,7 @@
 require "fileutils"
 # FastlaneFolder.path finds this folder whether fastlane runs from the project or from inside it.
 require File.expand_path("changelog", FastlaneCore::FastlaneFolder.path)
+require File.expand_path("version", FastlaneCore::FastlaneFolder.path)
 
 default_platform(:android)
 
@@ -37,27 +38,16 @@ platform :android do
   lane :publish do
     tag = ENV["GITHUB_REF_NAME"].to_s
     UI.user_error!("GITHUB_REF_NAME is not set; publish runs from the release workflow on a tag push") if tag.empty?
-    parts = tag.match(/\Av(\d+)\.(\d+)\.(\d+)/)
-    UI.user_error!("Tag #{tag} isn't vMAJOR.MINOR.PATCH, e.g. v1.2.0 or v1.2.0-beta.1") unless parts
-    major, minor, patch = parts.captures.map(&:to_i)
-    version_name = tag.delete_prefix("v")
-    version_code = major * 1_000_000 + minor * 1_000 + patch
+    version = release_version(tag: tag)
 
-    keystore = ENV["REVV_KEYSTORE_PATH"].to_s
-    UI.user_error!("No release keystore: set the REVV_KEYSTORE_* secrets so the release is signed") unless File.exist?(keystore)
-
-    test
-    gradle(
-      tasks: [":app:assembleRelease", ":app:bundleRelease"],
-      properties: { "revv.versionName" => version_name, "revv.versionCode" => version_code },
-    )
+    signed_build(version: version, tasks: [":app:assembleRelease", ":app:bundleRelease"])
 
     # Named after the version, so downloads from different releases don't all read app-release.
     assets = [
       lane_context[SharedValues::GRADLE_APK_OUTPUT_PATH],
       lane_context[SharedValues::GRADLE_AAB_OUTPUT_PATH],
     ].compact.map do |built|
-      named = File.join(File.dirname(built), "revv-#{version_name}#{File.extname(built)}")
+      named = File.join(File.dirname(built), "revv-#{version[:name]}#{File.extname(built)}")
       FileUtils.cp(built, named)
       named
     end
@@ -69,11 +59,87 @@ platform :android do
     set_github_release(
       repository_name: repository,
       api_token: ENV.fetch("GITHUB_TOKEN"),
-      name: "Revv #{version_name}",
+      name: "Revv #{version[:name]}",
       tag_name: tag,
       description: notes,
-      is_prerelease: version_name.include?("-"),
+      is_prerelease: version[:prerelease],
       upload_assets: assets,
     )
   end
+
+  desc "Upload the Play Store listing from fastlane/metadata/android: title, descriptions, icon, feature graphic and screenshots. No build"
+  lane :listing do
+    upload_to_play_store(
+      **play_key,
+      metadata_path: metadata_path,
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_changelogs: true,
+    )
+  end
+
+  desc "Build the signed app bundle and upload it to a Play track. Options: version:1.2.0 (else the pushed tag), " \
+       "track:internal|alpha|beta|production (internal), status:completed|draft (completed; draft until the app's first review)"
+  lane :play do |options|
+    tag = options[:version] ? "v#{options[:version].to_s.delete_prefix('v')}" : ENV["GITHUB_REF_NAME"].to_s
+    UI.user_error!("Pass version:1.2.0, or run on a tag push") if tag.empty?
+    version = release_version(tag: tag)
+    key = play_key
+
+    signed_build(version: version, tasks: [":app:bundleRelease"])
+
+    # Play's "What's new" for this version code: the commits since the previous tag when the tag
+    # exists, else changelogs/default.txt. Written for the upload only.
+    changelog = File.join(metadata_path, "en-US", "changelogs", "#{version[:code]}.txt")
+    tagged = system("git", "rev-parse", "-q", "--verify", "refs/tags/#{tag}", out: File::NULL)
+    # A changelog already kept for this version wins over the generated one.
+    written = tagged && !File.exist?(changelog)
+    File.write(changelog, RevvChangelog.play_notes(tag)) if written
+
+    begin
+      upload_to_play_store(
+        **key,
+        track: (options[:track] || "internal").to_s,
+        release_status: (options[:status] || "completed").to_s,
+        aab: lane_context[SharedValues::GRADLE_AAB_OUTPUT_PATH],
+        metadata_path: metadata_path,
+        skip_upload_apk: true,
+        skip_upload_metadata: true,
+        skip_upload_images: true,
+        skip_upload_screenshots: true,
+      )
+    ensure
+      FileUtils.rm_f(changelog) if written
+    end
+  end
+
+  # { name:, code:, prerelease: } from a vMAJOR.MINOR.PATCH tag.
+  private_lane :release_version do |options|
+    RevvVersion.from_tag(options[:tag]) ||
+      UI.user_error!("#{options[:tag]} isn't vMAJOR.MINOR.PATCH, e.g. v1.2.0 or v1.2.0-beta.1")
+  end
+
+  # Runs the tests, then [tasks] signed with the release keystore and versioned as [version].
+  private_lane :signed_build do |options|
+    keystore = ENV["REVV_KEYSTORE_PATH"].to_s
+    UI.user_error!("No release keystore: set REVV_KEYSTORE_PATH and its passwords (the REVV_KEYSTORE_* secrets in CI)") unless File.exist?(keystore)
+    test
+    gradle(
+      tasks: options[:tasks],
+      properties: { "revv.versionName" => options[:version][:name], "revv.versionCode" => options[:version][:code] },
+    )
+  end
+end
+
+# The Play service account's key: its JSON in PLAY_STORE_JSON_KEY (as in CI), or a file at PLAY_STORE_JSON_KEY_PATH.
+def play_key
+  data = ENV["PLAY_STORE_JSON_KEY"].to_s
+  return { json_key_data: data } unless data.strip.empty?
+  path = ENV["PLAY_STORE_JSON_KEY_PATH"].to_s
+  return { json_key: path } if File.exist?(path)
+  UI.user_error!("No Play key: set PLAY_STORE_JSON_KEY to a service account's JSON key, or PLAY_STORE_JSON_KEY_PATH to its file")
+end
+
+def metadata_path
+  File.expand_path("metadata/android", FastlaneCore::FastlaneFolder.path)
 end

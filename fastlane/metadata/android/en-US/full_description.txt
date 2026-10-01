@@ -1,0 +1,49 @@
+Revv replaces your Android head unit's launcher with a home screen built for driving. Live gauges from the engine, maps and directions, calls from your phone, the rear camera and your apps sit on one screen, each a tap away and sized for a glance.
+
+LIVE OBD-II GAUGES
+Plug a low-cost ELM327 adapter into your car's diagnostic port and the cluster comes alive.
+• Works with Bluetooth, Bluetooth LE and Wi-Fi ELM327 adapters
+• Speed, engine speed, engine load, throttle, coolant, intake air and battery voltage
+• A gear indicator worked out from your gearbox ratios, or learnt as you drive
+• Fault codes explained in plain English, pending codes, and clearing them once a fault is fixed
+• Low battery and check-engine warnings, with a badge on the dock
+• No adapter yet? A demo drive shows what every gauge does
+
+MAPS AND DIRECTIONS
+• OpenStreetMap maps drawn in the cluster's own style
+• Search for places, addresses and areas
+• Turn-by-turn routes, with the next turn shown right on the home screen
+• Avoid tolls, north-up or heading-up, and your recent places
+
+YOUR PHONE, OVER BLUETOOTH
+Pair your phone with the head unit and Revv works like a car kit.
+• Recent calls, favourites and your contacts, with A–Z quick scroll
+• A T9 dialer that finds people as you type
+• Calls placed through your phone, with a call bar and an end-call button
+
+REAR CAMERA
+• The head unit's own camera, live, with parking guide lines
+• Picks a USB or external camera first; rotate the picture and switch cameras
+
+APPS AND PROJECTION
+• Every installed app, one tap from the dock
+• Start Android Auto, or the projection app you choose
+• See and control what your music app is playing
+
+MADE FOR YOUR CAR
+• Choose which cards and panels the home screen shows
+• Turn the fuel card into a shortcut to any app
+• Display size from 80% to 130%, date and time formats
+• Dims at sunset or with the light sensor
+• Big touch targets, with tap, dialer and keyboard sounds you can switch off
+
+PRIVATE BY DESIGN
+No account, no ads, no analytics. Your calls, contacts, car data and camera picture stay on the head unit. Maps, routes and place search use public OpenStreetMap services.
+
+GOOD TO KNOW
+• Needs Android 9 or newer and a landscape screen
+• Make Revv your home app when Android asks, so the home button brings it back
+• Set it up while parked, and keep your eyes on the road while driving
+• OBD-II support is new: let us know how it works with your adapter and car
+
+Privacy policy: https://iamvivekkaushik.github.io/Revv/privacy.html

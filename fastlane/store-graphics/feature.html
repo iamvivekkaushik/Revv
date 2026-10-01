@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- Play Store feature graphic, 1024×500. Rendered to ../metadata/android/en-US/images/featureGraphic.png by render.sh. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Michroma"; src: url("../../site/assets/fonts/michroma_regular.ttf"); }
+  @font-face { font-family: "JetBrains Mono"; src: url("../../site/assets/fonts/jetbrains_mono_regular.ttf"); }
+  html, body { margin: 0; width: 1024px; height: 500px; overflow: hidden; }
+  body {
+    position: relative;
+    background-color: #05070a;
+    background-image:
+      radial-gradient(ellipse 60% 80% at 75% 50%, rgba(77, 216, 255, 0.10), transparent 70%),
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: auto, 32px 32px, 32px 32px;
+    color: #e6edf3;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .text { position: absolute; left: 60px; top: 0; bottom: 0; width: 360px; display: flex; flex-direction: column; justify-content: center; }
+  .brand { display: flex; align-items: center; gap: 18px; }
+  .brand img { width: 76px; height: 76px; border-radius: 16px; }
+  .brand span { font-family: "Michroma"; font-size: 48px; letter-spacing: 0.1em; }
+  h1 { font-family: "Michroma"; font-weight: 400; font-size: 25px; line-height: 1.35; margin: 34px 0 0; }
+  p { margin: 20px 0 0; font-size: 14px; letter-spacing: 0.16em; color: #8d99a5; text-transform: uppercase; line-height: 1.7; }
+  p b { color: #4dd8ff; font-weight: 400; }
+  .screen {
+    position: absolute; left: 448px; top: 70px; width: 640px; height: 360px;
+    border: 1px solid rgba(77, 216, 255, 0.55);
+    box-shadow: 0 0 0 6px rgba(5, 7, 10, 0.9), 0 30px 80px rgba(77, 216, 255, 0.18);
+    background: url("../metadata/android/en-US/images/phoneScreenshots/1_home.png") left top / cover;
+  }
+  .corner { position: absolute; width: 22px; height: 22px; border: 2px solid #4dd8ff; }
+  .corner.tl { left: 436px; top: 58px; border-width: 2px 0 0 2px; }
+  .corner.bl { left: 436px; top: 420px; border-width: 0 0 2px 2px; }
+</style>
+</head>
+<body>
+  <div class="text">
+    <div class="brand"><img src="icon.svg" alt=""><span>REVV</span></div>
+    <h1>The home screen your head unit should have shipped with.</h1>
+    <p>Live OBD-II <b>·</b> Maps <b>·</b> Calls<br>Rear camera <b>·</b> Your apps</p>
+  </div>
+  <div class="screen"></div>
+  <div class="corner tl"></div>
+  <div class="corner bl"></div>
+</body>
+</html>

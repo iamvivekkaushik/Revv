@@ -21,6 +21,23 @@ module RevvChangelog
     raw.split("\x1e").map(&:strip).reject(&:empty?).map { |commit| commit.split("\x1f", 3) }
   end
 
+  # Google Play's "What's new" for [tag]: the subjects of the commits since the previous tag, cut
+  # at whole lines to fit Play's 500 characters.
+  def play_notes(tag, limit: 500)
+    previous = previous_tag(tag)
+    subjects = commits(previous ? "#{previous}..#{tag}" : tag).map { |_, subject, _| "• #{subject.strip}" }
+    return "Bug fixes and improvements." if subjects.empty?
+    more = "• …and more"
+    kept = []
+    subjects.each do |line|
+      reserve = kept.size + 1 < subjects.size ? more.length + 1 : 0
+      break if (kept + [line]).join("\n").length + reserve > limit
+      kept << line
+    end
+    kept << more if kept.size < subjects.size
+    kept.join("\n")
+  end
+
   # Markdown for the release of [tag]; [assets] are the files attached to it.
   def notes(tag, repository: nil, assets: [])
     previous = previous_tag(tag)
