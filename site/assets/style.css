@@ -127,7 +127,8 @@ h3 { font-size: 16px; letter-spacing: 0.04em; }
 
 .hero { padding: clamp(48px, 9vw, 110px) 0 clamp(40px, 6vw, 72px); }
 .hero .lede { max-width: 640px; margin: 24px 0 0; color: var(--muted); font-size: clamp(16px, 1.6vw, 18px); }
-.hero .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.hero .actions { margin-top: 36px; }
 .hero .meta { margin-top: 18px; font-size: 13px; color: var(--muted); }
 
 /* The HMI, drawn in HTML: a scaled-down home screen with demo figures. */
