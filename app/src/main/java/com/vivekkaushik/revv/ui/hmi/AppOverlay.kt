@@ -148,7 +148,7 @@ private fun AutoScreen(state: HmiUiState, actions: HmiActions) {
         }
         return
     }
-    // With the Revv CarPlay companion installed, CarPlay itself runs inside this screen.
+    // With the RevvCarPlay companion installed, CarPlay itself runs inside this screen.
     val carPlay = state.carPlay
     if (carPlay != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         CarPlayAutoScreen(carPlay, actions, wide = state.settings.isOn(SettingsStore.CARPLAY_WIDE), projectionLabel = chosen?.label, onChooseApp = { choosingApp = true })

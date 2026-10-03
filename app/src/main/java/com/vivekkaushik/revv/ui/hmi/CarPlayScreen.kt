@@ -36,7 +36,7 @@ import com.vivekkaushik.revv.system.CarPlayCompanion
 import com.vivekkaushik.revv.system.CarPlayCompanion.State
 
 /**
- * The Auto screen when Revv CarPlay is installed. CarPlay itself fills the left panel, inside
+ * The Auto screen when RevvCarPlay is installed. CarPlay itself fills the left panel, inside
  * Revv's chrome, and the right column holds its status, controls and the Android Auto shortcut;
  * with [wide] on, CarPlay takes the whole screen and the controls move to Settings › CarPlay.
  * The gear to the companion's settings sits in the overlay header, beside the clock.
@@ -140,9 +140,9 @@ private fun BoxScope.Cover(state: State) {
 }
 
 internal fun State.headline(): String = when (this) {
-    State.Unavailable -> "Revv CarPlay not available"
-    State.Connecting -> "Reaching Revv CarPlay…"
-    is State.Refused -> "Revv CarPlay declined"
+    State.Unavailable -> "RevvCarPlay not available"
+    State.Connecting -> "Reaching RevvCarPlay…"
+    is State.Refused -> "RevvCarPlay declined"
     is State.Session -> when (phase) {
         CarPlayCompanion.PHASE_SETUP_REQUIRED -> "One-time setup"
         CarPlayCompanion.PHASE_IDLE -> "CarPlay is off"
@@ -156,7 +156,7 @@ internal fun State.headline(): String = when (this) {
 }
 
 internal fun State.explanation(): String = when (this) {
-    State.Unavailable -> "Install the Revv CarPlay companion app, Android 11 or newer."
+    State.Unavailable -> "Install the RevvCarPlay companion app, Android 11 or newer."
     State.Connecting -> "Binding to the companion app."
     is State.Refused -> when (error) {
         "unsupported" -> "This head unit runs Android 10 or older; the companion needs Android 11."
@@ -165,10 +165,10 @@ internal fun State.explanation(): String = when (this) {
     is State.Session -> when (phase) {
         CarPlayCompanion.PHASE_SETUP_REQUIRED -> missing.joinToString(" ") {
             when (it) {
-                CarPlayCompanion.SETUP_IDENTITY -> "Import your CarPlay identity files in Revv CarPlay."
-                CarPlayCompanion.SETUP_VPN -> "Allow the VPN connection Revv CarPlay uses for USB."
+                CarPlayCompanion.SETUP_IDENTITY -> "Import your CarPlay identity files in RevvCarPlay."
+                CarPlayCompanion.SETUP_VPN -> "Allow the VPN connection RevvCarPlay uses for USB."
                 CarPlayCompanion.SETUP_WIRELESS_PERMISSIONS -> "Allow Bluetooth and nearby devices for wireless CarPlay."
-                CarPlayCompanion.SETUP_HOTSPOT -> "Under Connection setup in Revv CarPlay, pick Wi-Fi Direct or save the car hotspot's name and password."
+                CarPlayCompanion.SETUP_HOTSPOT -> "Under Connection setup in RevvCarPlay, pick Wi-Fi Direct or save the car hotspot's name and password."
                 else -> it
             }
         }.ifBlank { detail }

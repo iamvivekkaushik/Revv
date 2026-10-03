@@ -102,7 +102,7 @@ data class HmiUiState(
     val learntGears: List<Float>,
     /** The call Revv placed on the phone, while it lasts. */
     val call: ActiveCall? = null,
-    /** The Revv CarPlay companion while it is installed (Android 11+); the Auto screen then hosts CarPlay. */
+    /** The RevvCarPlay companion while it is installed (Android 11+); the Auto screen then hosts CarPlay. */
     val carPlay: CarPlayCompanion? = null
 )
 

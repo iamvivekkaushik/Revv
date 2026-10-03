@@ -679,10 +679,10 @@ private fun rowsFor(
                     }
                 },
                 ValueRow("Status", carPlay?.explanation() ?: "Open the Auto screen to connect", carPlay?.headline() ?: "—"),
-                ActionRow("Revv CarPlay", "Identity, connection setup, display and audio, in the companion app", "OPEN", openCarPlaySettings),
+                ActionRow("RevvCarPlay", "Identity, connection setup, display and audio, in the companion app", "OPEN", openCarPlaySettings),
                 when (session?.phase) {
                     null -> null
-                    CarPlayCompanion.PHASE_SETUP_REQUIRED -> ActionRow("Session", "Finish the one-time setup in Revv CarPlay first", "FINISH SETUP", openCarPlaySettings)
+                    CarPlayCompanion.PHASE_SETUP_REQUIRED -> ActionRow("Session", "Finish the one-time setup in RevvCarPlay first", "FINISH SETUP", openCarPlaySettings)
                     CarPlayCompanion.PHASE_IDLE, CarPlayCompanion.PHASE_FAILED ->
                         ActionRow("Session", "Start CarPlay again; the Auto screen shows it", "CONNECT", onClick = { companion?.retry() })
                     else -> ActionRow("Session", "End the CarPlay connection", "DISCONNECT", onClick = { companion?.stop() })

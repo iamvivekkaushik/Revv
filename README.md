@@ -29,7 +29,7 @@ The screenshots use the demo drive and the simulated OBD-II adapter.
 - **Your phone over Bluetooth**, the way a car kit reads it: recent calls, favourites, contacts with A–Z quick scroll, a T9 dialer, and calls with a call bar and end-call button.
 - **Rear camera**, live from the head unit, with parking guides, rotation and camera switching.
 - **Apps and projection**: every installed app, Android Auto or a projection app of your choice, and now playing from your music app.
-- **CarPlay inside Revv** with the separate [Revv CarPlay](https://github.com/iamvivekkaushik/RevvCarPlay) companion app (GPL-3.0, Android 11+): the iPhone's screen runs in the Auto screen's panel, touch included, and keeps playing while you use the rest of Revv. The companion ships no Apple accessory identity; you import your own.
+- **CarPlay inside Revv** with the separate [RevvCarPlay](https://github.com/iamvivekkaushik/RevvCarPlay) companion app (GPL-3.0, Android 11+): the iPhone's screen runs in the Auto screen's panel, touch included, and keeps playing while you use the rest of Revv. The companion ships no Apple accessory identity; you import your own.
 - **Make it yours**: choose the home screen's cards and panels, turn the fuel card into an app shortcut, set display size (80–130%), date and time formats, sunset or light-sensor dimming, and tap sounds.
 - **Demo drive**: simulated car data while no adapter is set up, so every gauge can be tried at a desk.
 
@@ -40,7 +40,7 @@ No account, ads or analytics. Calls, contacts, car data and the camera picture s
 1. Download `revv-<version>.apk` from the [latest release](https://github.com/iamvivekkaushik/Revv/releases/latest) onto the head unit and open it. Android asks to allow installs from that source once.
 2. Open Revv and tap **Set as home**, or pick Revv when Android asks which app should be the home app.
 3. Optional: pair your phone in Android's Bluetooth settings and allow it to share contacts and call history; set up an OBD-II adapter in **Settings › Vehicle**.
-4. Optional, for CarPlay: install the [Revv CarPlay](https://github.com/iamvivekkaushik/RevvCarPlay) companion, open it once to import your identity files and accept its prompts, then open **AUTO** in Revv.
+4. Optional, for CarPlay: install the [RevvCarPlay](https://github.com/iamvivekkaushik/RevvCarPlay) companion, open it once to import your identity files and accept its prompts, then open **AUTO** in Revv.
 
 Revv needs Android 9 or newer and a landscape screen. It lays out a 1920×1080 artboard that scales to the screen, and stretches to fill wide ones such as 1920×720.
 
@@ -72,6 +72,24 @@ Run the unit tests:
 | `…/system`, `…/media`, `…/apps` | Brightness and night dimming, now playing, installed apps |
 | `site/` | The website: landing page and privacy policy |
 | `fastlane/` | Lanes, Play Store listing and store graphics |
+
+### Signed release APK
+
+The release build is signed only when all four `REVV_KEYSTORE_*` variables are set; otherwise it is unsigned.
+
+1. Create a keystore once (keep it and its passwords; every update must use the same key):
+   ```bash
+   "/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/keytool" -genkeypair -v -keystore ~/revv-release.jks -alias revv -keyalg RSA -keysize 2048 -validity 10000
+   ```
+2. Build:
+   ```bash
+   JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" REVV_KEYSTORE_PATH=~/revv-release.jks REVV_KEYSTORE_PASSWORD='…' REVV_KEY_ALIAS=revv REVV_KEY_PASSWORD='…' ./gradlew :app:assembleRelease
+   ```
+   Output: `app/build/outputs/apk/release/app-release.apk`. Use `:app:bundleRelease` for a Play bundle.
+3. Check the signature:
+   ```bash
+   ~/Library/Android/sdk/build-tools/36.0.0/apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
+   ```
 
 ## Releases
 

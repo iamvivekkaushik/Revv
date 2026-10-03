@@ -74,7 +74,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val phoneMonitor = PhoneMonitor(application, viewModelScope)
     private val nightDimmer = NightDimmer(application)
     /**
-     * The Revv CarPlay companion, bound for as long as Revv runs so its process stays with the
+     * The RevvCarPlay companion, bound for as long as Revv runs so its process stays with the
      * visible launcher instead of dropping to a background service head units like to kill. The
      * Auto screen only attaches and detaches its view. Null while the companion is not installed;
      * follows installs and uninstalls through the app list.

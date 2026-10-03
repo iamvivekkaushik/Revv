@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Revv CarPlay, the separate (GPL) companion app that runs the CarPlay stack. Revv binds to its
+ * RevvCarPlay, the separate (GPL) companion app that runs the CarPlay stack. Revv binds to its
  * embed service, hands it a SurfaceView's host token, and gets a SurfacePackage back: CarPlay then
  * draws and takes touch inside Revv's own layout while the session itself lives in the companion.
  * Main thread.
@@ -220,7 +220,7 @@ class CarPlayCompanion(context: Context) {
                 replyTo = replies
             })
         } catch (error: RemoteException) {
-            Log.w(TAG, "Revv CarPlay is gone", error)
+            Log.w(TAG, "RevvCarPlay is gone", error)
             service = null
             attached = false
         }
@@ -229,7 +229,7 @@ class CarPlayCompanion(context: Context) {
     companion object {
         private const val TAG = "CarPlayCompanion"
 
-        // Revv CarPlay's protocol (CarPlayEmbedProtocol in the companion).
+        // RevvCarPlay's protocol (CarPlayEmbedProtocol in the companion).
         const val ACTION = "com.vivekkaushik.revvcarplay.action.EMBED_CARPLAY"
         private const val MSG_ATTACH = 1
         private const val MSG_RESIZE = 2
@@ -274,11 +274,11 @@ class CarPlayCompanion(context: Context) {
         const val HOTSPOT_P2P = "p2p"
         const val HOTSPOT_MANUAL = "manual"
 
-        /** Whether Revv CarPlay is installed and this Android can host its view (11+). */
+        /** Whether RevvCarPlay is installed and this Android can host its view (11+). */
         fun available(context: Context): Boolean =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && serviceIntent(context) != null
 
-        /** Opens Revv CarPlay's own screen, for setup and settings. */
+        /** Opens RevvCarPlay's own screen, for setup and settings. */
         fun launchIntent(context: Context): Intent? {
             val pkg = serviceIntent(context)?.component?.packageName ?: return null
             return context.packageManager.getLaunchIntentForPackage(pkg)
