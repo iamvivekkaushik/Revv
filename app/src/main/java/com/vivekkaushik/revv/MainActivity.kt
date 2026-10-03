@@ -108,11 +108,12 @@ class MainActivity : ComponentActivity(), HmiActions {
             val phone by viewModel.phone.collectAsStateWithLifecycle()
             val learntGears by viewModel.learntGears.collectAsStateWithLifecycle()
             val activeCall by viewModel.activeCall.collectAsStateWithLifecycle()
+            val carPlay by viewModel.carPlay.collectAsStateWithLifecycle()
             CompositionLocalProvider(LocalIconProvider provides viewModel.icons) {
                 HmiRoot(
                     state = HmiUiState(
                         apps, nowPlaying, system, settings, screen, obdStatus, adapterChoices, bleScanning, recentPlaces, obdLog, phone,
-                        learntGears, activeCall,
+                        learntGears, activeCall, carPlay = carPlay,
                     ),
                     obdReadings = viewModel.obdReadings,
                     navigation = viewModel.navigation,

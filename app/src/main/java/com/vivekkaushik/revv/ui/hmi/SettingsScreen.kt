@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,6 +58,7 @@ import com.vivekkaushik.revv.settings.SettingsStore
 import com.vivekkaushik.revv.system.NightMode
 import com.vivekkaushik.revv.system.NightSchedule
 import com.vivekkaushik.revv.vehicle.CarColour
+import com.vivekkaushik.revv.system.CarPlayCompanion
 import com.vivekkaushik.revv.vehicle.CarSetup
 import com.vivekkaushik.revv.vehicle.GearSource
 import com.vivekkaushik.revv.vehicle.TyreSize
@@ -69,6 +71,7 @@ private enum class Category(val title: String, val icon: String) {
     Home("HOME", HmiIcons.HOME),
     Sound("SOUND", HmiIcons.SOUND),
     Connectivity("CONNECTIVITY", HmiIcons.BLUETOOTH),
+    CarPlay("CARPLAY", HmiIcons.AUTO),
     Vehicle("VEHICLE", HmiIcons.VEHICLE),
     Navigation("NAVIGATION", HmiIcons.MAPS),
     System("SYSTEM", HmiIcons.SETTINGS),
@@ -147,12 +150,15 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
     var viewingLicenses by rememberSaveable { mutableStateOf(false) }
     var choosingFuelApp by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = choosingFuelApp) { choosingFuelApp = false }
+    val carPlayState: CarPlayCompanion.State? = state.carPlay?.let { it.state.collectAsState().value }
+    val openCarPlaySettings = { CarPlayCompanion.launchIntent(context)?.let(context::startActivity); Unit }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         Column(
             Modifier.width(420.dp).fillMaxHeight().border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Category.entries.forEach { entry ->
+            // CarPlay settings exist only with the companion app installed.
+            Category.entries.filter { it != Category.CarPlay || state.carPlay != null }.forEach { entry ->
                 CategoryButton(entry, selected = entry == category) {
                     category = entry
                     choosingAdapter = false
@@ -186,6 +192,8 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                         setUpGears = { settingUpGears = true },
                         chooseFuelApp = { choosingFuelApp = true },
                         showLicenses = { viewingLicenses = true },
+                        carPlay = carPlayState,
+                        openCarPlaySettings = openCarPlaySettings,
                     )
                     // Vehicle has more rows than fit.
                     LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
@@ -612,6 +620,8 @@ private fun rowsFor(
     setUpGears: () -> Unit,
     chooseFuelApp: () -> Unit,
     showLicenses: () -> Unit,
+    carPlay: CarPlayCompanion.State? = null,
+    openCarPlaySettings: () -> Unit = {},
 ): List<SettingRow> {
     val settings = state.settings
     val system = state.system
@@ -651,6 +661,34 @@ private fun rowsFor(
             ToggleRow("hotspot", "Phone hotspot", "Use phone data for maps"),
             pairedDevicesRow(system, actions),
         )
+        Category.CarPlay -> {
+            val companion = state.carPlay
+            val session = carPlay as? CarPlayCompanion.State.Session
+            val link = when {
+                session == null || !session.wireless -> 0
+                session.hotspotMode == CarPlayCompanion.HOTSPOT_MANUAL -> 2
+                else -> 1
+            }
+            listOfNotNull(
+                ToggleRow(SettingsStore.CARPLAY_WIDE, "Wide screen", "CarPlay fills the Auto screen; its status and link controls stay here"),
+                OptionRow("Link", "How the iPhone connects; a running session reconnects over the new link", listOf("USB", "Wi-Fi Direct", "Car hotspot"), link) { index ->
+                    when (index) {
+                        0 -> companion?.configure(wireless = false)
+                        1 -> companion?.configure(wireless = true, hotspotMode = CarPlayCompanion.HOTSPOT_P2P)
+                        else -> companion?.configure(wireless = true, hotspotMode = CarPlayCompanion.HOTSPOT_MANUAL)
+                    }
+                },
+                ValueRow("Status", carPlay?.explanation() ?: "Open the Auto screen to connect", carPlay?.headline() ?: "—"),
+                ActionRow("Revv CarPlay", "Identity, connection setup, display and audio, in the companion app", "OPEN", openCarPlaySettings),
+                when (session?.phase) {
+                    null -> null
+                    CarPlayCompanion.PHASE_SETUP_REQUIRED -> ActionRow("Session", "Finish the one-time setup in Revv CarPlay first", "FINISH SETUP", openCarPlaySettings)
+                    CarPlayCompanion.PHASE_IDLE, CarPlayCompanion.PHASE_FAILED ->
+                        ActionRow("Session", "Start CarPlay again; the Auto screen shows it", "CONNECT", onClick = { companion?.retry() })
+                    else -> ActionRow("Session", "End the CarPlay connection", "DISCONNECT", onClick = { companion?.stop() })
+                },
+            )
+        }
         Category.Vehicle -> listOfNotNull(
             adapterRow(state, actions, chooseAdapter),
             settings.obdAdapter?.let { ActionRow("Adapter log", "What the adapter said, for when a car won't connect", "VIEW", showLog) },

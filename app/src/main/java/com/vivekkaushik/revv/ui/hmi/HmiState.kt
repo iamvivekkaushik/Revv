@@ -1,5 +1,6 @@
 package com.vivekkaushik.revv.ui.hmi
 
+import com.vivekkaushik.revv.system.CarPlayCompanion
 import androidx.compose.ui.geometry.Rect
 import com.vivekkaushik.revv.apps.LauncherApp
 import com.vivekkaushik.revv.media.NowPlaying
@@ -101,6 +102,8 @@ data class HmiUiState(
     val learntGears: List<Float>,
     /** The call Revv placed on the phone, while it lasts. */
     val call: ActiveCall? = null,
+    /** The Revv CarPlay companion while it is installed (Android 11+); the Auto screen then hosts CarPlay. */
+    val carPlay: CarPlayCompanion? = null
 )
 
 /** Everything the HMI can ask for. Implemented by MainActivity. */

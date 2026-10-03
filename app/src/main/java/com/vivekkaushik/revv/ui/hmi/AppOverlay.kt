@@ -28,7 +28,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import android.os.Build
 import com.vivekkaushik.revv.nav.NavState
+import com.vivekkaushik.revv.settings.SettingsStore
+import com.vivekkaushik.revv.system.CarPlayCompanion
 import com.vivekkaushik.revv.phone.PhoneState
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -74,11 +78,23 @@ fun AppOverlay(
                     HText("HOME", size = 16.sp, spacing = 2.sp)
                 }
             }
-            HText(app.title.uppercase(), size = 18.sp, color = Hmi.Muted, spacing = 4.sp)
-            HText(clock, size = 22.sp, weight = FontWeight.Medium)
+            val carPlay = app == HmiApp.Auto && state.carPlay != null
+            HText(if (carPlay) "CARPLAY" else app.title.uppercase(), size = 18.sp, color = Hmi.Muted, spacing = 4.sp)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                // The companion's own settings, kept out of the CarPlay picture.
+                if (carPlay) {
+                    val context = LocalContext.current
+                    Pressable({ CarPlayCompanion.launchIntent(context)?.let(context::startActivity) }, Modifier.size(44.dp)) {
+                        PathIcon(HmiIcons.GEAR, 22.dp, Hmi.Muted)
+                    }
+                }
+                HText(clock, size = 22.sp, weight = FontWeight.Medium)
+            }
         }
-        // The bottom 120px belong to the dock, which stays on top of every app.
-        Box(Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 112.dp, bottom = if (app == HmiApp.Maps) MAPS_BOTTOM_MARGIN else 160.dp)) {
+        // The bottom 120px belong to the dock, which stays on top of every app. Maps and CarPlay
+        // run right up to it.
+        val bottom = if (app == HmiApp.Maps || (app == HmiApp.Auto && state.carPlay != null)) MAPS_BOTTOM_MARGIN else 160.dp
+        Box(Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 112.dp, bottom = bottom)) {
             screens.SaveableStateProvider(app) {
                 when (app) {
                     HmiApp.Phone -> PhoneScreen(state.phone, now, timeFormat, actions)
@@ -130,6 +146,12 @@ private fun AutoScreen(state: HmiUiState, actions: HmiActions) {
                 onDone = { choosingApp = false },
             )
         }
+        return
+    }
+    // With the Revv CarPlay companion installed, CarPlay itself runs inside this screen.
+    val carPlay = state.carPlay
+    if (carPlay != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        CarPlayAutoScreen(carPlay, actions, wide = state.settings.isOn(SettingsStore.CARPLAY_WIDE), projectionLabel = chosen?.label, onChooseApp = { choosingApp = true })
         return
     }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
@@ -208,7 +230,7 @@ private fun AutoScreen(state: HmiUiState, actions: HmiActions) {
 }
 
 @Composable
-private fun Fact(label: String, value: String, modifier: Modifier, color: Color = Hmi.Text) {
+internal fun Fact(label: String, value: String, modifier: Modifier, color: Color = Hmi.Text) {
     Column(modifier) {
         Caption(label, size = 14.sp)
         HText(value, Modifier.padding(top = 8.dp), size = 24.sp, color = color)

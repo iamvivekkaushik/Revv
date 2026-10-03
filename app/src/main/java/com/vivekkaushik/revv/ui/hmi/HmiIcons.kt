@@ -7,7 +7,10 @@ object HmiIcons {
     const val MAPS = "M3 11 21 3l-8 18-2-8z"
     const val CAMERA =
         "M3 8a2 2 0 0 1 2-2h2l2-2h6l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0"
-    const val SETTINGS = "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0M12 2v3M12 19v3M2 12h3M19 12h3"
+    /** A toothed cog (Lucide "settings", ISC). */
+    const val GEAR = "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"
+    /** Same cog everywhere the HMI means settings (home header, Settings app, CarPlay card). */
+    const val SETTINGS = GEAR
     const val PHONE = "M5 3h3.5l2 5-2.5 1.6a11 11 0 0 0 6.4 6.4L16 13.5l5 2V19a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2z"
     const val APPS = "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"
     const val HOME = "M3 11l9-8 9 8M5 10v10h14V10M10 20v-6h4v6"

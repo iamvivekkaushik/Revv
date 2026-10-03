@@ -176,6 +176,8 @@ class SettingsStore(context: Context) {
         const val NAV_VOLUME = "navVol"
         const val AVOID_TOLLS = "avoidTolls"
         const val SAVE_OBD_LOG = "obdLog"
+        /** CarPlay fills the Auto screen instead of sharing it with its status column. */
+        const val CARPLAY_WIDE = "carplayWide"
 
         private const val TOGGLE_PREFIX = "toggle."
         private const val LEVEL_PREFIX = "level."
@@ -196,6 +198,7 @@ class SettingsStore(context: Context) {
 
         // Defaults from the design. Most are placeholders until the matching integration exists.
         private val DEFAULT_TOGGLES = mapOf(
+            CARPLAY_WIDE to false,
             DEMO_DRIVE to true,
             HOME_FUEL to true,
             MENU_SOUND to true,

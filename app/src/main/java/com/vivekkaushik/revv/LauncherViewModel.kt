@@ -34,6 +34,7 @@ import com.vivekkaushik.revv.phone.PhoneMonitor
 import com.vivekkaushik.revv.phone.PhoneState
 import com.vivekkaushik.revv.settings.HmiSettings
 import com.vivekkaushik.revv.settings.SettingsStore
+import com.vivekkaushik.revv.system.CarPlayCompanion
 import com.vivekkaushik.revv.system.BrightnessScale
 import com.vivekkaushik.revv.system.FirstRun
 import com.vivekkaushik.revv.system.HomeRole
@@ -72,6 +73,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val navigator = Navigator(application, viewModelScope)
     private val phoneMonitor = PhoneMonitor(application, viewModelScope)
     private val nightDimmer = NightDimmer(application)
+    /**
+     * The Revv CarPlay companion, bound for as long as Revv runs so its process stays with the
+     * visible launcher instead of dropping to a background service head units like to kill. The
+     * Auto screen only attaches and detaches its view. Null while the companion is not installed;
+     * follows installs and uninstalls through the app list.
+     */
+    private val _carPlay = MutableStateFlow<CarPlayCompanion?>(null)
+    val carPlay: StateFlow<CarPlayCompanion?> = _carPlay.asStateFlow()
     private val isDebugBuild = application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     val icons: IconProvider = appRepository
@@ -115,6 +124,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val activeCall: StateFlow<ActiveCall?> = phoneMonitor.call
 
     init {
+        // Bind the CarPlay companion while it is installed, and drop it when it goes.
+        viewModelScope.launch {
+            apps.collect {
+                val available = CarPlayCompanion.available(application)
+                val current = _carPlay.value
+                if (available && current == null) _carPlay.value = CarPlayCompanion(application).also { it.bind() }
+                else if (!available && current != null) { _carPlay.value = null; current.unbind() }
+            }
+        }
         // First, so the adapter log knows whether to save before the adapter says anything.
         viewModelScope.launch {
             settings.map { it.isOn(SettingsStore.SAVE_OBD_LOG) }.distinctUntilChanged().collect(obd::saveLogs)
@@ -154,6 +172,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     override fun onCleared() {
+        _carPlay.value?.unbind()
         bleScanner.stop()
         obd.stop()
         navigator.stop()
