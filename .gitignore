@@ -20,3 +20,7 @@ local.properties
 /fastlane/*.json
 /vendor/bundle
 .bundle
+
+# /brag launch-video renders
+brag-output/
+brag-output-*/
