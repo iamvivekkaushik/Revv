@@ -111,6 +111,8 @@ The version comes from the tag: `v1.2.3` is version name `1.2.3` and version cod
 
 With `PLAY_STORE_JSON_KEY` set, final releases also go to Google Play: the internal track unless the `PLAY_TRACK` repository variable says `alpha`, `beta` or `production`, and released straight away unless `PLAY_RELEASE_STATUS` is `draft`. Pre-releases stay off Play.
 
+The store listing in `fastlane/metadata/android` (title, descriptions, icon, feature graphic and screenshots) goes up to Play by itself whenever it changes on `master`, with the same key: the **Update Play listing** workflow, which can also be run from the Actions tab. Each version's "What's new" goes up with its release instead.
+
 ### fastlane lanes
 
 Install fastlane with `bundle install` (Ruby 3), then run `bundle exec fastlane <lane>`:

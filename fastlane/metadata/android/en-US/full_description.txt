@@ -9,6 +9,13 @@ Plug a low-cost ELM327 adapter into your car's diagnostic port and the cluster c
 • Low battery and check-engine warnings, with a badge on the dock
 • No adapter yet? A demo drive shows what every gauge does
 
+ENGINE SOUND (EXPERIMENTAL)
+A synthesised engine through the head unit's speakers that follows your car's revs, load and gear changes from the OBD-II adapter, or the demo drive. Off until you turn it on in Settings › Sound.
+• Eleven engines, from an inline 3 to a V12: a boxer, an odd-fire V6, and cross- and flat-plane V8s
+• Four exhausts, from stock to a straight pipe
+• Pops on lift-off if you like, and a rev preview to try it parked
+• Plays under your music with its own volume, and goes quiet for calls
+
 MAPS AND DIRECTIONS
 • OpenStreetMap maps drawn in the cluster's own style
 • Search for places, addresses and areas
@@ -33,7 +40,8 @@ APPS AND PROJECTION
 MADE FOR YOUR CAR
 • Choose which cards and panels the home screen shows
 • Turn the fuel card into a shortcut to any app
-• Display size from 80% to 130%, date and time formats
+• Display size from 80% to 160%, with compact layouts for big text
+• Date and time formats
 • Dims at sunset or with the light sensor
 • Big touch targets, with tap, dialer and keyboard sounds you can switch off
 

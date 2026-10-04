@@ -1,0 +1,43 @@
+name: Update Play listing
+
+# Uploads the Google Play listing in fastlane/metadata/android (title, descriptions, icon, feature
+# graphic and screenshots) whenever it changes on master, or on demand from the Actions tab. Uses
+# the PLAY_STORE_JSON_KEY secret the release workflow uses. Release notes go up with each release
+# instead, so a change to the changelogs alone doesn't run this.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "fastlane/metadata/android/**"
+      - "!fastlane/metadata/android/*/changelogs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: play-listing
+  cancel-in-progress: false
+
+jobs:
+  listing:
+    name: Upload the listing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Upload with fastlane
+        env:
+          PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
+        run: |
+          if [ -z "$PLAY_STORE_JSON_KEY" ]; then
+            echo "::error::Add the PLAY_STORE_JSON_KEY secret to upload the Play listing."
+            exit 1
+          fi
+          bundle exec fastlane listing
