@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.vivekkaushik.revv.nav.NavState
 import com.vivekkaushik.revv.obd.ObdReadings
+import com.vivekkaushik.revv.vehicle.DriveSimulator
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
@@ -104,6 +105,7 @@ fun HmiRoot(state: HmiUiState, obdReadings: StateFlow<ObdReadings?>, navigation:
         if (ready) actions.onHmiReady()
     }
     DemoCarTicker(ignition.live, actions)
+    DemoEngineFeed(ignition.live, actions)
 
     // A launcher never finishes on back; it steps back through the open apps to home. Screens
     // with pages of their own (Settings) close those first with their own handlers.
@@ -210,6 +212,33 @@ private fun DemoCarTicker(live: LiveTelemetry, actions: HmiActions) {
 }
 
 private const val DEMO_TICK_MILLIS = 1_000L
+
+/**
+ * While the cluster runs the demo drive, reports its engine a few times a second, as an adapter
+ * would, so the engine sound can follow it. Stops while Revv is off screen, and the sound with it.
+ */
+@Composable
+private fun DemoEngineFeed(live: LiveTelemetry, actions: HmiActions) {
+    val demo = live.source == DataSource.Demo
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(demo, lifecycle) {
+        if (!demo) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val gear = when (live.gearIndex) {
+                    DriveSimulator.GEAR_NEUTRAL -> 0
+                    in 1..8 -> live.gearIndex
+                    else -> null
+                }
+                actions.reportDemoEngine(live.engineRpm, live.speedKmh, gear, live.throttle, live.engineLoad)
+                delay(DEMO_ENGINE_MILLIS)
+            }
+        }
+    }
+}
+
+/** The demo drive samples its engine every 150 ms. */
+private const val DEMO_ENGINE_MILLIS = 150L
 
 /** A strip across the top while a call is on: who, how it is going, and a button to end it. */
 @Composable

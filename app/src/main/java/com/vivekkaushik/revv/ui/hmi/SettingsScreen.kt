@@ -65,6 +65,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.vivekkaushik.revv.engine.EngineLayout
+import com.vivekkaushik.revv.engine.EngineSoundSettings
+import com.vivekkaushik.revv.engine.ExhaustNote
 import com.vivekkaushik.revv.obd.BluetoothAccess
 import com.vivekkaushik.revv.obd.ObdAdapter
 import com.vivekkaushik.revv.obd.ObdLink
@@ -776,7 +779,7 @@ private fun rowsFor(
             ToggleRow(SettingsStore.MENU_SOUND, "Menu sounds", "A short blip when you tap a button"),
             ToggleRow(SettingsStore.DIALER_SOUND, "Dialer sounds", "A touch-tone for each key on the number pad"),
             ToggleRow(SettingsStore.KEYBOARD_SOUND, "Keyboard sounds", "A soft tick for each key on the keyboard"),
-        )
+        ) + engineSoundRows(settings, actions)
         Category.Connectivity -> listOf(
             ActionRow("Bluetooth", if (system.bluetoothOn) "On" else "Off", "OPEN", actions::openBluetoothSettings),
             ActionRow("Wi-Fi", "Networks and hotspots", "OPEN", actions::openWifiSettings),
@@ -1308,6 +1311,31 @@ private fun adapterRow(state: HmiUiState, actions: HmiActions, chooseAdapter: ()
 }
 
 /** How many devices are paired, or what keeps Revv from counting them. */
+private fun engineSoundRows(settings: HmiSettings, actions: HmiActions): List<SettingRow> {
+    val engine = settings.engineSound
+    return listOf(
+        HeaderRow("ENGINE SOUND", "Follows rpm, load and gear"),
+        ToggleRow(
+            SettingsStore.ENGINE_SOUND,
+            "Engine sound",
+            "A synthesised engine through the speakers, from the OBD-II adapter's data or the demo drive",
+            badge = "EXPERIMENTAL",
+        ),
+        OptionRow("Engine", "Cylinders, firing order and headers", ENGINE_LAYOUTS, engine.layout.ordinal) {
+            actions.setChoice(SettingsStore.ENGINE_LAYOUT, it)
+        },
+        OptionRow("Exhaust", "From muffled to raspy", EXHAUST_NOTES, engine.note.ordinal) {
+            actions.setChoice(SettingsStore.ENGINE_EXHAUST, it)
+        },
+        LevelRow(SettingsStore.ENGINE_VOLUME, "Engine volume", "Under the media volume, which turns it up and down too", engine.volume, EngineSoundSettings.MAX_VOLUME),
+        ToggleRow(SettingsStore.ENGINE_CRACKLE, "Pops on lift-off", "Crackles from the exhaust when you lift off at high revs"),
+        ActionRow("Preview", "Hear the chosen engine rev, parked", "REV", actions::previewEngineSound),
+    )
+}
+
+private val ENGINE_LAYOUTS = EngineLayout.entries.map { it.label }
+private val EXHAUST_NOTES = ExhaustNote.entries.map { it.label }
+
 private fun pairedDevicesRow(system: SystemState, actions: HmiActions): SettingRow {
     val count = system.pairedDevices
     return when {

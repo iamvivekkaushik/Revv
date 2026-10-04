@@ -210,4 +210,10 @@ interface HmiActions {
 
     /** The demo cluster drove [seconds] at [speedKmh]; the demo car on the map follows suit. */
     fun advanceDemoDrive(seconds: Float, speedKmh: Int)
+
+    /** The demo cluster's engine now, which the engine sound follows; [gear] is null when none is lit. */
+    fun reportDemoEngine(rpm: Int, speedKmh: Int, gear: Int?, throttle: Int, engineLoad: Int)
+
+    /** Revs the chosen engine sound for a few seconds. */
+    fun previewEngineSound()
 }

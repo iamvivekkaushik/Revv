@@ -336,6 +336,11 @@ class MainActivity : ComponentActivity(), HmiActions {
 
     override fun advanceDemoDrive(seconds: Float, speedKmh: Int) = viewModel.advanceDemoDrive(seconds, speedKmh)
 
+    override fun reportDemoEngine(rpm: Int, speedKmh: Int, gear: Int?, throttle: Int, engineLoad: Int) =
+        viewModel.reportDemoEngine(rpm, speedKmh, gear, throttle, engineLoad)
+
+    override fun previewEngineSound() = viewModel.previewEngineSound()
+
     override fun requestBluetoothPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             bluetoothPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)

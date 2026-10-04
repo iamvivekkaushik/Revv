@@ -369,6 +369,7 @@ class ObdSession(
             readings = readings.copy(
                 speedKmh = speed,
                 rpm = rpm,
+                airFill = FuelMath.airFill(maf, manifold, rpm, readings.intakeAirC ?: ASSUMED_INTAKE_C, profile),
                 kmPerLitre = if (speed != null && flow != null) FuelMath.kmPerLitre(speed, flow) else null,
                 gear = if (speed != null && rpm != null) estimator.update(speed, rpm, now) else null,
                 tripKm = trip.distanceKm.toFloat(),

@@ -79,6 +79,8 @@ data class ObdReadings(
     val ambientC: Int? = null,
     val engineLoad: Int? = null,
     val throttle: Int? = null,
+    /** How full the cylinders are, from manifold pressure or air flow: 1 is wide open. Read every cycle, unlike [engineLoad]. */
+    val airFill: Float? = null,
     val fuelLevel: Int? = null,
     val batteryVolts: Float? = null,
     /** Instantaneous economy; null while stationary or when fuel flow can't be worked out. */

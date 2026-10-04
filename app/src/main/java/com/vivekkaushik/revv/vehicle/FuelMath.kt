@@ -23,6 +23,23 @@ object FuelMath {
         return molesPerSecond * AIR_MOLAR_MASS
     }
 
+    /**
+     * How full the cylinders are, the share of a sea-level cylinderful of air each one takes in:
+     * about 0.2 with the throttle shut, 1 wide open, above 1 on boost. From manifold pressure, or
+     * from the MAF sensor against what the engine would draw at that rpm. Null below idle.
+     */
+    fun airFill(maf: Float?, manifoldKpa: Int?, rpm: Int?, intakeAirC: Int, profile: VehicleProfile): Float? = when {
+        manifoldKpa != null -> manifoldKpa / SEA_LEVEL_KPA
+        maf != null && rpm != null && rpm >= MIN_FILL_RPM -> {
+            val gramsPerLitre = SEA_LEVEL_KPA * AIR_MOLAR_MASS / (GAS_CONSTANT * (intakeAirC + 273.15f))
+            maf / (rpm / 120f * profile.displacementLitres * gramsPerLitre)
+        }
+        else -> null
+    }
+
+    private const val SEA_LEVEL_KPA = 101.325f
+    private const val MIN_FILL_RPM = 300
+
     /** Distance per litre right now, or null while stationary or when flow is too small to trust. */
     fun kmPerLitre(speedKmh: Int, litresPerHour: Float): Float? {
         if (speedKmh < 1 || litresPerHour < 0.05f) return null

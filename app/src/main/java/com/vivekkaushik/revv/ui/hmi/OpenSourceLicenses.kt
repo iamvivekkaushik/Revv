@@ -34,6 +34,7 @@ private val NOTICES = listOf(
     Notice("Gson, Timber, Guava ListenableFuture, JSpecify, JetBrains Annotations", "Support libraries pulled in by the above", "Apache License 2.0", "Apache-2.0.txt"),
     Notice("JetBrains Mono", "Text font", "SIL Open Font License 1.1", "OFL-JetBrainsMono.txt"),
     Notice("Michroma", "Display font", "SIL Open Font License 1.1", "OFL-Michroma.txt"),
+    Notice("engine-sim", "How the engine sound is made, and its exhaust recordings", "MIT License", "MIT-engine-sim.txt"),
     Notice("Map data and services", "OpenStreetMap, OpenFreeMap, OpenMapTiles, Valhalla and Photon", "ODbL, CC-BY 4.0, MIT, Apache 2.0", "Map-data.txt"),
 )
 

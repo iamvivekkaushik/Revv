@@ -3,6 +3,9 @@ package com.vivekkaushik.revv.settings
 import android.content.Context
 import androidx.core.content.edit
 import com.vivekkaushik.revv.apps.AppKey
+import com.vivekkaushik.revv.engine.EngineLayout
+import com.vivekkaushik.revv.engine.EngineSoundSettings
+import com.vivekkaushik.revv.engine.ExhaustNote
 import com.vivekkaushik.revv.obd.ObdAdapter
 import com.vivekkaushik.revv.vehicle.CarColour
 import com.vivekkaushik.revv.vehicle.CarSetup
@@ -40,6 +43,16 @@ data class HmiSettings(
     val menuSound: Boolean get() = isOn(SettingsStore.MENU_SOUND)
     val dialerSound: Boolean get() = isOn(SettingsStore.DIALER_SOUND)
     val keyboardSound: Boolean get() = isOn(SettingsStore.KEYBOARD_SOUND)
+
+    /** Settings › Sound › Engine sound. */
+    val engineSound: EngineSoundSettings
+        get() = EngineSoundSettings(
+            enabled = isOn(SettingsStore.ENGINE_SOUND),
+            layout = EngineLayout.entries.getOrElse(level(SettingsStore.ENGINE_LAYOUT)) { EngineLayout.DEFAULT },
+            note = ExhaustNote.entries.getOrElse(level(SettingsStore.ENGINE_EXHAUST)) { ExhaustNote.DEFAULT },
+            volume = level(SettingsStore.ENGINE_VOLUME),
+            crackle = isOn(SettingsStore.ENGINE_CRACKLE),
+        )
 
     val showFuelWidget: Boolean get() = isOn(SettingsStore.HOME_FUEL)
     val showPhoneCard: Boolean get() = isOn(SettingsStore.HOME_PHONE)
@@ -173,6 +186,16 @@ class SettingsStore(context: Context) {
         const val MENU_SOUND = "menuSound"
         const val DIALER_SOUND = "dialerSound"
         const val KEYBOARD_SOUND = "keyboardSound"
+
+        /** A synthesised engine through the speakers, following the car's rpm. */
+        const val ENGINE_SOUND = "engineSound"
+        /** Which [EngineLayout], by position. */
+        const val ENGINE_LAYOUT = "engineLayout"
+        /** Which [ExhaustNote], by position. */
+        const val ENGINE_EXHAUST = "engineExhaust"
+        const val ENGINE_VOLUME = "engineVol"
+        /** Pops from the exhaust on lifting off at high revs. */
+        const val ENGINE_CRACKLE = "engineCrackle"
         const val CAMERA_ROTATION = "cameraRotation"
         const val HOME_PHONE = "homePhone"
         const val HOME_MEDIA = "homeMedia"
@@ -238,6 +261,8 @@ class SettingsStore(context: Context) {
             MENU_SOUND to true,
             DIALER_SOUND to true,
             KEYBOARD_SOUND to true,
+            ENGINE_SOUND to false,
+            ENGINE_CRACKLE to true,
             HOME_PHONE to true,
             HOME_MEDIA to true,
             HOME_MAP to true,
@@ -253,6 +278,16 @@ class SettingsStore(context: Context) {
             "traffic" to true,
             "autoUpd" to true,
         )
-        private val DEFAULT_LEVELS = mapOf(NAV_VOLUME to 18, DISPLAY_SIZE to DISPLAY_SIZE_DEFAULT, TIME_FORMAT to 0, DATE_FORMAT to 0, CAMERA_ROTATION to 0, PLACE_SEARCH to SEARCH_OSM)
+        private val DEFAULT_LEVELS = mapOf(
+            NAV_VOLUME to 18,
+            DISPLAY_SIZE to DISPLAY_SIZE_DEFAULT,
+            TIME_FORMAT to 0,
+            DATE_FORMAT to 0,
+            CAMERA_ROTATION to 0,
+            PLACE_SEARCH to SEARCH_OSM,
+            ENGINE_LAYOUT to EngineLayout.DEFAULT.ordinal,
+            ENGINE_EXHAUST to ExhaustNote.DEFAULT.ordinal,
+            ENGINE_VOLUME to EngineSoundSettings.DEFAULT_VOLUME,
+        )
     }
 }

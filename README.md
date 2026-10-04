@@ -24,6 +24,7 @@ The screenshots use the demo drive and the simulated OBD-II adapter.
 
 - **Live OBD-II gauges** from an ELM327 adapter over Bluetooth, Bluetooth LE or Wi-Fi: speed, engine speed, load, throttle, coolant, intake air and battery voltage.
 - **Gear indicator**, worked out from the gearbox ratios and tyre size, or learnt as you drive.
+- **Engine sound** (experimental): a synthesised engine through the speakers that follows the car's rpm, load and gear changes, after [engine-sim](https://github.com/ange-yaghi/engine-sim)'s synthesizer. Pick an inline 3 to a V12, from a stock exhaust to a straight pipe, with optional pops on lift-off, in **Settings › Sound**.
 - **Fault codes** in plain English, pending codes, clearing them, and low-battery and check-engine warnings with a badge on the dock.
 - **Maps and directions** on OpenStreetMap: place search, turn-by-turn routes with the next turn on the home screen, avoiding tolls, north-up or heading-up.
 - **Your phone over Bluetooth**, the way a car kit reads it: recent calls, favourites, contacts with A–Z quick scroll, a T9 dialer, and calls with a call bar and end-call button.
@@ -69,6 +70,7 @@ Run the unit tests:
 | `…/phone` | PBAP (calls and contacts) and HFP (dialling) over Bluetooth |
 | `…/nav` | Location, routing, place search and guidance |
 | `…/vehicle` | Car setup, gear estimation, trip computer and the demo drive |
+| `…/engine` | The engine sound: layouts, the pulse model and engine-sim's synthesizer, and the audio player |
 | `…/system`, `…/media`, `…/apps` | Brightness and night dimming, now playing, installed apps |
 | `site/` | The website: landing page and privacy policy |
 | `fastlane/` | Lanes, Play Store listing and store graphics |
@@ -131,4 +133,4 @@ The store icon and feature graphic are rendered from `fastlane/store-graphics` w
 
 ## Credits
 
-Maps © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, tiles from [OpenFreeMap](https://openfreemap.org) on the [OpenMapTiles](https://openmaptiles.org) schema, routing by [Valhalla](https://github.com/valhalla/valhalla) and place search by [Photon](https://github.com/komoot/photon). Built with Jetpack Compose and [MapLibre Native](https://github.com/maplibre/maplibre-native), set in [Michroma](https://github.com/googlefonts/Michroma-font) and [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono). The app's **Settings › System › Open source licenses** lists every library and its license.
+Maps © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, tiles from [OpenFreeMap](https://openfreemap.org) on the [OpenMapTiles](https://openmaptiles.org) schema, routing by [Valhalla](https://github.com/valhalla/valhalla) and place search by [Photon](https://github.com/komoot/photon). The engine sound follows [engine-sim](https://github.com/ange-yaghi/engine-sim) by Ange Yaghi and plays its exhaust impulse responses (MIT). Built with Jetpack Compose and [MapLibre Native](https://github.com/maplibre/maplibre-native), set in [Michroma](https://github.com/googlefonts/Michroma-font) and [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono). The app's **Settings › System › Open source licenses** lists every library and its license.

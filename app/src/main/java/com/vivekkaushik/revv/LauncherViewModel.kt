@@ -10,6 +10,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.media.AudioManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
@@ -17,6 +18,9 @@ import androidx.lifecycle.viewModelScope
 import com.vivekkaushik.revv.apps.AppRepository
 import com.vivekkaushik.revv.apps.IconProvider
 import com.vivekkaushik.revv.apps.LauncherApp
+import com.vivekkaushik.revv.engine.EngineReading
+import com.vivekkaushik.revv.engine.EngineSound
+import com.vivekkaushik.revv.engine.EngineSoundSettings
 import com.vivekkaushik.revv.media.MediaSessionMonitor
 import com.vivekkaushik.revv.media.NowPlaying
 import com.vivekkaushik.revv.nav.DeviceLocation
@@ -80,6 +84,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val carPlayRoute = CarPlayRoute(navigator, viewModelScope)
     private val phoneMonitor = PhoneMonitor(application, viewModelScope)
     private val nightDimmer = NightDimmer(application)
+    private val engineSound = EngineSound(application)
     /**
      * The RevvCarPlay companion, bound for as long as Revv runs so its process stays with the
      * visible launcher instead of dropping to a background service head units like to kill. The
@@ -180,6 +185,30 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 else companion.guidance.collect { carPlayRoute.update(it?.destination, it?.routeMeters) }
             }
         }
+        // The engine sound follows the car whenever it's switched on, Revv on screen or not.
+        viewModelScope.launch {
+            settings.map { it.engineSound }.distinctUntilChanged().collect(engineSound::apply)
+        }
+        viewModelScope.launch {
+            obd.readings.collect { readings ->
+                val rpm = readings?.rpm ?: return@collect
+                engineSound.report(
+                    EngineReading(
+                        rpm = rpm,
+                        speedKmh = readings.speedKmh,
+                        gear = readings.gear,
+                        airFill = readings.airFill,
+                        engineLoad = readings.engineLoad,
+                        throttle = readings.throttle,
+                        atNanos = SystemClock.elapsedRealtimeNanos(),
+                    ),
+                )
+            }
+        }
+        // Quiet during calls.
+        viewModelScope.launch {
+            phoneMonitor.call.collect { engineSound.muted = it != null }
+        }
         // Sunset dimming goes by the sun where the car is, as GPS has it rather than the demo car.
         viewModelScope.launch {
             navigator.state.collect { state -> if (!state.demo) state.fix?.position?.let(nightDimmer::locate) }
@@ -201,6 +230,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         obd.stop()
         navigator.stop()
         phoneMonitor.stop()
+        engineSound.release()
     }
 
     fun onStart() {
@@ -315,6 +345,26 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun clearRecentPlaces() = navigator.clearRecents()
     fun advanceDemoDrive(seconds: Float, speedKmh: Int) = navigator.advanceDemo(seconds.toDouble(), speedKmh)
 
+    /** The demo drive's engine, for the engine sound; ignored once an adapter is set up, as the demo is. */
+    fun reportDemoEngine(rpm: Int, speedKmh: Int, gear: Int?, throttle: Int, engineLoad: Int) {
+        val current = settings.value
+        if (!current.demoDrive || current.obdAdapter != null || rpm <= 0) return
+        engineSound.report(
+            EngineReading(
+                rpm = rpm,
+                speedKmh = speedKmh,
+                gear = gear,
+                airFill = null,
+                engineLoad = engineLoad,
+                throttle = throttle,
+                atNanos = SystemClock.elapsedRealtimeNanos(),
+            ),
+        )
+    }
+
+    /** Settings › Sound › Engine sound's preview: a few seconds of revving the chosen engine. */
+    fun previewEngineSound() = engineSound.preview()
+
     /** True once per install, the first time Revv comes up without being the default home app. */
     fun shouldAskToBeHome(): Boolean = !HomeRole.isHeld(getApplication()) && firstRun.claim(ASK_TO_BE_HOME)
 
@@ -351,7 +401,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     /** Saves the chosen option of a list setting such as the date format. */
     fun setChoice(key: String, index: Int) {
-        if (key == SettingsStore.TIME_FORMAT || key == SettingsStore.DATE_FORMAT || key == SettingsStore.CAMERA_ROTATION || key == SettingsStore.PLACE_SEARCH) {
+        if (key in CHOICES) {
             settingsStore.setLevel(key, index.coerceAtLeast(0))
         }
     }
@@ -425,7 +475,17 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private companion object {
         const val ASK_TO_BE_HOME = "ask_to_be_home"
-        val LEVEL_MAX = mapOf(SettingsStore.NAV_VOLUME to 30)
+        val LEVEL_MAX = mapOf(SettingsStore.NAV_VOLUME to 30, SettingsStore.ENGINE_VOLUME to EngineSoundSettings.MAX_VOLUME)
+
+        /** List settings, saved as the chosen option's position. */
+        val CHOICES = setOf(
+            SettingsStore.TIME_FORMAT,
+            SettingsStore.DATE_FORMAT,
+            SettingsStore.CAMERA_ROTATION,
+            SettingsStore.PLACE_SEARCH,
+            SettingsStore.ENGINE_LAYOUT,
+            SettingsStore.ENGINE_EXHAUST,
+        )
 
         /** How often sunset dimming looks again between sunrise and sunset. */
         val NIGHT_CHECK: Duration = Duration.ofMinutes(5)
