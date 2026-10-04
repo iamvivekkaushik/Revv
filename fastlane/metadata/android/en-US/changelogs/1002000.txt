@@ -1,0 +1,1 @@
+• Engine sound (experimental): a synthesised engine through the speakers that follows your car's revs, load and gear changes from the OBD-II adapter, or the demo drive. Pick an inline 3 to a V12 and an exhaust from stock to straight pipe in Settings › Sound, with pops on lift-off and a rev preview. Off until you turn it on.
