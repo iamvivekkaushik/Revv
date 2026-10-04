@@ -94,9 +94,9 @@ h3 { font-size: 16px; letter-spacing: 0.04em; }
 .site-nav a { color: var(--muted); }
 .site-nav a:hover { color: var(--text); text-decoration: none; }
 @media (max-width: 640px) { .site-nav .hide-small { display: none; } }
-/* On a phone the hero's own download button is right below, so the header keeps just the links. */
+/* On a phone the hero's own badge is right below, so the header keeps just the links. */
 @media (max-width: 420px) {
-  .site-nav .button { display: none; }
+  .site-nav .store-badge { display: none; }
   .brand span { font-size: 17px; }
 }
 
@@ -123,11 +123,20 @@ h3 { font-size: 16px; letter-spacing: 0.04em; }
 .button.small { min-height: 40px; padding: 0 16px; font-size: 12px; }
 .button svg { width: 18px; height: 18px; }
 
+/*
+ * Google's own "Get it on Google Play" badge, unaltered: at least 28 px high (40 in the header,
+ * 52 beside the buttons, matching their height), with clear space of a quarter of its height,
+ * which the gaps around it give.
+ */
+.store-badge { display: inline-flex; flex: none; }
+.store-badge img { display: block; height: 52px; width: auto; }
+.store-badge.small img { height: 40px; }
+
 /* Hero */
 
 .hero { padding: clamp(48px, 9vw, 110px) 0 clamp(40px, 6vw, 72px); }
 .hero .lede { max-width: 640px; margin: 24px 0 0; color: var(--muted); font-size: clamp(16px, 1.6vw, 18px); }
-.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
 .hero .actions { margin-top: 36px; }
 .hero .meta { margin-top: 18px; font-size: 13px; color: var(--muted); }
 
@@ -235,6 +244,14 @@ section { padding: clamp(56px, 8vw, 100px) 0; border-top: 1px solid var(--line);
 .fact .value { font-family: var(--display); font-size: 22px; margin-top: 10px; }
 .fact p { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
 
+.companion { border: 1px solid var(--line-strong); padding: clamp(28px, 5vw, 56px); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 28px 48px; }
+.companion > div:first-child { flex: 1 1 520px; }
+.companion h2 { margin-top: 10px; }
+.companion p:not(.caption) { margin: 14px 0 0; color: var(--muted); max-width: 640px; }
+.companion ul { margin: 16px 0 0; padding: 0; list-style: none; font-size: 14px; color: var(--muted); max-width: 640px; }
+.companion li { padding: 6px 0 6px 18px; position: relative; }
+.companion li::before { content: ""; position: absolute; left: 0; top: 15px; width: 6px; height: 6px; background: var(--cyan); }
+
 .cta { text-align: left; }
 .cta .panel { border: 1px solid var(--cyan); background: var(--cyan-wash); padding: clamp(28px, 5vw, 56px); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 24px; }
 .cta p { margin: 12px 0 0; color: var(--muted); max-width: 560px; }
@@ -246,6 +263,7 @@ section { padding: clamp(56px, 8vw, 100px) 0; border-top: 1px solid var(--line);
 .site-footer nav { display: flex; flex-wrap: wrap; gap: 12px 24px; }
 .site-footer a { color: var(--muted); }
 .site-footer a:hover { color: var(--text); }
+.site-footer .legal { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--faint); }
 
 /* Privacy policy */
 
