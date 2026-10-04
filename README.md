@@ -31,7 +31,7 @@ The screenshots use the demo drive and the simulated OBD-II adapter.
 - **Rear camera**, live from the head unit, with parking guides, rotation and camera switching.
 - **Apps and projection**: every installed app, Android Auto or a projection app of your choice, and now playing from your music app.
 - **CarPlay inside Revv** with the separate [RevvCarPlay](https://github.com/iamvivekkaushik/RevvCarPlay) companion app (GPL-3.0, Android 11+): the iPhone's screen runs in the Auto screen's panel, touch included, and keeps playing while you use the rest of Revv. Its settings (identity, link, iPhone, display, audio, location) live in Revv's **Settings › CarPlay**. The companion ships no Apple accessory identity; you import your own there.
-- **Make it yours**: choose the home screen's cards and panels, turn the fuel card into an app shortcut, set display size (80–130%), date and time formats, sunset or light-sensor dimming, and tap sounds.
+- **Make it yours**: choose the home screen's cards and panels, turn the fuel card into an app shortcut, set display size (80–160%, with compact layouts above 130%), date and time formats, sunset or light-sensor dimming, and tap sounds.
 - **Demo drive**: simulated car data while no adapter is set up, so every gauge can be tried at a desk.
 
 No account, ads or analytics. Calls, contacts, car data and the camera picture stay on the head unit; maps, routes and place search use public OpenStreetMap services ([OpenFreeMap](https://openfreemap.org), [Valhalla](https://valhalla1.openstreetmap.de), [Photon](https://photon.komoot.io)). The [privacy policy](https://iamvivekkaushik.github.io/Revv/privacy.html) has the details.

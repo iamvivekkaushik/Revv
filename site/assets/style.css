@@ -238,6 +238,13 @@ section { padding: clamp(56px, 8vw, 100px) 0; border-top: 1px solid var(--line);
 .feature ul { margin: 14px 0 0; padding: 0; list-style: none; font-size: 14px; color: var(--muted); }
 .feature li { padding: 6px 0 6px 18px; position: relative; border-top: 1px solid var(--line); }
 .feature li::before { content: ""; position: absolute; left: 0; top: 15px; width: 6px; height: 6px; background: var(--cyan); }
+/* A card across the whole grid, its list beside the text, so an odd card never leaves a hole. */
+.feature.wide { grid-column: 1 / -1; }
+@media (min-width: 900px) {
+  .feature.wide { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+  .feature.wide ul { margin-top: 0; }
+}
+.tag { display: inline-block; margin-left: 10px; padding: 2px 8px; border: 1px solid rgba(255, 176, 0, 0.6); color: var(--amber); font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; vertical-align: middle; }
 
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; }
 .fact { border: 1px solid var(--line); padding: 24px; }
