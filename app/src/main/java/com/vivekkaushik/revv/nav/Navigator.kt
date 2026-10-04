@@ -2,6 +2,7 @@ package com.vivekkaushik.revv.nav
 
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -40,6 +41,8 @@ data class PlaceSearch(
     val results: List<Place> = emptyList(),
     val searching: Boolean = false,
     val error: String? = null,
+    /** Who the results come from, to credit beside them (see [PlaceFinder.credit]). */
+    val credit: String? = null,
 )
 
 data class NavState(
@@ -61,8 +64,13 @@ class Navigator(context: Context, private val scope: CoroutineScope) {
 
     private val appContext = context.applicationContext
     private val device = DeviceLocation(appContext)
-    private val router = ValhallaRouter()
-    private val places = PhotonSearch()
+    /** Valhalla over OpenStreetMap, or Google with the driver's key ([useGoogle]). */
+    private var router: Router = ValhallaRouter()
+    private val caller by lazy { AndroidCaller.of(appContext) }
+
+    /** Where place searches go: OpenStreetMap's Photon, or Google with the driver's key ([useGoogle]). */
+    var placeFinder: PlaceFinder = PhotonSearch()
+        private set
     private val recentPlaces = RecentPlaces(appContext)
     private val demoTrip by lazy { DemoTrip.load(appContext) }
 
@@ -121,8 +129,9 @@ class Navigator(context: Context, private val scope: CoroutineScope) {
         onFix(car.advance(speed * seconds, speed, System.currentTimeMillis()), demo = true)
     }
 
-    fun navigateTo(place: Place) {
-        recentPlaces.add(place)
+    /** [remember] keeps [place] in the recent places; a destination CarPlay chose stays out of them. */
+    fun navigateTo(place: Place, remember: Boolean = true) {
+        if (remember) recentPlaces.add(place)
         arrivalJob?.cancel()
         routeJob?.cancel()
         onRoute = null
@@ -145,6 +154,14 @@ class Navigator(context: Context, private val scope: CoroutineScope) {
         demoCar?.loops = true
     }
 
+    /** Searches and routes with Google using [apiKey], or with OpenStreetMap again for null. */
+    fun useGoogle(apiKey: String?) {
+        val google = !apiKey.isNullOrBlank()
+        placeFinder = if (google) GooglePlacesSearch(apiKey!!, caller) else PhotonSearch()
+        router = if (google) GoogleRouter(apiKey!!, caller) else ValhallaRouter()
+        clearSearch()
+    }
+
     fun search(query: String) {
         searchJob?.cancel()
         val text = query.trim()
@@ -156,8 +173,11 @@ class Navigator(context: Context, private val scope: CoroutineScope) {
         searchJob = scope.launch {
             // Wait for a pause in typing rather than asking the server for every letter.
             delay(TYPING_PAUSE_MILLIS)
+            val finder = placeFinder
             val result = try {
-                PlaceSearch(query, places.search(text, near = _state.value.fix?.position))
+                PlaceSearch(query, finder.search(text, near = _state.value.fix?.position), credit = finder.credit)
+            } catch (e: PlaceSearchException) {
+                PlaceSearch(query, error = e.message)
             } catch (e: IOException) {
                 PlaceSearch(query, error = NO_CONNECTION)
             } catch (e: JSONException) {
@@ -254,6 +274,7 @@ class Navigator(context: Context, private val scope: CoroutineScope) {
     private fun requestRoute(destination: Place, from: Fix, reroute: Boolean) {
         routeJob?.cancel()
         val heading = from.bearing?.takeIf { (from.speedMps ?: 0.0) >= MIN_HEADING_SPEED }
+        val router = router
         routeJob = scope.launch {
             val route = try {
                 router.route(from.position, heading, destination.position, avoidTolls)
@@ -264,21 +285,45 @@ class Navigator(context: Context, private val scope: CoroutineScope) {
                 routeFailed(destination, NO_CONNECTION, reroute)
                 return@launch
             }
+            Log.i(TAG, "%s route: %.1f km, %.0f min%s".format(router.name, route.metres / 1000, route.seconds / 60, if (reroute) ", rerouted" else ""))
             // The driver may have ended the trip or picked somewhere else meanwhile.
             if (_state.value.trip?.destination != destination) return@launch
-            onRoute = null
-            offRouteFixes = 0
-            demoCar?.follow(route.path, loops = false)
-            _state.update { it.copy(trip = Trip(destination, TripStatus.Guiding, route, remaining = route.path.points)) }
-            // Guidance straight away rather than at the next fix.
-            val state = _state.value
-            val car = demoCar
-            val fix = if (state.demo && car != null) car.fixAt(state.fix?.speedMps ?: 0.0, System.currentTimeMillis()) else state.fix
-            fix?.let { onFix(it, demo = state.demo && car != null) }
+            guide(destination, route)
         }
     }
 
+    /**
+     * A route from where the car is to [to] by the current router, for comparing places before
+     * going anywhere; null without a position. Throws as [Router.route] does.
+     */
+    suspend fun planRoute(to: LatLon): Route? {
+        val from = _state.value.fix ?: return null
+        val heading = from.bearing?.takeIf { (from.speedMps ?: 0.0) >= MIN_HEADING_SPEED }
+        return router.route(from.position, heading, to, avoidTolls)
+    }
+
+    /** Guides to [place] along [route], already planned from where the car is ([planRoute]). */
+    fun follow(place: Place, route: Route, remember: Boolean = true) {
+        if (remember) recentPlaces.add(place)
+        arrivalJob?.cancel()
+        routeJob?.cancel()
+        guide(place, route)
+    }
+
+    private fun guide(destination: Place, route: Route) {
+        onRoute = null
+        offRouteFixes = 0
+        demoCar?.follow(route.path, loops = false)
+        _state.update { it.copy(trip = Trip(destination, TripStatus.Guiding, route, remaining = route.path.points)) }
+        // Guidance straight away rather than at the next fix.
+        val state = _state.value
+        val car = demoCar
+        val fix = if (state.demo && car != null) car.fixAt(state.fix?.speedMps ?: 0.0, System.currentTimeMillis()) else state.fix
+        fix?.let { onFix(it, demo = state.demo && car != null) }
+    }
+
     private fun routeFailed(destination: Place, reason: String, reroute: Boolean) {
+        Log.w(TAG, "No ${if (reroute) "reroute" else "route"}: $reason")
         _state.update { state ->
             val trip = state.trip?.takeIf { it.destination == destination } ?: return@update state
             // A failed reroute keeps following the old route; the next check tries again.
@@ -326,6 +371,7 @@ class Navigator(context: Context, private val scope: CoroutineScope) {
     }
 
     private companion object {
+        const val TAG = "RevvNavigator"
         /** A fix this close to the route is drawn on it. */
         const val SNAP_METRES = 25.0
         const val OFF_ROUTE_FIXES = 3

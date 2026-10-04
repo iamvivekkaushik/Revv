@@ -36,6 +36,8 @@ data class ScreenState(
     val previous: List<HmiApp> = emptyList(),
     /** Set when Maps was opened to search (the home panel's "Where to?"); Maps clears it once the search is up. */
     val searchRequested: Boolean = false,
+    /** Set when Settings was opened for CarPlay's settings; Settings clears it once that page is up. */
+    val carPlaySettingsRequested: Boolean = false,
 ) {
     /** [app] opened over this screen. An app already in the stack moves to the top rather than repeating. */
     fun open(app: HmiApp): ScreenState =
@@ -118,6 +120,12 @@ interface HmiActions {
 
     /** Maps has put its search up for a [ScreenState.searchRequested]. */
     fun mapsSearchShown()
+
+    /** Opens Settings on its CarPlay page. */
+    fun openCarPlaySettings()
+
+    /** Settings has put its CarPlay page up for a [ScreenState.carPlaySettingsRequested]. */
+    fun carPlaySettingsShown()
     fun goHome()
 
     /** Returns to the app the open one was opened from, or home. */
@@ -156,6 +164,7 @@ interface HmiActions {
     fun toggleSetting(key: String)
     fun setDisplaySize(percent: Int)
     fun setChoice(key: String, index: Int)
+    fun setGoogleApiKey(key: String?)
     fun changeLevel(key: String, direction: Int)
 
     fun refreshAdapterChoices()
@@ -171,6 +180,9 @@ interface HmiActions {
     /** Makes the home screen's fuel widget open [app], or show the fuel range again when null. */
     /** Chooses which camera the Rear Cam screen shows; null goes back to picking one automatically. */
     fun setRearCameraId(id: String?)
+
+    /** Picks RevvCarPlay's identity files (identity.pk8 and certificate.p7b) and hands them to the companion. */
+    fun importCarPlayIdentity()
 
     /** Makes Start projection open [app], or the usual projection app again when null. */
     fun setProjectionApp(app: LauncherApp?)

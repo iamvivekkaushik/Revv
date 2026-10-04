@@ -36,6 +36,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -110,12 +111,22 @@ object Hmi {
 
     const val DESIGN_WIDTH = 1920f
     const val DESIGN_HEIGHT = 1080f
+
+    /** Display sizes above this use the compact layouts (see [LocalCompact]). */
+    const val COMPACT_ABOVE_PERCENT = 130
 }
 
 private const val HOLD_DELAY_MILLIS = 450L
 
 /** Whether taps give haptic feedback (Settings → Sound → Touch feedback). */
 val LocalTouchFeedback = compositionLocalOf { true }
+
+/**
+ * Whether screens use their compact layouts, for display sizes above 130%. There the artboard has
+ * as little as 1200×675 design pixels to fill, so margins tighten and the least needed panels go;
+ * type and touch targets keep their design sizes, which is what a bigger display size is for.
+ */
+val LocalCompact = staticCompositionLocalOf { false }
 
 /**
  * Scales the 1920×1080 artboard uniformly to fit, then stretches whichever axis has room left
@@ -125,7 +136,10 @@ val LocalTouchFeedback = compositionLocalOf { true }
 fun DesignCanvas(modifier: Modifier = Modifier, sizePercent: Int = 100, content: @Composable BoxScope.() -> Unit) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         val scale = min(constraints.maxWidth / Hmi.DESIGN_WIDTH, constraints.maxHeight / Hmi.DESIGN_HEIGHT) * sizePercent / 100f
-        CompositionLocalProvider(LocalDensity provides Density(scale, fontScale = 1f)) {
+        CompositionLocalProvider(
+            LocalDensity provides Density(scale, fontScale = 1f),
+            LocalCompact provides (sizePercent > Hmi.COMPACT_ABOVE_PERCENT),
+        ) {
             Box(Modifier.fillMaxSize(), content = content)
         }
     }

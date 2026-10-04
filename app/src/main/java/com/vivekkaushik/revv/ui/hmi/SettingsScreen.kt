@@ -1,5 +1,17 @@
 package com.vivekkaushik.revv.ui.hmi
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import com.vivekkaushik.revv.nav.GoogleApiKey
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import android.widget.Toast
+import android.net.Uri
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothManager
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -16,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
@@ -50,10 +64,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.vivekkaushik.revv.obd.BluetoothAccess
 import com.vivekkaushik.revv.obd.ObdAdapter
 import com.vivekkaushik.revv.obd.ObdLink
 import com.vivekkaushik.revv.obd.WifiEndpoint
+import com.vivekkaushik.revv.settings.HmiSettings
 import com.vivekkaushik.revv.settings.SettingsStore
 import com.vivekkaushik.revv.system.NightMode
 import com.vivekkaushik.revv.system.NightSchedule
@@ -80,9 +96,16 @@ private enum class Category(val title: String, val icon: String) {
 private sealed interface SettingRow {
     val name: String
     val detail: String
+    /** A short tag beside the name, e.g. "EXPERIMENTAL". */
+    val badge: String? get() = null
 }
 
-private class ToggleRow(val key: String, override val name: String, override val detail: String) : SettingRow
+private class ToggleRow(
+    val key: String,
+    override val name: String,
+    override val detail: String,
+    override val badge: String? = null,
+) : SettingRow
 
 private class LevelRow(
     val key: String,
@@ -115,6 +138,12 @@ private class OptionRow(
     val selected: Int,
     val onChange: (Int) -> Unit,
 ) : SettingRow
+
+/** An on/off setting kept outside Revv's own settings, e.g. one of RevvCarPlay's. */
+private class SwitchRow(override val name: String, override val detail: String, val on: Boolean, val onToggle: (Boolean) -> Unit) : SettingRow
+
+/** A caption over the rows that follow, with an optional note beside it. */
+private class HeaderRow(override val name: String, override val detail: String = "") : SettingRow
 
 private class ActionRow(
     override val name: String,
@@ -150,27 +179,55 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
     var viewingLicenses by rememberSaveable { mutableStateOf(false) }
     var choosingFuelApp by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = choosingFuelApp) { choosingFuelApp = false }
-    val carPlayState: CarPlayCompanion.State? = state.carPlay?.let { it.state.collectAsState().value }
-    val openCarPlaySettings = { CarPlayCompanion.launchIntent(context)?.let(context::startActivity); Unit }
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-        Column(
-            Modifier.width(420.dp).fillMaxHeight().border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            // CarPlay settings exist only with the companion app installed.
-            Category.entries.filter { it != Category.CarPlay || state.carPlay != null }.forEach { entry ->
-                CategoryButton(entry, selected = entry == category) {
-                    category = entry
-                    choosingAdapter = false
-                    viewingLog = false
-                    editingCar = false
-                    settingUpGears = false
-                    choosingFuelApp = false
-                    viewingLicenses = false
+    var editingGoogleKey by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = editingGoogleKey) { editingGoogleKey = false }
+    // The Auto screen sends a driver here to finish CarPlay's setup.
+    LaunchedEffect(state.screen.carPlaySettingsRequested) {
+        if (state.screen.carPlaySettingsRequested) {
+            category = Category.CarPlay
+            actions.carPlaySettingsShown()
+        }
+    }
+    // A page of CarPlay's own (car hotspot, iPhone) is open.
+    var carPlayPage by remember { mutableStateOf(false) }
+    // Compact (display sizes above 130%): a narrower category list, hidden while a page such as an
+    // editor is open, so the page gets the whole width; back closes it as before.
+    val compact = LocalCompact.current
+    val pageOpen = choosingAdapter || viewingLog || editingCar || settingUpGears || viewingLicenses || choosingFuelApp || editingGoogleKey ||
+        (category == Category.CarPlay && carPlayPage)
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(if (compact) 24.dp else 28.dp)) {
+        if (!compact || !pageOpen) {
+            Column(
+                Modifier
+                    .width(if (compact) 300.dp else 420.dp)
+                    .fillMaxHeight()
+                    .border(1.dp, Hmi.Line)
+                    .verticalScroll(rememberScrollState())
+                    .padding(if (compact) 12.dp else 16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                // CarPlay settings exist only with the companion app installed.
+                Category.entries.filter { it != Category.CarPlay || state.carPlay != null }.forEach { entry ->
+                    CategoryButton(entry, selected = entry == category) {
+                        category = entry
+                        choosingAdapter = false
+                        viewingLog = false
+                        editingCar = false
+                        settingUpGears = false
+                        choosingFuelApp = false
+                        viewingLicenses = false
+                        editingGoogleKey = false
+                    }
                 }
             }
         }
-        Column(Modifier.weight(1f).fillMaxHeight().border(1.dp, Hmi.Line).padding(horizontal = 36.dp, vertical = 32.dp)) {
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .border(1.dp, Hmi.Line)
+                .padding(horizontal = if (compact) 28.dp else 36.dp, vertical = if (compact) 24.dp else 32.dp),
+        ) {
             when {
                 choosingAdapter -> AdapterPicker(state, actions, onDone = { choosingAdapter = false })
                 viewingLog -> AdapterLog(state.obdLog, onDone = { viewingLog = false })
@@ -178,6 +235,16 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                 settingUpGears -> GearIndicatorPanel(state, actions, onDone = { settingUpGears = false })
                 viewingLicenses -> OpenSourceLicenses(onDone = { viewingLicenses = false })
                 choosingFuelApp -> FuelWidgetPicker(state, actions, onDone = { choosingFuelApp = false })
+                editingGoogleKey -> ApiKeyEditor(
+                    initial = state.settings.googleApiKey.orEmpty(),
+                    onCancel = { editingGoogleKey = false },
+                    onSave = { key ->
+                        actions.setGoogleApiKey(key)
+                        editingGoogleKey = false
+                    },
+                )
+                category == Category.CarPlay && state.carPlay != null ->
+                    CarPlaySettings(state, actions, Modifier.weight(1f), title = category.title, onPageChange = { carPlayPage = it })
                 else -> {
                     HText(category.title, Modifier.padding(bottom = 16.dp), size = 26.sp, family = Hmi.Display)
                     val rows = rowsFor(
@@ -192,8 +259,7 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                         setUpGears = { settingUpGears = true },
                         chooseFuelApp = { choosingFuelApp = true },
                         showLicenses = { viewingLicenses = true },
-                        carPlay = carPlayState,
-                        openCarPlaySettings = openCarPlaySettings,
+                        editGoogleKey = { editingGoogleKey = true },
                     )
                     // Vehicle has more rows than fit.
                     LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
@@ -498,7 +564,7 @@ private fun CategoryButton(category: Category, selected: Boolean, onClick: () ->
     val color = if (selected) Hmi.Text else Hmi.Muted
     Pressable(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(76.dp),
+        modifier = Modifier.fillMaxWidth().height(if (LocalCompact.current) 64.dp else 76.dp),
         background = if (selected) Hmi.Cyan.copy(alpha = 0.10f) else Color.Transparent,
         pressedBackground = Hmi.CyanTint,
         border = if (selected) Hmi.Cyan else null,
@@ -518,25 +584,73 @@ private fun CategoryButton(category: Category, selected: Boolean, onClick: () ->
 
 @Composable
 private fun SettingRowView(row: SettingRow, state: HmiUiState, actions: HmiActions) {
-    Row(
-        Modifier.fillMaxWidth().edgeLine(Hmi.LineSoft).padding(vertical = 22.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            HText(row.name, size = 21.sp, weight = FontWeight.Medium)
-            HText(row.detail, Modifier.padding(top = 4.dp), size = 15.sp, color = Hmi.Muted)
+    if (row is HeaderRow) {
+        Row(Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Caption(row.name, Modifier.weight(1f), color = Hmi.Cyan)
+            if (row.detail.isNotEmpty()) Caption(row.detail, size = 13.sp)
         }
-        when (row) {
-            is ToggleRow -> Toggle(state.settings.isOn(row.key)) { actions.toggleSetting(row.key) }
-            is LevelRow -> Level(row.value, row.max) { direction -> actions.changeLevel(row.key, direction) }
-            is StepperRow -> Stepper(row.value, row.range, row.step, row.holdToRepeat, row.onChange)
-            is ValueRow -> HText(row.value, size = 19.sp, color = Hmi.Muted)
-            is OptionRow -> OptionStepper(row.options, row.selected, row.onChange)
-            is ActionRow -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.secondary?.let { (label, onClick) -> GhostButton(label, onClick, Modifier.height(52.dp)) }
-                AccentButton(row.button, row.onClick, Modifier.height(52.dp))
+        return
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // In a narrow list, e.g. beside CarPlay, wide controls go under the text instead of squeezing it.
+        val wideControl = row is LevelRow || row is OptionRow || row is ActionRow || row is ValueRow
+        if (wideControl && maxWidth < STACK_ROWS_BELOW) {
+            Column(
+                Modifier.fillMaxWidth().edgeLine(Hmi.LineSoft).padding(vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                RowText(row)
+                RowControl(row, state, actions)
             }
+        } else {
+            Row(
+                Modifier.fillMaxWidth().edgeLine(Hmi.LineSoft).padding(vertical = 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                RowText(row, Modifier.weight(1f))
+                RowControl(row, state, actions)
+            }
+        }
+    }
+}
+
+/** Below this width a settings list puts wide controls under their text. */
+private val STACK_ROWS_BELOW = 560.dp
+
+@Composable
+private fun RowText(row: SettingRow, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            // The badge keeps its width; in a narrow list the name wraps instead.
+            HText(row.name, Modifier.weight(1f, fill = false), size = 21.sp, weight = FontWeight.Medium)
+            row.badge?.let { badge ->
+                Caption(
+                    badge,
+                    Modifier.border(1.dp, Hmi.Amber.copy(alpha = 0.6f)).padding(horizontal = 8.dp, vertical = 2.dp),
+                    color = Hmi.Amber,
+                    size = 12.sp,
+                    maxLines = 1,
+                )
+            }
+        }
+        HText(row.detail, Modifier.padding(top = 4.dp), size = 15.sp, color = Hmi.Muted)
+    }
+}
+
+@Composable
+private fun RowControl(row: SettingRow, state: HmiUiState, actions: HmiActions) {
+    when (row) {
+        is ToggleRow -> Toggle(state.settings.isOn(row.key)) { actions.toggleSetting(row.key) }
+        is SwitchRow -> Toggle(row.on) { row.onToggle(!row.on) }
+        is HeaderRow -> Unit
+        is LevelRow -> Level(row.value, row.max) { direction -> actions.changeLevel(row.key, direction) }
+        is StepperRow -> Stepper(row.value, row.range, row.step, row.holdToRepeat, row.onChange)
+        is ValueRow -> HText(row.value, size = 19.sp, color = Hmi.Muted)
+        is OptionRow -> OptionStepper(row.options, row.selected, row.onChange)
+        is ActionRow -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            row.secondary?.let { (label, onClick) -> GhostButton(label, onClick, Modifier.height(52.dp)) }
+            AccentButton(row.button, row.onClick, Modifier.height(52.dp))
         }
     }
 }
@@ -566,7 +680,8 @@ private fun Level(value: Int, max: Int, onStep: (Int) -> Unit) {
     val lit = if (max > 0) Math.round(value * 10f / max) else 0
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Pressable(onClick = { onStep(-1) }, Modifier.size(52.dp), repeatEveryMillis = 120) { HText("−", size = 24.sp) }
-        Row(Modifier.size(220.dp, 14.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        // Shorter in a narrow list.
+        Row(Modifier.weight(1f, fill = false).width(220.dp).height(14.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             repeat(10) { cell ->
                 Box(Modifier.weight(1f).fillMaxHeight().background(if (cell < lit) Hmi.Cyan else Hmi.Line))
             }
@@ -584,7 +699,15 @@ private fun OptionStepper(options: List<String>, selected: Int, onChange: (Int) 
         Pressable(onClick = { if (canLower) onChange(selected - 1) }, Modifier.size(52.dp)) {
             HText("<", size = 24.sp, color = if (canLower) Hmi.Text else Hmi.Faint)
         }
-        HText(options.getOrElse(selected) { "" }, Modifier.width(260.dp), size = 18.sp, family = Hmi.Display, align = TextAlign.Center, maxLines = 1)
+        // Narrower in a narrow list.
+        HText(
+            options.getOrElse(selected) { "" },
+            Modifier.weight(1f, fill = false).width(260.dp),
+            size = 18.sp,
+            family = Hmi.Display,
+            align = TextAlign.Center,
+            maxLines = 1,
+        )
         Pressable(onClick = { if (canRaise) onChange(selected + 1) }, Modifier.size(52.dp)) {
             HText(">", size = 24.sp, color = if (canRaise) Hmi.Text else Hmi.Faint)
         }
@@ -620,15 +743,14 @@ private fun rowsFor(
     setUpGears: () -> Unit,
     chooseFuelApp: () -> Unit,
     showLicenses: () -> Unit,
-    carPlay: CarPlayCompanion.State? = null,
-    openCarPlaySettings: () -> Unit = {},
+    editGoogleKey: () -> Unit,
 ): List<SettingRow> {
     val settings = state.settings
     val system = state.system
     return when (category) {
         Category.Display -> listOf(
             brightnessRow(state, actions),
-            StepperRow("Display size", "Scale of everything on screen, in percent", settings.displaySize, SettingsStore.DISPLAY_SIZES.first()..SettingsStore.DISPLAY_SIZES.last(), step = 10, holdToRepeat = false, onChange = actions::setDisplaySize),
+            StepperRow("Display size", "Scale of everything on screen, in percent. Above 130, a compact layout with fewer panels", settings.displaySize, SettingsStore.DISPLAY_SIZES.first()..SettingsStore.DISPLAY_SIZES.last(), step = 10, holdToRepeat = false, onChange = actions::setDisplaySize),
             OptionRow("Time format", "Clock on the home screen and trip times", ClockFormats.timeLabels, settings.timeFormat) {
                 actions.setChoice(SettingsStore.TIME_FORMAT, it)
             },
@@ -661,34 +783,8 @@ private fun rowsFor(
             ToggleRow("hotspot", "Phone hotspot", "Use phone data for maps"),
             pairedDevicesRow(system, actions),
         )
-        Category.CarPlay -> {
-            val companion = state.carPlay
-            val session = carPlay as? CarPlayCompanion.State.Session
-            val link = when {
-                session == null || !session.wireless -> 0
-                session.hotspotMode == CarPlayCompanion.HOTSPOT_MANUAL -> 2
-                else -> 1
-            }
-            listOfNotNull(
-                ToggleRow(SettingsStore.CARPLAY_WIDE, "Wide screen", "CarPlay fills the Auto screen; its status and link controls stay here"),
-                OptionRow("Link", "How the iPhone connects; a running session reconnects over the new link", listOf("USB", "Wi-Fi Direct", "Car hotspot"), link) { index ->
-                    when (index) {
-                        0 -> companion?.configure(wireless = false)
-                        1 -> companion?.configure(wireless = true, hotspotMode = CarPlayCompanion.HOTSPOT_P2P)
-                        else -> companion?.configure(wireless = true, hotspotMode = CarPlayCompanion.HOTSPOT_MANUAL)
-                    }
-                },
-                ValueRow("Status", carPlay?.explanation() ?: "Open the Auto screen to connect", carPlay?.headline() ?: "—"),
-                ActionRow("RevvCarPlay", "Identity, connection setup, display and audio, in the companion app", "OPEN", openCarPlaySettings),
-                when (session?.phase) {
-                    null -> null
-                    CarPlayCompanion.PHASE_SETUP_REQUIRED -> ActionRow("Session", "Finish the one-time setup in RevvCarPlay first", "FINISH SETUP", openCarPlaySettings)
-                    CarPlayCompanion.PHASE_IDLE, CarPlayCompanion.PHASE_FAILED ->
-                        ActionRow("Session", "Start CarPlay again; the Auto screen shows it", "CONNECT", onClick = { companion?.retry() })
-                    else -> ActionRow("Session", "End the CarPlay connection", "DISCONNECT", onClick = { companion?.stop() })
-                },
-            )
-        }
+        // Shown by CarPlaySettings, which keeps its own pages.
+        Category.CarPlay -> emptyList()
         Category.Vehicle -> listOfNotNull(
             adapterRow(state, actions, chooseAdapter),
             settings.obdAdapter?.let { ActionRow("Adapter log", "What the adapter said, for when a car won't connect", "VIEW", showLog) },
@@ -706,6 +802,10 @@ private fun rowsFor(
                 !system.locationOn -> ActionRow("Location", "Switched off on this head unit", "OPEN", actions::openLocationSettings)
                 else -> ValueRow("Location", "The map follows this head unit's GPS", "Allowed")
             },
+            OptionRow("Search and routes", placeSearchDetail(settings), PLACE_SEARCHES, settings.placeSearch) {
+                actions.setChoice(SettingsStore.PLACE_SEARCH, it)
+            },
+            googleKeyRow(settings, actions, editGoogleKey),
             ToggleRow(SettingsStore.AVOID_TOLLS, "Avoid tolls", "Prefer free roads"),
             // Kept from the design, but OpenStreetMap routing has no traffic feed to use.
             ToggleRow("traffic", "Live traffic", "Not available yet · routes use typical speeds"),
@@ -734,6 +834,395 @@ private fun rowsFor(
         )
     }
 }
+
+/**
+ * Settings › CarPlay, with its own pages (car hotspot details, the iPhone): shown in Settings, and
+ * beside CarPlay on the Auto screen when the driver wants it there ([besideCarPlay]). [title] heads
+ * the list; [onPageChange] hears whether one of the pages is open.
+ */
+@Composable
+fun CarPlaySettings(
+    state: HmiUiState,
+    actions: HmiActions,
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    besideCarPlay: Boolean = false,
+    onPageChange: (Boolean) -> Unit = {},
+) {
+    val companion = state.carPlay ?: return
+    val context = LocalContext.current
+    var editingHotspot by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = editingHotspot) { editingHotspot = false }
+    var choosingIPhone by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = choosingIPhone) { choosingIPhone = false }
+    // Removing CarPlay's identity takes a second tap: CarPlay can't start again until another is imported.
+    var confirmingIdentityRemoval by rememberSaveable { mutableStateOf(false) }
+    val carPlay by companion.state.collectAsState()
+    val settings by companion.settings.collectAsState()
+    val refused by companion.settingsRefused.collectAsState()
+    // Permissions are granted on Android's pages for RevvCarPlay; read the settings again on return.
+    LifecycleResumeEffect(companion) {
+        companion.refreshSettings()
+        onPauseOrDispose { }
+    }
+    val page = editingHotspot || choosingIPhone
+    val currentOnPageChange by rememberUpdatedState(onPageChange)
+    LaunchedEffect(page) { currentOnPageChange(page) }
+    DisposableEffect(Unit) { onDispose { currentOnPageChange(false) } }
+    BoxWithConstraints(modifier) {
+        // Beside CarPlay the column can be too small for the hotspot editor; it opens in Settings then.
+        val roomForEditor = maxWidth >= HOTSPOT_EDITOR_MIN_WIDTH || maxHeight >= STACKED_EDITOR_HEIGHT
+        Column(Modifier.fillMaxSize()) {
+            when {
+                editingHotspot -> HotspotEditor(
+                    initialName = settings?.hotspotSsid.orEmpty(),
+                    onCancel = { editingHotspot = false },
+                    onSave = { name, password ->
+                        companion.saveHotspot(name, password)
+                        editingHotspot = false
+                    },
+                )
+                choosingIPhone -> IPhonePicker(
+                    state,
+                    actions,
+                    chosen = settings?.phoneAddress,
+                    onChoose = { address, name -> companion.choosePhone(address, name) },
+                    onDone = { choosingIPhone = false },
+                )
+                else -> {
+                    title?.let { HText(it, Modifier.padding(bottom = 16.dp), size = 26.sp, family = Hmi.Display) }
+                    val rows = carPlayRows(
+                        state, actions, carPlay, settings, refused,
+                        openCarPlay = { CarPlayCompanion.launchIntent(context)?.let(context::startActivity) },
+                        openCarPlayAppInfo = { CarPlayCompanion.appInfoIntent(context)?.let(context::startActivity) },
+                        openCarPlayWriteSettings = { CarPlayCompanion.writeSettingsIntent(context)?.let(context::startActivity) },
+                        editHotspot = { if (besideCarPlay && !roomForEditor) actions.openCarPlaySettings() else editingHotspot = true },
+                        chooseIPhone = { choosingIPhone = true },
+                        confirmingIdentityRemoval = confirmingIdentityRemoval,
+                        setConfirmingIdentityRemoval = { confirmingIdentityRemoval = it },
+                    )
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                        items(rows) { row -> SettingRowView(row, state, actions) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Settings › CarPlay: the session, then RevvCarPlay's own settings, which the companion keeps no
+ * screen for. Display and audio changes reconnect a running session, a moment after the last one.
+ */
+private fun carPlayRows(
+    state: HmiUiState,
+    actions: HmiActions,
+    carPlay: CarPlayCompanion.State?,
+    settings: CarPlayCompanion.Settings?,
+    refused: Boolean,
+    openCarPlay: () -> Unit,
+    openCarPlayAppInfo: () -> Unit,
+    openCarPlayWriteSettings: () -> Unit,
+    editHotspot: () -> Unit,
+    chooseIPhone: () -> Unit,
+    confirmingIdentityRemoval: Boolean,
+    setConfirmingIdentityRemoval: (Boolean) -> Unit,
+): List<SettingRow> {
+    val companion = state.carPlay
+    val session = carPlay as? CarPlayCompanion.State.Session
+    val top = listOfNotNull(
+        ValueRow("Status", carPlay?.explanation() ?: "Open the Auto screen to connect", carPlay?.headline() ?: "—"),
+        when (session?.phase) {
+            null -> null
+            // Identity and hotspot details are set below; only the companion can ask for its permissions and VPN.
+            CarPlayCompanion.PHASE_SETUP_REQUIRED -> if (session.missing.any { it in COMPANION_PROMPTS }) {
+                ActionRow("Session", "Allow RevvCarPlay's one-time prompts in the companion app", "FINISH SETUP", openCarPlay)
+            } else {
+                null
+            }
+            CarPlayCompanion.PHASE_IDLE, CarPlayCompanion.PHASE_FAILED ->
+                ActionRow("Session", "Start CarPlay again; the Auto screen shows it", "CONNECT", onClick = { companion?.retry() })
+            else -> ActionRow("Session", "End the CarPlay connection", "DISCONNECT", onClick = { companion?.stop() })
+        },
+        ToggleRow(SettingsStore.CARPLAY_WIDE, "Wide screen", "CarPlay fills the Auto screen; its status and link controls stay here"),
+        ToggleRow(SettingsStore.CARPLAY_SETTINGS_BESIDE, "Settings beside CarPlay", "Without wide screen, the Auto screen's side column shows these settings"),
+        ToggleRow(SettingsStore.CARPLAY_ON_RIGHT, "CarPlay on the right", "Without wide screen, CarPlay sits right of its side column instead of left"),
+        ToggleRow(
+            SettingsStore.CARPLAY_FOLLOW_ROUTE,
+            "Follow CarPlay's route",
+            "Revv's map routes to where CarPlay guides, found by the destination's name with Navigation's place search; " +
+                "without a match it shows CarPlay's turns",
+            badge = "EXPERIMENTAL",
+        ),
+        // Without following, CarPlay's own turns may still show, with no route of Revv's.
+        ToggleRow(
+            SettingsStore.CARPLAY_SHOW_TURNS,
+            "Show CarPlay's turns",
+            "Revv's map shows CarPlay's next turn and ETA, without looking the place up or routing itself",
+            badge = "EXPERIMENTAL",
+        ).takeUnless { state.settings.isOn(SettingsStore.CARPLAY_FOLLOW_ROUTE) },
+    )
+    if (settings == null) {
+        return top + if (refused) {
+            ValueRow("RevvCarPlay settings", "RevvCarPlay takes settings only from a Revv signed with the same key", "Unavailable")
+        } else {
+            ValueRow("RevvCarPlay settings", "Waiting for RevvCarPlay", "—")
+        }
+    }
+    fun set(name: String, value: Int) = companion?.setSetting(name, value)
+    fun set(name: String, value: Boolean) = companion?.setSetting(name, value)
+    val link = when {
+        !settings.wireless -> 0
+        settings.hotspotMode == CarPlayCompanion.HOTSPOT_MANUAL -> 2
+        else -> 1
+    }
+    return top + listOfNotNull(
+        HeaderRow("SETUP"),
+        when {
+            settings.identityInstalled && confirmingIdentityRemoval -> ActionRow(
+                "Remove identity?",
+                "CarPlay won't start again until another is imported",
+                "REMOVE",
+                onClick = {
+                    companion?.removeIdentity()
+                    setConfirmingIdentityRemoval(false)
+                },
+                secondary = "KEEP" to { setConfirmingIdentityRemoval(false) },
+            )
+            settings.identityInstalled -> ActionRow("Identity", "Installed · the iPhone can authenticate this head unit", "REPLACE", actions::importCarPlayIdentity,
+                secondary = "REMOVE" to { setConfirmingIdentityRemoval(true) })
+            else ->
+                ActionRow("Identity", "None installed · pick identity.pk8 and certificate.p7b", "IMPORT", actions::importCarPlayIdentity)
+        },
+        ActionRow("Permissions", "Nearby devices, location and microphone, granted to RevvCarPlay", "OPEN", openCarPlayAppInfo),
+        HeaderRow("CONNECTION"),
+        OptionRow("Link", "How the iPhone connects; a running session reconnects over the new link", listOf("USB", "Wi-Fi Direct", "Car hotspot"), link) { index ->
+            when (index) {
+                0 -> companion?.configure(wireless = false)
+                1 -> companion?.configure(wireless = true, hotspotMode = CarPlayCompanion.HOTSPOT_P2P)
+                else -> companion?.configure(wireless = true, hotspotMode = CarPlayCompanion.HOTSPOT_MANUAL)
+            }
+        },
+        ActionRow(
+            "Car hotspot",
+            if (settings.hotspotReady) "${settings.hotspotSsid} · for the Car hotspot link" else "Name and password not saved yet",
+            if (settings.hotspotReady) "EDIT" else "SET UP",
+            editHotspot,
+        ),
+        // Over the car hotspot, RevvCarPlay switches the head unit's hotspot on when it may.
+        when {
+            link != 2 -> null
+            !settings.hotspotSwitchAllowed -> ActionRow(
+                "Hotspot switch",
+                "Let RevvCarPlay turn this head unit's hotspot on: allow Modify system settings for it",
+                "ALLOW",
+                openCarPlayWriteSettings,
+            )
+            settings.hotspotOn == true -> ValueRow("Head unit hotspot", "RevvCarPlay turns it on for each CarPlay connection", "On")
+            else -> ActionRow(
+                "Head unit hotspot",
+                if (settings.hotspotOn == false) "Off · RevvCarPlay turns it on when CarPlay connects" else "RevvCarPlay turns it on when CarPlay connects",
+                "TURN ON",
+                onClick = { companion?.turnOnHotspot() },
+            )
+        },
+        ActionRow("iPhone", if (settings.phoneAddress != null) "${settings.phoneName} · for wireless CarPlay" else "None chosen · wireless CarPlay needs one", "CHOOSE", chooseIPhone),
+        HeaderRow("DISPLAY", "CHANGES RECONNECT CARPLAY"),
+        OptionRow("CarPlay size", "Size of CarPlay's icons and text", listOf("Large", "Medium", "Small"), CARPLAY_SIZES.indexOf(settings.carPlaySize).coerceAtLeast(0)) {
+            set(CarPlayCompanion.SETTING_CARPLAY_SIZE, CARPLAY_SIZES[it])
+        },
+        OptionRow("Resolution", "Lower eases the load on a slow head unit", listOf("Native", "80 %", "60 %"), RESOLUTIONS.indexOf(settings.resolution).coerceAtLeast(0)) {
+            set(CarPlayCompanion.SETTING_RESOLUTION, RESOLUTIONS[it])
+        },
+        OptionRow("Frame rate", "60 fps moves smoother, 30 fps is lighter", listOf("30 fps", "60 fps"), if (settings.frameRate == 60) 1 else 0) {
+            set(CarPlayCompanion.SETTING_FRAME_RATE, if (it == 1) 60 else 30)
+        },
+        SwitchRow("Efficient video", "HEVC; leave off for the widest head-unit support", settings.hevc) { set(CarPlayCompanion.SETTING_HEVC, it) },
+        SwitchRow("Right-hand drive", "CarPlay's controls closer to the driver", settings.rightHandDrive) { set(CarPlayCompanion.SETTING_RIGHT_HAND_DRIVE, it) },
+        HeaderRow("AUDIO", "CHANGES RECONNECT CARPLAY"),
+        SwitchRow("Audio focus", "CarPlay music takes audio focus; turn off if sound goes missing", settings.audioFocus) { set(CarPlayCompanion.SETTING_AUDIO_FOCUS, it) },
+        StepperRow("Media stream", "0 routes music automatically; a tone plays on the stream you pick", settings.mediaStream, 0..20, holdToRepeat = false) {
+            set(CarPlayCompanion.SETTING_MEDIA_STREAM, it)
+        },
+        StepperRow("Navigation stream", "Where turn prompts play; 0 routes them automatically", settings.navigationStream, 0..20, holdToRepeat = false) {
+            set(CarPlayCompanion.SETTING_NAVIGATION_STREAM, it)
+        },
+        OptionRow("Music buffer", "More rides out a weak link, at a little delay", listOf("300 ms", "500 ms", "1000 ms"), MUSIC_BUFFERS.indexOf(settings.musicBufferMillis).coerceAtLeast(0)) {
+            set(CarPlayCompanion.SETTING_MUSIC_BUFFER, MUSIC_BUFFERS[it])
+        },
+        if (settings.advancedAudioAvailable) {
+            SwitchRow("Advanced channel mapping", "Route by usage and content type instead of stream type", settings.advancedAudio) { set(CarPlayCompanion.SETTING_ADVANCED_AUDIO, it) }
+        } else {
+            null
+        },
+        HeaderRow("LOCATION"),
+        SwitchRow("Location to iPhone", "This head unit's GPS for the iPhone's maps, when it asks", settings.locationReporting) { set(CarPlayCompanion.SETTING_LOCATION_REPORTING, it) },
+        if (settings.locationReporting && !settings.locationPermitted) {
+            ActionRow("Location permission", "RevvCarPlay may not read the location yet; allow precise location for it", "ALLOW", openCarPlayAppInfo)
+        } else {
+            null
+        },
+        HeaderRow("SUPPORT"),
+        ActionRow("Diagnostic report", "Saved to Downloads/Revv/CarPlay on this head unit; nothing is sent", "SAVE", onClick = { companion?.saveReport() }),
+    )
+}
+
+/** Setup only the companion's own screen can do: its permission prompts and the VPN consent. */
+private val COMPANION_PROMPTS = setOf(CarPlayCompanion.SETUP_VPN, CarPlayCompanion.SETUP_WIRELESS_PERMISSIONS)
+private val CARPLAY_SIZES = listOf(CarPlayCompanion.SIZE_LARGE, CarPlayCompanion.SIZE_MEDIUM, CarPlayCompanion.SIZE_SMALL)
+private val RESOLUTIONS = listOf(10, 8, 6)
+private val MUSIC_BUFFERS = listOf(300, 500, 1000)
+
+/** The car hotspot's name and password, typed exactly: Wi-Fi details have lower case and symbols. */
+@Composable
+private fun HotspotEditor(initialName: String, onCancel: () -> Unit, onSave: (String, String) -> Unit) {
+    var name by rememberSaveable { mutableStateOf(initialName) }
+    var password by rememberSaveable { mutableStateOf("") }
+    var typingPassword by rememberSaveable { mutableStateOf(initialName.isNotEmpty()) }
+    var showPassword by rememberSaveable { mutableStateOf(false) }
+    var tried by remember { mutableStateOf(false) }
+    val error = hotspotError(name, password)
+    val fields: @Composable (Modifier) -> Unit = { modifier ->
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            HText("CAR HOTSPOT", size = 26.sp, family = Hmi.Display)
+            HText(
+                "Copy these from the car's hotspot settings; 5 GHz works best. The password is kept by RevvCarPlay only, so type it again to change anything.",
+                size = 16.sp,
+                color = Hmi.Muted,
+                lineHeight = 22.sp,
+            )
+            CredentialField("NAME", name.ifEmpty { "–" }, selected = !typingPassword) { typingPassword = false }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                CredentialField(
+                    "PASSWORD",
+                    if (password.isEmpty()) "–" else if (showPassword) password else "•".repeat(password.length),
+                    selected = typingPassword,
+                    modifier = Modifier.weight(1f),
+                ) { typingPassword = true }
+                GhostButton(if (showPassword) "HIDE" else "SHOW", { showPassword = !showPassword }, Modifier.height(64.dp))
+            }
+            if (tried && error != null) HText(error, size = 16.sp, color = Hmi.Red)
+            Spacer(Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GhostButton("CANCEL", onCancel, Modifier.height(56.dp))
+                SolidButton(
+                    "SAVE",
+                    onClick = { tried = true; if (error == null) onSave(name.trim(), password) },
+                    modifier = Modifier.height(56.dp).weight(1f, fill = false).width(240.dp),
+                )
+            }
+        }
+    }
+    val keyboard: @Composable (Modifier) -> Unit = { modifier ->
+        FullKeyboard(
+            onKey = { key -> if (typingPassword) password = (password + key).take(63) else name = (name + key).take(32) },
+            onSpace = { if (typingPassword) password = (password + " ").take(63) else name = (name + " ").take(32) },
+            onBackspace = { if (typingPassword) password = password.dropLast(1) else name = name.dropLast(1) },
+            modifier = modifier,
+        )
+    }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        when {
+            maxWidth >= NARROW_EDITOR -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+                fields(Modifier.weight(1f).fillMaxHeight())
+                keyboard(Modifier.width(760.dp).fillMaxHeight())
+            }
+            // Beside CarPlay the column is narrow but tall: the keyboard goes under the fields.
+            maxHeight >= STACKED_EDITOR_HEIGHT -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                fields(Modifier.fillMaxWidth().weight(1f))
+                keyboard(Modifier.fillMaxWidth().height(NARROW_KEYBOARD_HEIGHT))
+            }
+            // Large display sizes: side by side, sharing the width.
+            else -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+                fields(Modifier.weight(1f).fillMaxHeight())
+                keyboard(Modifier.weight(1.4f).fillMaxHeight())
+            }
+        }
+    }
+}
+
+/** Below this width the hotspot editor's keyboard no longer gets its full width beside the fields. */
+private val NARROW_EDITOR = 1100.dp
+private val NARROW_KEYBOARD_HEIGHT = 380.dp
+
+/** The hotspot editor stacks its keyboard under the fields only with this much height. */
+private val STACKED_EDITOR_HEIGHT = 740.dp
+
+/** Narrower than this, side by side, the hotspot editor's fields get too cramped. */
+private val HOTSPOT_EDITOR_MIN_WIDTH = 1000.dp
+
+@Composable
+private fun CredentialField(label: String, value: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Pressable(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth().height(64.dp),
+        background = if (selected) Hmi.Cyan.copy(alpha = 0.10f) else Color.Transparent,
+        pressedBackground = Hmi.CyanTint,
+        border = if (selected) Hmi.Cyan else Hmi.Line,
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Caption(label, Modifier.width(120.dp), size = 13.sp)
+            HText(value, Modifier.weight(1f), size = 22.sp, maxLines = 1)
+        }
+    }
+}
+
+/** RevvCarPlay checks these too; the same rules here say what is wrong before anything is sent. */
+private fun hotspotError(name: String, password: String): String? = when {
+    name.isBlank() -> "Enter the car hotspot's name."
+    name.trim().encodeToByteArray().size > 32 -> "The name can be 32 bytes at most."
+    password.isNotEmpty() && password.length !in 8..63 -> "The password needs 8 to 63 characters, or none for an open hotspot."
+    else -> null
+}
+
+/** The paired devices to pick the iPhone for wireless CarPlay from. */
+@Composable
+private fun IPhonePicker(state: HmiUiState, actions: HmiActions, chosen: String?, onChoose: (String, String) -> Unit, onDone: () -> Unit) {
+    val context = LocalContext.current
+    val system = state.system
+    val devices = remember(system.bluetoothOn, system.hasBluetoothPermission, system.pairedDevices) { pairedDevices(context) }
+    Column(Modifier.fillMaxSize()) {
+        HText("IPHONE", size = 26.sp, family = Hmi.Display)
+        HText("The paired iPhone wireless CarPlay connects to. Pair it in Bluetooth settings first.", Modifier.padding(top = 8.dp), size = 16.sp, color = Hmi.Muted)
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            when {
+                !system.hasBluetoothPermission -> item(key = "permission") {
+                    SettingRowView(ActionRow("Bluetooth access", "Needed to list paired phones", "ALLOW", actions::requestBluetoothPermission), state, actions)
+                }
+                !system.bluetoothOn -> item(key = "off") { HText("Bluetooth is off.", Modifier.padding(vertical = 12.dp), size = 19.sp, color = Hmi.Muted) }
+                devices.isEmpty() -> item(key = "none") { HText("No paired devices yet.", Modifier.padding(vertical = 12.dp), size = 19.sp, color = Hmi.Muted) }
+            }
+            items(devices, key = { it.second }) { (name, address) ->
+                // The end of the address tells two devices of the same name apart.
+                val twin = devices.count { it.first == name } > 1
+                ChoiceRow(
+                    icon = HmiIcons.PHONE,
+                    title = name,
+                    detail = if (twin) "…${address.takeLast(5)}" else null,
+                    selected = address == chosen,
+                    tag = if (address == chosen) "IN USE" else null,
+                    onClick = {
+                        onChoose(address, name)
+                        onDone()
+                    },
+                )
+            }
+        }
+        Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostButton("BLUETOOTH SETTINGS", actions::openBluetoothSettings, Modifier.height(56.dp))
+            SolidButton("DONE", onClick = onDone, modifier = Modifier.height(56.dp).weight(1f, fill = false).width(240.dp))
+        }
+    }
+}
+
+/** Name and address of each paired Bluetooth device, by name; empty without Bluetooth access. */
+@SuppressLint("MissingPermission")
+private fun pairedDevices(context: Context): List<Pair<String, String>> = runCatching {
+    context.getSystemService(BluetoothManager::class.java)?.adapter?.bondedDevices.orEmpty()
+        .map { (it.name ?: "Paired device") to it.address }
+        .sortedBy { it.first.lowercase() }
+}.getOrDefault(emptyList())
 
 /** The screen's backlight, a system setting Revv needs Android's leave to change. */
 private fun brightnessRow(state: HmiUiState, actions: HmiActions): SettingRow {
@@ -862,6 +1351,132 @@ private fun fuelWidgetRow(state: HmiUiState, actions: HmiActions, choose: () -> 
         secondary = if (app != null) "FUEL RANGE" to { actions.setFuelWidgetApp(null) } else null,
     )
 }
+
+private val PLACE_SEARCHES = listOf("OpenStreetMap", "Google")
+
+private fun placeSearchDetail(settings: HmiSettings): String = when {
+    settings.placeSearch != SettingsStore.SEARCH_GOOGLE -> "Photon and Valhalla over OpenStreetMap data, free"
+    settings.googleApiKey == null -> "Google needs an API key below; OpenStreetMap until then"
+    else -> "Google Places and Routes with your API key, so routes match Google Maps on CarPlay"
+}
+
+/** The Google key: shown once Google is chosen, or while one is saved. */
+private fun googleKeyRow(settings: HmiSettings, actions: HmiActions, edit: () -> Unit): SettingRow? {
+    val key = settings.googleApiKey
+    if (key == null && settings.placeSearch != SettingsStore.SEARCH_GOOGLE) return null
+    return if (key == null) {
+        ActionRow("Google API key", "A Google Maps Platform key with Places API (New) and Routes API enabled", "ADD", edit)
+    } else {
+        ActionRow("Google API key", "Saved on this head unit · ends in ${key.takeLast(4)}", "CHANGE", edit, secondary = "REMOVE" to { actions.setGoogleApiKey(null) })
+    }
+}
+
+/**
+ * The Google Maps Platform API key, typed on the full keyboard (keys mix upper and lower case,
+ * digits, - and _), pasted from the clipboard (PASTE, or a long press on the key), or read from a
+ * text file. Pasted and imported text may hold more than the key; the key is picked out of it.
+ */
+@Composable
+private fun ApiKeyEditor(initial: String, onCancel: () -> Unit, onSave: (String) -> Unit) {
+    var key by rememberSaveable { mutableStateOf(initial) }
+    val context = LocalContext.current
+    val compact = LocalCompact.current
+    val scope = rememberCoroutineScope()
+    fun take(text: String?, empty: String) {
+        val found = text?.let(GoogleApiKey::find)
+        if (found != null) key = found else Toast.makeText(context, empty, Toast.LENGTH_LONG).show()
+    }
+    val paste = { take(clipboardText(context), "Nothing on the clipboard looks like an API key. Copy the key first.") }
+    val file = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch { take(readSmallText(context, uri), "No API key in that file.") }
+    }
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            HText("GOOGLE API KEY", size = 26.sp, family = Hmi.Display)
+            HText(
+                "From Google Cloud console › APIs & Services › Credentials, in a project with Places API (New) " +
+                    "and Routes API enabled. Google charges that project for searches and routes beyond its free monthly allowance.",
+                size = 16.sp,
+                color = Hmi.Muted,
+                lineHeight = 22.sp,
+            )
+            // Like a phone's text field, a long press pastes.
+            Pressable(
+                onClick = {},
+                onLongClick = paste,
+                modifier = Modifier.fillMaxWidth().edgeLine(),
+                pressedBackground = Hmi.CyanWash,
+                border = null,
+                contentAlignment = Alignment.CenterStart,
+                sound = null,
+            ) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Two lines hold a whole key.
+                    HText(
+                        key.ifEmpty { "Type, paste or import the key" },
+                        Modifier.weight(1f),
+                        size = 20.sp,
+                        color = if (key.isEmpty()) Hmi.Faint else Hmi.Text,
+                        maxLines = 2,
+                    )
+                    if (key.isNotEmpty()) {
+                        Pressable(onClick = { key = "" }, Modifier.height(52.dp), border = null) {
+                            Caption("CLEAR", Modifier.padding(horizontal = 12.dp))
+                        }
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GhostButton("PASTE", paste, Modifier.height(52.dp))
+                GhostButton(
+                    "IMPORT FILE",
+                    {
+                        runCatching { file.launch(arrayOf("text/*", "application/json", "application/octet-stream")) }
+                            .onFailure { Toast.makeText(context, "This head unit has no file picker.", Toast.LENGTH_LONG).show() }
+                    },
+                    Modifier.height(52.dp),
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GhostButton("CANCEL", onCancel, Modifier.height(56.dp))
+                SolidButton("SAVE", onClick = { onSave(key) }, modifier = Modifier.height(56.dp).weight(1f, fill = false).width(240.dp))
+            }
+        }
+        FullKeyboard(
+            onKey = { key = (key + it).take(GoogleApiKey.MAX_LENGTH) },
+            // Keys have no spaces.
+            onSpace = {},
+            onBackspace = { key = key.dropLast(1) },
+            modifier = (if (compact) Modifier.weight(1.4f) else Modifier.width(760.dp)).fillMaxHeight(),
+        )
+    }
+}
+
+private fun clipboardText(context: Context): String? =
+    context.getSystemService(ClipboardManager::class.java)?.primaryClip
+        ?.takeIf { it.itemCount > 0 }
+        ?.getItemAt(0)
+        ?.coerceToText(context)
+        ?.toString()
+
+/** The start of a picked text file, enough for a key and whatever surrounds it; null if unreadable. */
+private suspend fun readSmallText(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
+    runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val buffer = ByteArray(MAX_KEY_FILE_BYTES)
+            var read = 0
+            while (read < buffer.size) {
+                val count = input.read(buffer, read, buffer.size - read)
+                if (count < 0) break
+                read += count
+            }
+            String(buffer, 0, read)
+        }
+    }.getOrNull()
+}
+
+private const val MAX_KEY_FILE_BYTES = 16 * 1024
 
 /** Settings › Home › Home fuel widget: pick the installed app the widget opens, or go back to the fuel range. */
 @Composable
@@ -1003,63 +1618,65 @@ private fun GearIndicatorPanel(state: HmiUiState, actions: HmiActions, onDone: (
             return
         }
     }
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        HText("GEAR INDICATOR", size = 26.sp, family = Hmi.Display)
-        HText(
-            "OBD-II doesn't report the gear, so Revv works it out from engine speed and road speed.",
-            Modifier.padding(bottom = 8.dp),
-            size = 15.sp,
-            color = Hmi.Muted,
-        )
-        val fromRatios = car.gearSource == GearSource.Ratios
-        ChoiceRow(
-            icon = HmiIcons.VEHICLE,
-            title = "From tyre size and gear ratios",
-            detail = "Right from the start, with figures from the owner's manual or a spec sheet",
-            selected = fromRatios,
-            tag = if (fromRatios) "IN USE" else null,
-            onClick = { actions.updateCar(car.copy(gearSource = GearSource.Ratios)) },
-        )
-        ChoiceRow(
-            icon = HmiIcons.VEHICLE,
-            title = "Learn automatically",
-            detail = "Learns each gear as you drive in it, and which is first from moving off",
-            selected = !fromRatios,
-            tag = if (!fromRatios) "IN USE" else null,
-            onClick = { actions.updateCar(car.copy(gearSource = GearSource.Learnt)) },
-        )
-        if (fromRatios) {
-            SettingRowView(ActionRow("Tyre size", car.tyre.toString(), "EDIT", { editing = EDIT_TYRE }), state, actions)
-            SettingRowView(
-                ActionRow(
-                    "Gear ratios",
-                    car.ratios.take(car.gears).joinToString(" · ") + " · final drive ${car.finalDrive}",
-                    "EDIT",
-                    { editing = EDIT_RATIOS },
-                ),
-                state,
-                actions,
+    Column(Modifier.fillMaxSize()) {
+        // Scrolls when a large display size leaves too little height.
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            HText("GEAR INDICATOR", size = 26.sp, family = Hmi.Display)
+            HText(
+                "OBD-II doesn't report the gear, so Revv works it out from engine speed and road speed.",
+                Modifier.padding(bottom = 8.dp),
+                size = 15.sp,
+                color = Hmi.Muted,
             )
-            Caption("RPM PER KM/H · " + car.rpmPerKmh().joinToString(" · ") { oneDecimal(it) }, size = 13.sp)
-        } else {
-            val learnt = state.learntGears.take(car.gears)
-            SettingRowView(
-                ActionRow(
-                    "Learnt so far",
-                    if (learnt.isEmpty()) {
-                        "Nothing yet: drive through the gears, moving off from a stop at least once"
-                    } else {
-                        "${learnt.size} of ${car.gears} gears · " + learnt.joinToString(" · ") { oneDecimal(it) } + " rpm per km/h"
-                    },
-                    "RELEARN",
-                    actions::relearnGears,
-                ),
-                state,
-                actions,
+            val fromRatios = car.gearSource == GearSource.Ratios
+            ChoiceRow(
+                icon = HmiIcons.VEHICLE,
+                title = "From tyre size and gear ratios",
+                detail = "Right from the start, with figures from the owner's manual or a spec sheet",
+                selected = fromRatios,
+                tag = if (fromRatios) "IN USE" else null,
+                onClick = { actions.updateCar(car.copy(gearSource = GearSource.Ratios)) },
             )
+            ChoiceRow(
+                icon = HmiIcons.VEHICLE,
+                title = "Learn automatically",
+                detail = "Learns each gear as you drive in it, and which is first from moving off",
+                selected = !fromRatios,
+                tag = if (!fromRatios) "IN USE" else null,
+                onClick = { actions.updateCar(car.copy(gearSource = GearSource.Learnt)) },
+            )
+            if (fromRatios) {
+                SettingRowView(ActionRow("Tyre size", car.tyre.toString(), "EDIT", { editing = EDIT_TYRE }), state, actions)
+                SettingRowView(
+                    ActionRow(
+                        "Gear ratios",
+                        car.ratios.take(car.gears).joinToString(" · ") + " · final drive ${car.finalDrive}",
+                        "EDIT",
+                        { editing = EDIT_RATIOS },
+                    ),
+                    state,
+                    actions,
+                )
+                Caption("RPM PER KM/H · " + car.rpmPerKmh().joinToString(" · ") { oneDecimal(it) }, size = 13.sp)
+            } else {
+                val learnt = state.learntGears.take(car.gears)
+                SettingRowView(
+                    ActionRow(
+                        "Learnt so far",
+                        if (learnt.isEmpty()) {
+                            "Nothing yet: drive through the gears, moving off from a stop at least once"
+                        } else {
+                            "${learnt.size} of ${car.gears} gears · " + learnt.joinToString(" · ") { oneDecimal(it) } + " rpm per km/h"
+                        },
+                        "RELEARN",
+                        actions::relearnGears,
+                    ),
+                    state,
+                    actions,
+                )
+            }
         }
-        Spacer(Modifier.weight(1f))
-        Row(Modifier.padding(top = 8.dp)) {
+        Row(Modifier.padding(top = 16.dp)) {
             AccentButton("DONE", onDone, Modifier.height(56.dp))
         }
     }
@@ -1069,6 +1686,7 @@ private fun GearIndicatorPanel(state: HmiUiState, actions: HmiActions, onDone: (
 @Composable
 private fun TextEditor(title: String, hint: String, initial: String, onCancel: () -> Unit, onSave: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf(initial) }
+    val compact = LocalCompact.current
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(36.dp)) {
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             HText(title, size = 26.sp, family = Hmi.Display)
@@ -1084,14 +1702,19 @@ private fun TextEditor(title: String, hint: String, initial: String, onCancel: (
             Spacer(Modifier.weight(1f))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GhostButton("CANCEL", onCancel, Modifier.height(56.dp))
-                SolidButton("SAVE", onClick = { text.trim().takeIf { it.isNotEmpty() }?.let(onSave) }, modifier = Modifier.height(56.dp).width(240.dp))
+                SolidButton(
+                    "SAVE",
+                    onClick = { text.trim().takeIf { it.isNotEmpty() }?.let(onSave) },
+                    modifier = Modifier.height(56.dp).weight(1f, fill = false).width(240.dp),
+                )
             }
         }
         TextKeyboard(
             onKey = { text = (text + it).take(MAX_NAME) },
             onSpace = { if (text.isNotEmpty() && !text.endsWith(" ")) text += " " },
             onBackspace = { text = text.dropLast(1) },
-            modifier = Modifier.width(720.dp).fillMaxHeight(),
+            // Compact (display sizes above 130%) shares the width instead.
+            modifier = (if (compact) Modifier.weight(1.4f) else Modifier.width(720.dp)).fillMaxHeight(),
         )
     }
 }
@@ -1118,7 +1741,8 @@ private fun NumberEditor(
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             HText(title, size = 26.sp, family = Hmi.Display)
             HText(hint, size = 16.sp, color = Hmi.Muted)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Scrolls when a large display size leaves too little height for every gear.
+            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 fields.indices.chunked(2).forEach { pair ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         pair.forEach { index ->
@@ -1145,9 +1769,8 @@ private fun NumberEditor(
                         if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
+                if (invalid) HText("Some of these don't look right. Check them against the manual.", size = 16.sp, color = Hmi.Red)
             }
-            if (invalid) HText("Some of these don't look right. Check them against the manual.", size = 16.sp, color = Hmi.Red)
-            Spacer(Modifier.weight(1f))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GhostButton("CANCEL", onCancel, Modifier.height(56.dp))
                 SolidButton("SAVE", onClick = { invalid = !onSave(values.toList()) }, modifier = Modifier.height(56.dp).width(240.dp))

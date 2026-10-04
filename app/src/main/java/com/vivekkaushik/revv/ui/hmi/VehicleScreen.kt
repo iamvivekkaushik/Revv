@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,14 +42,21 @@ import kotlin.math.min
 @Composable
 fun VehicleScreen(live: LiveTelemetry, car: CarSetup, actions: HmiActions) {
     val figures = live.figures
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(28.dp)) {
-        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+    // Compact (display sizes above 130%) keeps every figure at its size, with tighter margins.
+    val compact = LocalCompact.current
+    val gap = if (compact) 20.dp else 28.dp
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
+        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
             TyreCard(figures.tyres, Modifier.weight(1f).fillMaxHeight())
             ObdCard(live, Modifier.weight(1f).fillMaxHeight())
             VehicleCard(figures, car, live.source == DataSource.Obd, actions, Modifier.weight(1f).fillMaxHeight())
         }
         Row(
-            Modifier.fillMaxWidth().height(200.dp).border(1.dp, Hmi.Line).padding(horizontal = 36.dp, vertical = 28.dp),
+            Modifier
+                .fillMaxWidth()
+                .height(if (compact) 130.dp else 200.dp)
+                .border(1.dp, Hmi.Line)
+                .padding(horizontal = if (compact) 28.dp else 36.dp, vertical = if (compact) 18.dp else 28.dp),
             horizontalArrangement = Arrangement.spacedBy(32.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -64,9 +72,10 @@ fun VehicleScreen(live: LiveTelemetry, car: CarSetup, actions: HmiActions) {
 @Composable
 private fun TyreCard(tyres: List<DemoData.Tyre>?, modifier: Modifier) {
     val cells = tyres ?: TYRE_POSITIONS.map { DemoData.Tyre(it, psi = -1, temperature = "NO SENSOR") }
+    val compact = LocalCompact.current
     Column(
-        modifier.border(1.dp, Hmi.Line).padding(horizontal = 32.dp, vertical = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier.border(1.dp, Hmi.Line).padding(cardPadding(compact)),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 16.dp),
     ) {
         Caption("TYRE PRESSURE · PSI")
         Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -74,7 +83,7 @@ private fun TyreCard(tyres: List<DemoData.Tyre>?, modifier: Modifier) {
                 Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     axle.forEach { tyre ->
                         Column(
-                            Modifier.weight(1f).fillMaxHeight().border(1.dp, Hmi.LineSoft).padding(20.dp),
+                            Modifier.weight(1f).fillMaxHeight().border(1.dp, Hmi.LineSoft).padding(if (compact) 14.dp else 20.dp),
                             verticalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Caption(tyre.position, size = 14.sp)
@@ -95,7 +104,7 @@ private fun TyreCard(tyres: List<DemoData.Tyre>?, modifier: Modifier) {
 
 @Composable
 private fun ObdCard(live: LiveTelemetry, modifier: Modifier) {
-    Column(modifier.border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 28.dp)) {
+    Column(modifier.border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(cardPadding(LocalCompact.current))) {
         val caption = when (live.source) {
             DataSource.Obd -> "LIVE OBD-II"
             DataSource.Demo -> "OBD-II · SIMULATED"
@@ -138,7 +147,7 @@ private fun VehicleCard(figures: VehicleFigures, car: CarSetup, canClear: Boolea
         Health.Unknown -> Hmi.Faint
     }
     Column(
-        modifier.border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 28.dp),
+        modifier.border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(cardPadding(LocalCompact.current)),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Caption("VEHICLE")
@@ -198,6 +207,9 @@ fun AlertBadge(modifier: Modifier = Modifier, size: Dp = 20.dp) {
 }
 
 private const val MAX_CODES_SHOWN = 3
+
+private fun cardPadding(compact: Boolean) =
+    if (compact) PaddingValues(horizontal = 24.dp, vertical = 20.dp) else PaddingValues(horizontal = 32.dp, vertical = 28.dp)
 
 private val TYRE_POSITIONS = listOf("FRONT L", "FRONT R", "REAR L", "REAR R")
 

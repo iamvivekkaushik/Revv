@@ -66,10 +66,13 @@ fun CameraScreen(live: LiveTelemetry, chosenCameraId: String?, rotation: Int, ac
         failedId == camera.id -> Feed.Failed
         else -> Feed.Live(camera)
     }
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+    // Compact (display sizes above 130%) gives the picture more room and drops the rear sensors
+    // card, which only illustrates: no sensor reading reaches Revv.
+    val compact = LocalCompact.current
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(if (compact) 24.dp else 28.dp)) {
         CameraFeed(live, feed, guides, rotation, { permission.launch(Manifest.permission.CAMERA) }, { failedId = it }, Modifier.weight(1f).fillMaxHeight())
-        Column(Modifier.width(400.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(28.dp)) {
-            Column(
+        Column(Modifier.width(if (compact) 320.dp else 400.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(28.dp)) {
+            if (!compact) Column(
                 Modifier.fillMaxWidth().border(1.dp, Hmi.Line).padding(28.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
@@ -91,7 +94,7 @@ fun CameraScreen(live: LiveTelemetry, chosenCameraId: String?, rotation: Int, ac
                 }
             }
             Column(
-                Modifier.weight(1f).fillMaxWidth().border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(28.dp),
+                Modifier.weight(1f).fillMaxWidth().border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(if (compact) 24.dp else 28.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Caption("VIEW", Modifier.padding(bottom = 6.dp))

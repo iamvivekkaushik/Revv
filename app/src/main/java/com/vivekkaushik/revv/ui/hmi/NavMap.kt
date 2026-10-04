@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,15 +40,23 @@ import com.vivekkaushik.revv.nav.NavState
 import com.vivekkaushik.revv.nav.Trip
 import com.vivekkaushik.revv.nav.TripStatus
 import com.vivekkaushik.revv.nav.Turn
+import com.vivekkaushik.revv.settings.SettingsStore
+import com.vivekkaushik.revv.system.CarPlayCompanion
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 private const val HOME_ZOOM = 15.5
 private const val SCREEN_ZOOM = 16.0
 private const val HEADING_UP_TILT = 45.0
 
-/** The map panel on the right of the home screen: the car, the route and the next turn. */
+/**
+ * The map panel on the right of the home screen: the car, the route and the next turn. Without a
+ * route of its own, it shows the one CarPlay is guiding, if any ([carPlay]).
+ */
 @Composable
 fun NavPanel(
     navigation: StateFlow<NavState>,
@@ -55,9 +64,14 @@ fun NavPanel(
     timeFormat: DateTimeFormatter,
     actions: HmiActions,
     modifier: Modifier = Modifier,
+    carPlay: CarPlayCompanion.Guidance? = null,
 ) {
     val nav by navigation.collectAsStateWithLifecycle()
     val trip = nav.trip
+    // Compact (display sizes above 130%): a smaller panel inside the page's margins, clear of the dock,
+    // and with no trip just the map: no "Where to?" over it, though a tap still opens search.
+    val compact = LocalCompact.current
+    val header = !compact || trip != null || carPlay != null
     Box(modifier.background(Hmi.MapBg).clipToBounds()) {
         RevvMap(
             fix = nav.fix,
@@ -70,44 +84,55 @@ fun NavPanel(
             headingUpShift = 0.3,
             modifier = Modifier.fillMaxSize(),
         )
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(230.dp)
-                .background(Brush.verticalGradient(0f to Hmi.MapBg, 0.45f to Hmi.MapBg, 1f to Color.Transparent)),
-        )
+        if (header) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(if (compact) 170.dp else 230.dp)
+                    .background(Brush.verticalGradient(0f to Hmi.MapBg, 0.45f to Hmi.MapBg, 1f to Color.Transparent)),
+            )
+        }
         Box(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(300.dp)
+                .height(if (compact) 150.dp else 300.dp)
                 .background(Brush.verticalGradient(0f to Color.Transparent, 0.5f to Hmi.MapBg, 1f to Hmi.MapBg)),
         )
-        TripHeader(nav, distanceSize = 64.sp, controls = false, actions = actions, onSearch = {}, Modifier.padding(start = 36.dp, end = 36.dp, top = 40.dp))
-        val guidance = trip?.guidance
-        if (trip?.status == TripStatus.Guiding && guidance != null) {
+        if (header) {
+            TripHeader(
+                nav,
+                carPlay,
+                distanceSize = if (compact) 48.sp else 64.sp,
+                controls = false,
+                actions = actions,
+                onSearch = {},
+                modifier = if (compact) Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp) else Modifier.padding(start = 36.dp, end = 36.dp, top = 40.dp),
+                turnIconSize = if (compact) 84.dp else 110.dp,
+            )
+        }
+        tripLeft(trip, carPlay, timeFormat)?.let { left ->
             TripSummary(
-                guidance,
-                timeFormat,
+                left,
                 withUnits = true,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(start = 36.dp, end = 36.dp, bottom = 130.dp)
+                    .padding(start = if (compact) 20.dp else 36.dp, end = if (compact) 20.dp else 36.dp, bottom = if (compact) 20.dp else 130.dp)
                     .fillMaxWidth()
                     .border(1.dp, Hmi.LineStrong)
                     .background(Hmi.MapBg.copy(alpha = 0.85f))
-                    .padding(horizontal = 28.dp, vertical = 20.dp),
+                    .padding(horizontal = if (compact) 20.dp else 28.dp, vertical = if (compact) 14.dp else 20.dp),
             )
         }
         MapAttribution(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp))
         // Anywhere on the panel opens the full Navigation screen; with no trip, "Where to?" goes straight to search.
         Pressable(
-            onClick = { if (trip == null) actions.openMapsSearch() else actions.open(HmiApp.Maps) },
+            onClick = { if (trip == null && carPlay == null) actions.openMapsSearch() else actions.open(HmiApp.Maps) },
             modifier = Modifier.fillMaxSize(),
             pressedBackground = Hmi.Cyan.copy(alpha = 0.04f),
             border = null,
         ) {}
-        Box(Modifier.fillMaxHeight().width(1.dp).background(Hmi.Line))
+        if (!compact) Box(Modifier.fillMaxHeight().width(1.dp).background(Hmi.Line))
     }
 }
 
@@ -121,11 +146,14 @@ fun MapsScreen(
 ) {
     val nav by navigation.collectAsStateWithLifecycle()
     val trip = nav.trip
+    val carPlay = rememberCarPlayGuidance(state)
     var followMode by rememberSaveable { mutableStateOf(MapCamera.NorthUp) }
     var panned by rememberSaveable { mutableStateOf(false) }
     var zoom by rememberSaveable { mutableDoubleStateOf(SCREEN_ZOOM) }
     var searching by rememberSaveable { mutableStateOf(false) }
     val bearing = remember { mutableFloatStateOf(0f) }
+    // Compact (display sizes above 130%) keeps the notices clear of the trip card and has fewer buttons.
+    val compact = LocalCompact.current
     LaunchedEffect(state.screen.searchRequested) {
         if (state.screen.searchRequested) {
             searching = true
@@ -160,6 +188,7 @@ fun MapsScreen(
         )
         TripHeader(
             nav,
+            carPlay,
             distanceSize = 56.sp,
             controls = true,
             actions = actions,
@@ -171,11 +200,9 @@ fun MapsScreen(
                 .background(Hmi.MapBg.copy(alpha = 0.9f))
                 .padding(28.dp),
         )
-        val guidance = trip?.guidance
-        if (trip?.status == TripStatus.Guiding && guidance != null) {
+        tripLeft(trip, carPlay, timeFormat)?.let { left ->
             TripSummary(
-                guidance,
-                timeFormat,
+                left,
                 withUnits = false,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -194,14 +221,33 @@ fun MapsScreen(
                 HText("N", Modifier.graphicsLayer { rotationZ = -bearing.floatValue }, size = 14.sp, color = Hmi.Cyan, spacing = 1.sp)
             }
         }
-        if (nav.demo) DemoNotice(nav.access, actions, Modifier.align(Alignment.TopCenter).padding(top = 32.dp))
-        if (nav.fix == null) LocationNotice(nav.access, actions, Modifier.align(Alignment.Center))
+        // Compact: between the trip card and the zoom buttons.
+        if (nav.demo) {
+            DemoNotice(
+                nav.access,
+                actions,
+                if (compact) Modifier.align(Alignment.TopEnd).padding(top = 32.dp, end = 104.dp) else Modifier.align(Alignment.TopCenter).padding(top = 32.dp),
+            )
+        }
+        if (nav.fix == null) {
+            LocationNotice(
+                nav.access,
+                actions,
+                if (compact) Modifier.align(Alignment.CenterEnd).padding(end = 104.dp).width(440.dp) else Modifier.align(Alignment.Center).width(560.dp),
+            )
+        }
         Row(Modifier.align(Alignment.BottomEnd).padding(end = 32.dp, bottom = 40.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (panned) AccentButton("RECENTER", { panned = false }, Modifier.height(56.dp))
-            // Not in the design: hands off to the head unit's own navigation app, e.g. for traffic.
-            GhostButton("OPEN MAPS APP", actions::openNavigationApp, Modifier.height(56.dp))
-            ModeButton("2D NORTH-UP", selected = !panned && followMode == MapCamera.NorthUp) { follow(MapCamera.NorthUp) }
-            ModeButton("HEADING-UP", selected = !panned && followMode == MapCamera.HeadingUp) { follow(MapCamera.HeadingUp) }
+            if (compact) {
+                // One button for both modes; a second tap, like the N button, goes back to north-up.
+                val headingUp = !panned && followMode == MapCamera.HeadingUp
+                ModeButton("HEADING-UP", selected = headingUp) { follow(if (headingUp) MapCamera.NorthUp else MapCamera.HeadingUp) }
+            } else {
+                // Not in the design: hands off to the head unit's own navigation app, e.g. for traffic.
+                GhostButton("OPEN MAPS APP", actions::openNavigationApp, Modifier.height(56.dp))
+                ModeButton("2D NORTH-UP", selected = !panned && followMode == MapCamera.NorthUp) { follow(MapCamera.NorthUp) }
+                ModeButton("HEADING-UP", selected = !panned && followMode == MapCamera.HeadingUp) { follow(MapCamera.HeadingUp) }
+            }
             if (trip != null) GhostButton("END ROUTE", actions::endRoute, Modifier.height(56.dp))
         }
         MapAttribution(Modifier.align(Alignment.BottomEnd).padding(end = 32.dp, bottom = 12.dp))
@@ -228,22 +274,26 @@ fun MapsScreen(
 }
 
 /**
- * The top card: the next turn while guiding, or the trip's state, or an invitation to search.
- * [controls] adds the card's own buttons; on the home screen the whole panel is one button instead.
+ * The top card: the next turn while guiding, or the trip's state, or CarPlay's next turn while it
+ * guides a route Revv has none of its own for, or an invitation to search. [controls] adds the
+ * card's own buttons; on the home screen the whole panel is one button instead.
  */
 @Composable
 private fun TripHeader(
     nav: NavState,
+    carPlay: CarPlayCompanion.Guidance?,
     distanceSize: TextUnit,
     controls: Boolean,
     actions: HmiActions,
     onSearch: () -> Unit,
     modifier: Modifier = Modifier,
+    turnIconSize: Dp = 110.dp,
 ) {
     val trip = nav.trip
     when {
+        trip == null && carPlay != null -> CarPlayTurn(carPlay, distanceSize, turnIconSize, modifier)
         trip == null -> WhereTo(nav, controls, onSearch, modifier)
-        trip.status == TripStatus.Guiding && trip.guidance != null -> NextTurn(trip, trip.guidance, distanceSize, modifier)
+        trip.status == TripStatus.Guiding && trip.guidance != null -> NextTurn(trip, trip.guidance, distanceSize, turnIconSize, modifier)
         else -> TripStatusCard(trip, waitingForFix = nav.fix == null, controls, actions, modifier)
     }
 }
@@ -277,33 +327,66 @@ private fun WhereTo(nav: NavState, controls: Boolean, onSearch: () -> Unit, modi
 }
 
 @Composable
-private fun NextTurn(trip: Trip, guidance: Guidance, distanceSize: TextUnit, modifier: Modifier) {
+private fun NextTurn(trip: Trip, guidance: Guidance, distanceSize: TextUnit, iconSize: Dp, modifier: Modifier) {
     val next = guidance.next
-    val (distance, unit) = NavFormat.distance(guidance.metresToNext)
+    TurnCard(
+        caption = if (trip.rerouting) "REROUTING…" else NavFormat.caption(next.turn, next.roundaboutExit),
+        turn = next.turn,
+        metres = guidance.metresToNext,
+        road = next.road ?: trip.destination.name.takeIf { next.turn == Turn.Arrive } ?: "",
+        distanceSize = distanceSize,
+        iconSize = iconSize,
+        modifier = modifier,
+    )
+}
+
+/**
+ * The next turn CarPlay gives, while the iPhone guides a route Revv isn't following itself (the
+ * place wasn't found, or following is off). Before CarPlay names a turn, just where it goes.
+ */
+@Composable
+private fun CarPlayTurn(guidance: CarPlayCompanion.Guidance, distanceSize: TextUnit, iconSize: Dp, modifier: Modifier) {
+    val turn = guidance.turn
+    if (turn == null) {
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Caption("CARPLAY · ROUTE TO", maxLines = 1)
+            HText(guidance.destination.ifEmpty { "Your destination" }, size = 28.sp, family = Hmi.Display, maxLines = 1)
+        }
+        return
+    }
+    TurnCard(
+        caption = "CARPLAY · " + NavFormat.caption(turn, guidance.roundaboutExit).removePrefix("NEXT TURN · ").removePrefix("NEXT · "),
+        turn = turn,
+        metres = guidance.maneuverMeters.toDouble(),
+        road = guidance.road.ifEmpty { guidance.destination.takeIf { turn == Turn.Arrive }.orEmpty() },
+        distanceSize = distanceSize,
+        iconSize = iconSize,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun TurnCard(caption: String, turn: Turn, metres: Double, road: String, distanceSize: TextUnit, iconSize: Dp, modifier: Modifier) {
+    val (distance, unit) = NavFormat.distance(metres)
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-        Box(Modifier.size(110.dp).border(1.dp, Hmi.Cyan), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(iconSize).border(1.dp, Hmi.Cyan), contentAlignment = Alignment.Center) {
             PathIcon(
-                NavFormat.icon(next.turn),
-                64.dp,
+                NavFormat.icon(turn),
+                iconSize * 64 / 110,
                 Hmi.Cyan,
                 // Left-hand turns are the right-hand arrows mirrored.
-                modifier = Modifier.graphicsLayer { scaleX = if (next.turn.left) -1f else 1f },
+                modifier = Modifier.graphicsLayer { scaleX = if (turn.left) -1f else 1f },
                 strokeWidth = 5f,
                 viewport = 64f,
             )
         }
         Column {
-            Caption(if (trip.rerouting) "REROUTING…" else NavFormat.caption(next.turn, next.roundaboutExit), maxLines = 1)
+            Caption(caption, maxLines = 1)
             Row(Modifier.padding(top = 6.dp)) {
                 HText(distance, Modifier.alignByBaseline(), size = distanceSize, family = Hmi.Display, spacing = (-2).sp)
                 HText(unit, Modifier.alignByBaseline().padding(start = 8.dp), size = 20.sp, color = Hmi.Muted)
             }
-            HText(
-                next.road ?: trip.destination.name.takeIf { next.turn == Turn.Arrive } ?: "",
-                Modifier.padding(top = 8.dp),
-                size = 22.sp,
-                maxLines = 1,
-            )
+            HText(road, Modifier.padding(top = 8.dp), size = 22.sp, maxLines = 1)
         }
     }
 }
@@ -333,16 +416,44 @@ private fun TripStatusCard(trip: Trip, waitingForFix: Boolean, controls: Boolean
     }
 }
 
+/** What's left of the trip being guided: the arrival time, already formatted, and time and distance to go. */
+private class TripLeft(val eta: String, val seconds: Double, val metres: Double)
+
+/** What's left of Revv's own route while guiding, else of CarPlay's; null when neither says. */
+private fun tripLeft(trip: Trip?, carPlay: CarPlayCompanion.Guidance?, timeFormat: DateTimeFormatter): TripLeft? {
+    if (trip != null) {
+        val guidance = trip.guidance?.takeIf { trip.status == TripStatus.Guiding } ?: return null
+        val eta = LocalDateTime.now().plusSeconds(guidance.remainingSeconds.toLong())
+        return TripLeft(eta.format(timeFormat), guidance.remainingSeconds, guidance.remainingMetres)
+    }
+    val seconds = carPlay?.remainingSeconds ?: return null
+    val metres = carPlay.routeMeters ?: return null
+    val eta = carPlay.arrivalEpochSeconds?.let { LocalDateTime.ofInstant(Instant.ofEpochSecond(it), ZoneId.systemDefault()) }
+        ?: LocalDateTime.now().plusSeconds(seconds)
+    return TripLeft(eta.format(timeFormat), seconds.toDouble(), metres.toDouble())
+}
+
 @Composable
-private fun TripSummary(guidance: Guidance, timeFormat: DateTimeFormatter, withUnits: Boolean, modifier: Modifier = Modifier) {
-    val eta = LocalDateTime.now().plusSeconds(guidance.remainingSeconds.toLong()).format(timeFormat)
-    val (time, timeUnit) = NavFormat.duration(guidance.remainingSeconds)
+private fun TripSummary(left: TripLeft, withUnits: Boolean, modifier: Modifier = Modifier) {
+    val (time, timeUnit) = NavFormat.duration(left.seconds)
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        TripStat("ETA", eta, "", Modifier.weight(1f), Hmi.Cyan)
+        TripStat("ETA", left.eta, "", Modifier.weight(1f), Hmi.Cyan)
         TripStat("TIME", time, if (withUnits) " $timeUnit" else "", Modifier.weight(1f))
-        TripStat("DIST", NavFormat.kilometres(guidance.remainingMetres), if (withUnits) " KM" else "", Modifier.weight(1f))
+        TripStat("DIST", NavFormat.kilometres(left.metres), if (withUnits) " KM" else "", Modifier.weight(1f))
     }
 }
+
+/**
+ * CarPlay's route guidance, for Revv's map to show; null without the companion or a route, or
+ * while both Follow CarPlay's route and Show CarPlay's turns (Settings › CarPlay) are off.
+ */
+@Composable
+fun rememberCarPlayGuidance(state: HmiUiState): CarPlayCompanion.Guidance? {
+    val shown = state.settings.isOn(SettingsStore.CARPLAY_FOLLOW_ROUTE) || state.settings.isOn(SettingsStore.CARPLAY_SHOW_TURNS)
+    return (state.carPlay?.guidance?.takeIf { shown } ?: NO_CARPLAY_GUIDANCE).collectAsStateWithLifecycle().value
+}
+
+private val NO_CARPLAY_GUIDANCE = MutableStateFlow<CarPlayCompanion.Guidance?>(null)
 
 @Composable
 private fun TripStat(label: String, value: String, unit: String, modifier: Modifier, color: Color = Hmi.Text) {
@@ -352,11 +463,11 @@ private fun TripStat(label: String, value: String, unit: String, modifier: Modif
     }
 }
 
-/** Shown over an empty map: why there's no car on it, and the way to fix that. */
+/** Shown over an empty map: why there's no car on it, and the way to fix that. [modifier] sets its width. */
 @Composable
 private fun LocationNotice(access: LocationAccess, actions: HmiActions, modifier: Modifier) {
     Column(
-        modifier.width(560.dp).border(1.dp, Hmi.LineStrong).background(Hmi.MapBg.copy(alpha = 0.92f)).padding(28.dp),
+        modifier.border(1.dp, Hmi.LineStrong).background(Hmi.MapBg.copy(alpha = 0.92f)).padding(28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Caption(accessCaption(access))

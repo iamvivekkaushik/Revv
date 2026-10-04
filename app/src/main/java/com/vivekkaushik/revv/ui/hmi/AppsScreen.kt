@@ -92,14 +92,20 @@ fun AppsScreen(apps: List<LauncherApp>, actions: HmiActions) {
     }
 }
 
-/** Six columns with four rows per screen, as in the design; scrolls when there are more. */
+/**
+ * Six columns with four rows per screen, as in the design; scrolls when there are more. Compact
+ * (display sizes above 130%) shows four by three, so the tiles grow with everything else.
+ */
 @Composable
 private fun InstalledApps(apps: List<LauncherApp>, actions: HmiActions, modifier: Modifier) {
+    val compact = LocalCompact.current
+    val columns = if (compact) 4 else 6
+    val rows = if (compact) 3 else 4
     BoxWithConstraints(modifier) {
-        // Floored to whole pixels so rounding never pushes the fourth row's border out of view.
-        val rowHeight = with(LocalDensity.current) { ((maxHeight - 30.dp).toPx() / 4).toInt().toDp() }
+        // Floored to whole pixels so rounding never pushes the last row's border out of view.
+        val rowHeight = with(LocalDensity.current) { ((maxHeight - 10.dp * (rows - 1)).toPx() / rows).toInt().toDp() }
         LazyVerticalGrid(
-            columns = GridCells.Fixed(6),
+            columns = GridCells.Fixed(columns),
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -123,8 +129,9 @@ private fun AppTile(app: LauncherApp, actions: HmiActions, modifier: Modifier) {
         pressedBorder = Color.White.copy(alpha = 0.3f),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            AppIcon(app, 52.dp)
-            HText(app.label, Modifier.padding(horizontal = 8.dp), size = 14.sp, spacing = 0.5.sp, maxLines = 1)
+            val compact = LocalCompact.current
+            AppIcon(app, if (compact) 64.dp else 52.dp)
+            HText(app.label, Modifier.padding(horizontal = 8.dp), size = if (compact) 16.sp else 14.sp, spacing = 0.5.sp, maxLines = 1)
         }
     }
 }

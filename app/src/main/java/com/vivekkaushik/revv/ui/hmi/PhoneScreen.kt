@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -47,65 +48,134 @@ private val DIAL_KEYS = listOf(
 @Composable
 fun PhoneScreen(phone: PhoneState, now: LocalDateTime, timeFormat: DateTimeFormatter, actions: HmiActions) {
     var number by rememberSaveable { mutableStateOf("") }
+    val matches = remember(number, phone.contacts, phone.recents) {
+        PhoneBook.suggestions(number, phone.contacts, phone.recents)
+    }
+    val pickMatch = { person: Contact -> number = person.number.filter { it.isDigit() || it in "+*#" }.take(MAX_DIGITS) }
+    // Compact (display sizes above 130%): recents, favourites and contacts share one column as tabs,
+    // and the linked-phone card goes; the recents note still offers pairing and reading again.
+    if (LocalCompact.current) {
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            PhoneLists(phone, matches, pickMatch, now, timeFormat, actions, Modifier.weight(1f).fillMaxHeight())
+            Dialer(number, { number = it }, actions, Modifier.width(520.dp).fillMaxHeight())
+        }
+        return
+    }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         Column(Modifier.weight(1f).fillMaxHeight().border(1.dp, Hmi.Line).padding(horizontal = 32.dp, vertical = 28.dp)) {
-            val matches = remember(number, phone.contacts, phone.recents) {
-                PhoneBook.suggestions(number, phone.contacts, phone.recents)
-            }
             if (matches.isNotEmpty()) {
-                // T9: the keys typed so far pick out contacts by name; tapping one fills in their number.
-                Caption("MATCHES · ${matches.size}", Modifier.padding(bottom = 16.dp))
-                LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(matches) { person ->
-                        MatchRow(person) { number = person.number.filter { it.isDigit() || it in "+*#" }.take(MAX_DIGITS) }
-                    }
-                }
+                Matches(matches, pickMatch)
             } else {
                 Caption("RECENTS", Modifier.padding(bottom = 16.dp))
-                if (phone.recents.isNotEmpty()) {
-                    LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(phone.recents) { call ->
-                            CallRow(call, PhoneFormat.detail(call, now, timeFormat)) {
-                                if (call.number.isNotBlank()) actions.call(call.number)
-                            }
-                        }
-                    }
-                } else {
-                    RecentsNote(phone, actions)
-                }
+                Recents(phone, now, timeFormat, actions)
             }
         }
-        Column(
-            Modifier.width(560.dp).fillMaxHeight().border(1.dp, Hmi.Line).padding(horizontal = 32.dp, vertical = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Row(Modifier.fillMaxWidth().height(72.dp).edgeLine(), verticalAlignment = Alignment.CenterVertically) {
-                HText(
-                    number.ifEmpty { "ENTER NUMBER" },
-                    Modifier.weight(1f),
-                    size = 34.sp,
-                    color = if (number.isEmpty()) Hmi.Faint else Hmi.Text,
-                    family = Hmi.Display,
-                    spacing = 2.sp,
-                    maxLines = 1,
-                )
-                Pressable(
-                    onClick = { number = number.dropLast(1) },
-                    modifier = Modifier.size(52.dp),
-                    pressedBackground = Hmi.PressedWhite,
-                    border = null,
-                    repeatEveryMillis = 70,
-                    sound = UiSound.DialDelete,
-                ) {
-                    PathIcon(HmiIcons.BACKSPACE, 28.dp, Hmi.Muted, strokeWidth = 1.8f)
-                }
-            }
-            KeyPad(DIAL_KEYS, onKey = { digit -> number = (number + digit).take(MAX_DIGITS) }, Modifier.weight(1f).fillMaxWidth())
-            SolidButton("CALL", onClick = { actions.call(number) }, Modifier.fillMaxWidth().height(68.dp))
-        }
+        Dialer(number, { number = it }, actions, Modifier.width(560.dp).fillMaxHeight())
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(28.dp)) {
             LinkCard(phone, timeFormat, actions)
             Favourites(phone, actions, Modifier.weight(1f).fillMaxWidth())
+        }
+    }
+}
+
+/** T9: the keys typed so far pick out contacts by name; tapping one fills in their number. */
+@Composable
+private fun ColumnScope.Matches(matches: List<Contact>, onPick: (Contact) -> Unit) {
+    Caption("MATCHES · ${matches.size}", Modifier.padding(bottom = 16.dp))
+    LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(matches) { person -> MatchRow(person) { onPick(person) } }
+    }
+}
+
+@Composable
+private fun ColumnScope.Recents(phone: PhoneState, now: LocalDateTime, timeFormat: DateTimeFormatter, actions: HmiActions) {
+    if (phone.recents.isNotEmpty()) {
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(phone.recents) { call ->
+                CallRow(call, PhoneFormat.detail(call, now, timeFormat)) {
+                    if (call.number.isNotBlank()) actions.call(call.number)
+                }
+            }
+        }
+    } else {
+        RecentsNote(phone, actions)
+    }
+}
+
+/** The number being typed, the keypad and CALL. */
+@Composable
+private fun Dialer(number: String, onNumber: (String) -> Unit, actions: HmiActions, modifier: Modifier) {
+    val compact = LocalCompact.current
+    Column(
+        modifier.border(1.dp, Hmi.Line).padding(horizontal = if (compact) 28.dp else 32.dp, vertical = if (compact) 24.dp else 28.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().height(72.dp).edgeLine(), verticalAlignment = Alignment.CenterVertically) {
+            HText(
+                number.ifEmpty { "ENTER NUMBER" },
+                Modifier.weight(1f),
+                size = if (compact) 30.sp else 34.sp,
+                color = if (number.isEmpty()) Hmi.Faint else Hmi.Text,
+                family = Hmi.Display,
+                spacing = 2.sp,
+                maxLines = 1,
+            )
+            Pressable(
+                onClick = { onNumber(number.dropLast(1)) },
+                modifier = Modifier.size(52.dp),
+                pressedBackground = Hmi.PressedWhite,
+                border = null,
+                repeatEveryMillis = 70,
+                sound = UiSound.DialDelete,
+            ) {
+                PathIcon(HmiIcons.BACKSPACE, 28.dp, Hmi.Muted, strokeWidth = 1.8f)
+            }
+        }
+        KeyPad(DIAL_KEYS, onKey = { digit -> onNumber((number + digit).take(MAX_DIGITS)) }, Modifier.weight(1f).fillMaxWidth())
+        SolidButton("CALL", onClick = { actions.call(number) }, Modifier.fillMaxWidth().height(68.dp))
+    }
+}
+
+private enum class PhoneList(val label: String) { Recents("RECENTS"), Favourites("FAVOURITES"), Contacts("CONTACTS") }
+
+/** The compact Phone screen's one list column: T9 matches while typing, else recents, favourites or contacts. */
+@Composable
+private fun PhoneLists(
+    phone: PhoneState,
+    matches: List<Contact>,
+    onPickMatch: (Contact) -> Unit,
+    now: LocalDateTime,
+    timeFormat: DateTimeFormatter,
+    actions: HmiActions,
+    modifier: Modifier,
+) {
+    var shown by rememberSaveable { mutableStateOf(PhoneList.Recents) }
+    // The contact list's letter rail runs close to the card's right edge, where a thumb lands easily.
+    val rail = matches.isEmpty() && shown == PhoneList.Contacts && phone.contacts.isNotEmpty()
+    Column(
+        modifier.border(1.dp, Hmi.Line).padding(start = 28.dp, end = if (rail) 6.dp else 28.dp, top = 24.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        if (matches.isNotEmpty()) {
+            Matches(matches, onPickMatch)
+            return@Column
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(end = if (rail) 22.dp else 0.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PhoneList.entries.forEach { list -> ListTab(list.label, selected = list == shown) { shown = list } }
+            Caption(
+                PhoneFormat.badge(phone.link),
+                Modifier.weight(1f).padding(start = 8.dp),
+                maxLines = 1,
+            )
+        }
+        when (shown) {
+            PhoneList.Recents -> Recents(phone, now, timeFormat, actions)
+            PhoneList.Favourites -> FavouriteList(phone, actions)
+            PhoneList.Contacts -> ContactList(phone, actions)
         }
     }
 }
@@ -213,30 +283,39 @@ private fun Favourites(phone: PhoneState, actions: HmiActions, modifier: Modifie
             ListTab("FAVOURITES", selected = !showContacts) { showContacts = false }
             ListTab("CONTACTS", selected = showContacts) { showContacts = true }
         }
-        when {
-            showContacts -> when {
-                phone.contacts.isNotEmpty() -> ContactsList(phone.contacts, actions::call, Modifier.weight(1f).fillMaxWidth())
-                phone.sync == PhoneSync.Synced -> Note("The phone did not share any contacts. Allow contacts for this head unit in its Bluetooth settings, then read again.")
-                else -> Note("The phone's contacts show here once it has been read")
-            }
-            phone.favourites.isNotEmpty() -> Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Always three rows of two, so a short list doesn't stretch its tiles.
-                val shown = phone.favourites.take(FAVOURITE_SLOTS)
-                (shown + List(FAVOURITE_SLOTS - shown.size) { null }).chunked(2).forEach { row ->
-                    Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        row.forEach { favourite ->
-                            if (favourite == null) {
-                                Spacer(Modifier.weight(1f))
-                            } else {
-                                FavouriteTile(favourite, { actions.call(favourite.number) }, Modifier.weight(1f).fillMaxHeight())
-                            }
+        if (showContacts) ContactList(phone, actions) else FavouriteList(phone, actions)
+    }
+}
+
+@Composable
+private fun ColumnScope.ContactList(phone: PhoneState, actions: HmiActions) {
+    when {
+        phone.contacts.isNotEmpty() -> ContactsList(phone.contacts, actions::call, Modifier.weight(1f).fillMaxWidth())
+        phone.sync == PhoneSync.Synced -> Note("The phone did not share any contacts. Allow contacts for this head unit in its Bluetooth settings, then read again.")
+        else -> Note("The phone's contacts show here once it has been read")
+    }
+}
+
+@Composable
+private fun ColumnScope.FavouriteList(phone: PhoneState, actions: HmiActions) {
+    when {
+        phone.favourites.isNotEmpty() -> Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Always three rows of two, so a short list doesn't stretch its tiles.
+            val shown = phone.favourites.take(FAVOURITE_SLOTS)
+            (shown + List(FAVOURITE_SLOTS - shown.size) { null }).chunked(2).forEach { row ->
+                Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { favourite ->
+                        if (favourite == null) {
+                            Spacer(Modifier.weight(1f))
+                        } else {
+                            FavouriteTile(favourite, { actions.call(favourite.number) }, Modifier.weight(1f).fillMaxHeight())
                         }
                     }
                 }
             }
-            phone.sync == PhoneSync.Synced -> Note("Mark favourites on the phone to keep them here")
-            else -> Note("The phone's favourites and most-called contacts show here")
         }
+        phone.sync == PhoneSync.Synced -> Note("Mark favourites on the phone to keep them here")
+        else -> Note("The phone's favourites and most-called contacts show here")
     }
 }
 

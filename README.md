@@ -29,7 +29,7 @@ The screenshots use the demo drive and the simulated OBD-II adapter.
 - **Your phone over Bluetooth**, the way a car kit reads it: recent calls, favourites, contacts with A–Z quick scroll, a T9 dialer, and calls with a call bar and end-call button.
 - **Rear camera**, live from the head unit, with parking guides, rotation and camera switching.
 - **Apps and projection**: every installed app, Android Auto or a projection app of your choice, and now playing from your music app.
-- **CarPlay inside Revv** with the separate [RevvCarPlay](https://github.com/iamvivekkaushik/RevvCarPlay) companion app (GPL-3.0, Android 11+): the iPhone's screen runs in the Auto screen's panel, touch included, and keeps playing while you use the rest of Revv. The companion ships no Apple accessory identity; you import your own.
+- **CarPlay inside Revv** with the separate [RevvCarPlay](https://github.com/iamvivekkaushik/RevvCarPlay) companion app (GPL-3.0, Android 11+): the iPhone's screen runs in the Auto screen's panel, touch included, and keeps playing while you use the rest of Revv. Its settings (identity, link, iPhone, display, audio, location) live in Revv's **Settings › CarPlay**. The companion ships no Apple accessory identity; you import your own there.
 - **Make it yours**: choose the home screen's cards and panels, turn the fuel card into an app shortcut, set display size (80–130%), date and time formats, sunset or light-sensor dimming, and tap sounds.
 - **Demo drive**: simulated car data while no adapter is set up, so every gauge can be tried at a desk.
 
@@ -40,7 +40,7 @@ No account, ads or analytics. Calls, contacts, car data and the camera picture s
 1. Download `revv-<version>.apk` from the [latest release](https://github.com/iamvivekkaushik/Revv/releases/latest) onto the head unit and open it. Android asks to allow installs from that source once.
 2. Open Revv and tap **Set as home**, or pick Revv when Android asks which app should be the home app.
 3. Optional: pair your phone in Android's Bluetooth settings and allow it to share contacts and call history; set up an OBD-II adapter in **Settings › Vehicle**.
-4. Optional, for CarPlay: install the [RevvCarPlay](https://github.com/iamvivekkaushik/RevvCarPlay) companion, open it once to import your identity files and accept its prompts, then open **AUTO** in Revv.
+4. Optional, for CarPlay: install the [RevvCarPlay](https://github.com/iamvivekkaushik/RevvCarPlay) companion, signed with the same key as Revv. In **Settings › CarPlay**, import your identity files, pick the link and your iPhone; then open **AUTO** and tap **FINISH SETUP** once to accept the companion's own prompts.
 
 Revv needs Android 9 or newer and a landscape screen. It lays out a 1920×1080 artboard that scales to the screen, and stretches to fill wide ones such as 1920×720.
 

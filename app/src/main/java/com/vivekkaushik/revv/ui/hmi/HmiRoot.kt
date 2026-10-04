@@ -150,7 +150,7 @@ fun HmiRoot(state: HmiUiState, obdReadings: StateFlow<ObdReadings?>, navigation:
                     visible = ready,
                     vehicleAlert = ignition.live.figures.health == Health.Alert,
                     actions = actions,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 28.dp),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = if (LocalCompact.current) 12.dp else 28.dp),
                 )
             }
         }
@@ -254,8 +254,10 @@ private fun CallBar(call: ActiveCall, onHangUp: () -> Unit, modifier: Modifier) 
     }
 }
 
+/** The compact dock (display sizes above 130%) is 62dp tall with its frame and sits 12dp up. */
 @Composable
 private fun Dock(current: HmiApp?, visible: Boolean, vehicleAlert: Boolean, actions: HmiActions, modifier: Modifier) {
+    val compact = LocalCompact.current
     Row(
         modifier
             .reveal(visible, 800, 500, riseBy = 40.dp)
@@ -270,7 +272,7 @@ private fun Dock(current: HmiApp?, visible: Boolean, vehicleAlert: Boolean, acti
                 onClick = { item.app?.let(actions::open) ?: actions.goHome() },
                 modifier = Modifier
                     .width(if (item == DockItem.Home) 160.dp else 132.dp)
-                    .height(76.dp)
+                    .height(if (compact) 60.dp else 76.dp)
                     .edgeLine(bottom = false),
                 background = if (selected) Hmi.Cyan.copy(alpha = 0.12f) else Color.Transparent,
                 pressedBackground = Hmi.CyanPressed,

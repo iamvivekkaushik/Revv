@@ -6,6 +6,8 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.graphics.Rect
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.media.AudioManager
 import android.os.Bundle
 import android.widget.Toast
@@ -19,6 +21,7 @@ import com.vivekkaushik.revv.media.MediaSessionMonitor
 import com.vivekkaushik.revv.media.NowPlaying
 import com.vivekkaushik.revv.nav.DeviceLocation
 import com.vivekkaushik.revv.nav.NavState
+import com.vivekkaushik.revv.nav.CarPlayRoute
 import com.vivekkaushik.revv.nav.Navigator
 import com.vivekkaushik.revv.nav.Place
 import com.vivekkaushik.revv.obd.BleScanner
@@ -48,17 +51,20 @@ import com.vivekkaushik.revv.ui.hmi.SystemState
 import com.vivekkaushik.revv.vehicle.CarSetup
 import java.time.Duration
 import java.time.Instant
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -71,6 +77,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val obd = ObdSession(application, viewModelScope)
     private val bleScanner = BleScanner(application)
     private val navigator = Navigator(application, viewModelScope)
+    private val carPlayRoute = CarPlayRoute(navigator, viewModelScope)
     private val phoneMonitor = PhoneMonitor(application, viewModelScope)
     private val nightDimmer = NightDimmer(application)
     /**
@@ -156,6 +163,23 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     navigator.avoidTolls = avoidTolls
                 }
         }
+        // Place search and routes go to Google when the driver chose it and gave a key.
+        viewModelScope.launch {
+            settings.map { it.googleSearchKey }.distinctUntilChanged().collect { key ->
+                navigator.useGoogle(key)
+                carPlayRoute.searchChanged()
+            }
+        }
+        // Revv's map follows the route CarPlay guides, unless the driver turned that off.
+        viewModelScope.launch {
+            settings.map { it.isOn(SettingsStore.CARPLAY_FOLLOW_ROUTE) }.distinctUntilChanged().collect { carPlayRoute.enabled = it }
+        }
+        viewModelScope.launch {
+            _carPlay.collectLatest { companion ->
+                if (companion == null) carPlayRoute.update(null, null)
+                else companion.guidance.collect { carPlayRoute.update(it?.destination, it?.routeMeters) }
+            }
+        }
         // Sunset dimming goes by the sun where the car is, as GPS has it rather than the demo car.
         viewModelScope.launch {
             navigator.state.collect { state -> if (!state.demo) state.fix?.position?.let(nightDimmer::locate) }
@@ -220,6 +244,25 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun setRearCameraId(id: String?) = settingsStore.setRearCameraId(id)
 
+    /** Reads the picked CarPlay identity files and hands them to RevvCarPlay, which checks and installs them. */
+    fun importCarPlayIdentity(uris: List<Uri>) {
+        val companion = _carPlay.value ?: return
+        val resolver = getApplication<Application>().contentResolver
+        viewModelScope.launch {
+            val files = withContext(Dispatchers.IO) {
+                uris.take(MAX_IDENTITY_FILES).mapNotNull { uri ->
+                    runCatching {
+                        val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                            if (cursor.moveToFirst()) cursor.getString(0) else null
+                        } ?: uri.lastPathSegment.orEmpty()
+                        resolver.openInputStream(uri)?.use(::readIdentityFile)?.let { name to it }
+                    }.getOrNull()
+                }.toMap()
+            }
+            companion.importIdentity(files)
+        }
+    }
+
     fun setProjectionApp(app: LauncherApp?) = settingsStore.setProjectionApp(app?.key)
 
     fun setFuelWidgetApp(app: LauncherApp?) = settingsStore.setFuelWidgetApp(app?.key)
@@ -281,6 +324,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun mapsSearchShown() = _screen.update { it.copy(searchRequested = false) }
 
+    fun openCarPlaySettings() = _screen.update { it.open(HmiApp.Settings).copy(carPlaySettingsRequested = true) }
+
+    fun carPlaySettingsShown() = _screen.update { it.copy(carPlaySettingsRequested = false) }
+
     fun back() = _screen.update { it.back() }
 
     /** [animate] false removes the open screen at once, for when Revv isn't on screen to show it. */
@@ -304,8 +351,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     /** Saves the chosen option of a list setting such as the date format. */
     fun setChoice(key: String, index: Int) {
-        if (key == SettingsStore.TIME_FORMAT || key == SettingsStore.DATE_FORMAT || key == SettingsStore.CAMERA_ROTATION) settingsStore.setLevel(key, index.coerceAtLeast(0))
+        if (key == SettingsStore.TIME_FORMAT || key == SettingsStore.DATE_FORMAT || key == SettingsStore.CAMERA_ROTATION || key == SettingsStore.PLACE_SEARCH) {
+            settingsStore.setLevel(key, index.coerceAtLeast(0))
+        }
     }
+
+    /** The Google Maps Platform key place searches use when Google is chosen; null or blank forgets it. */
+    fun setGoogleApiKey(key: String?) = settingsStore.setGoogleApiKey(key?.trim()?.takeIf { it.isNotEmpty() })
 
     fun setDisplaySize(percent: Int) {
         if (percent in SettingsStore.DISPLAY_SIZES) settingsStore.setLevel(SettingsStore.DISPLAY_SIZE, percent)
@@ -377,5 +429,20 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
         /** How often sunset dimming looks again between sunrise and sunset. */
         val NIGHT_CHECK: Duration = Duration.ofMinutes(5)
+
+        /** A key and a certificate, with room for a stray extra file in the pick. */
+        const val MAX_IDENTITY_FILES = 4
+
+        /** The file's bytes, or null when it is too big to be an identity file. */
+        fun readIdentityFile(input: java.io.InputStream): ByteArray? {
+            val out = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(4096)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) return out.toByteArray()
+                out.write(buffer, 0, read)
+                if (out.size() > CarPlayCompanion.MAX_IDENTITY_FILE_BYTES) return null
+            }
+        }
     }
 }

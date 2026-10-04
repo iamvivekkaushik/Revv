@@ -10,4 +10,5 @@
     <string name="no_projection_app">No Android Auto or phone-projection app found</string>
     <string name="no_navigation_app">No navigation app found</string>
     <string name="media_access_restricted_hint">Switch greyed out? Open App info → ⋮ → Allow restricted settings, then try again.</string>
+    <string name="no_file_picker">This head unit has no file picker to choose the identity files with.</string>
 </resources>

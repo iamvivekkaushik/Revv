@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -50,6 +51,7 @@ import com.vivekkaushik.revv.obd.ObdLink
 import com.vivekkaushik.revv.phone.CallType
 import com.vivekkaushik.revv.phone.PhoneState
 import com.vivekkaushik.revv.phone.PhoneSync
+import com.vivekkaushik.revv.settings.HmiSettings
 import com.vivekkaushik.revv.vehicle.DriveSimulator
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -78,6 +80,10 @@ fun HomeScreen(
     val gridAlpha by animateFloatAsState(if (framed) 1f else 0f, tween(1200, easing = Hmi.Ease), label = "grid")
 
     Box(modifier.fillMaxSize().background(Hmi.Bg).blueprintGrid { gridAlpha }) {
+        if (LocalCompact.current) {
+            CompactHome(state, live, clock, date, now, navigation, timeFormat, actions, onReplayIgnition, ready, framed)
+            return@Box
+        }
         Row(Modifier.fillMaxSize()) {
             Column(
                 Modifier
@@ -96,28 +102,10 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(28.dp))
                 Cluster(live, framed, state.settings.car.gears, Modifier.weight(1f).fillMaxWidth())
-                val settings = state.settings
-                if (settings.showFuelWidget || settings.showPhoneCard || settings.showMediaCard) {
+                val cards = homeCards(state.settings)
+                if (cards.isNotEmpty()) {
                     Spacer(Modifier.height(28.dp))
-                    Row(
-                        Modifier.fillMaxWidth().height(220.dp).reveal(ready, 800, 300, riseBy = 24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(28.dp),
-                    ) {
-                        if (settings.showFuelWidget) {
-                            val shortcut = settings.fuelWidgetApp?.let { key -> state.apps.firstOrNull { it.key == key } }
-                            if (shortcut != null) {
-                                AppShortcutCard(shortcut, actions, Modifier.weight(1f).fillMaxHeight())
-                            } else {
-                                FuelCard(live, Modifier.weight(1f).fillMaxHeight())
-                            }
-                        }
-                        if (settings.showPhoneCard) {
-                            PhoneCard(state.phone, now, timeFormat, actions, Modifier.weight(1f).fillMaxHeight())
-                        }
-                        if (settings.showMediaCard) {
-                            MediaCard(state.nowPlaying, state.system.hasMediaAccess, state.phone.link?.name, actions, Modifier.weight(1.4f).fillMaxHeight())
-                        }
-                    }
+                    HomeCards(cards, state, live, now, timeFormat, actions, Modifier.fillMaxWidth().height(220.dp).reveal(ready, 800, 300, riseBy = 24.dp))
                 }
             }
             if (state.settings.showMapPanel) {
@@ -127,11 +115,128 @@ fun HomeScreen(
                     timeFormat = timeFormat,
                     actions = actions,
                     modifier = Modifier.weight(770f).fillMaxHeight().reveal(ready, 1000, 400),
+                    carPlay = rememberCarPlayGuidance(state),
                 )
             }
         }
     }
 }
+
+/**
+ * The home screen at display sizes above 130%, with as little as 1200×675 design pixels: the status
+ * bar across the top, then the cluster, its gauges stacked, beside the map with the media card under
+ * it. The fuel and phone cards give way to the map; without the map they sit under the cluster.
+ */
+@Composable
+private fun CompactHome(
+    state: HmiUiState,
+    live: LiveTelemetry,
+    clock: String,
+    date: String,
+    now: LocalDateTime,
+    navigation: StateFlow<NavState>,
+    timeFormat: DateTimeFormatter,
+    actions: HmiActions,
+    onReplayIgnition: () -> Unit,
+    ready: Boolean,
+    framed: Boolean,
+) {
+    val settings = state.settings
+    Column(
+        Modifier.fillMaxSize().padding(start = 32.dp, top = 16.dp, end = 32.dp, bottom = COMPACT_BOTTOM_MARGIN),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        StatusBar(
+            state = state,
+            live = live,
+            clock = clock,
+            date = date,
+            actions = actions,
+            onReplayIgnition = onReplayIgnition,
+            modifier = Modifier.fillMaxWidth().height(44.dp).reveal(ready, 800, 200),
+        )
+        if (settings.showMapPanel) {
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Cluster(live, framed, settings.car.gears, Modifier.weight(1.2f).fillMaxHeight(), stacked = true)
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    NavPanel(
+                        navigation,
+                        covered = state.screen.app != null,
+                        timeFormat = timeFormat,
+                        actions = actions,
+                        modifier = Modifier.weight(1f).fillMaxWidth().border(1.dp, Hmi.Line).reveal(ready, 1000, 400),
+                        carPlay = rememberCarPlayGuidance(state),
+                    )
+                    if (settings.showMediaCard) {
+                        MediaCard(
+                            state.nowPlaying,
+                            state.system.hasMediaAccess,
+                            state.phone.link?.name,
+                            actions,
+                            Modifier.fillMaxWidth().height(COMPACT_CARD_HEIGHT).reveal(ready, 800, 300, riseBy = 24.dp),
+                        )
+                    }
+                }
+            }
+        } else {
+            Cluster(live, framed, settings.car.gears, Modifier.weight(1f).fillMaxWidth())
+            val cards = homeCards(settings)
+            if (cards.isNotEmpty()) {
+                HomeCards(cards, state, live, now, timeFormat, actions, Modifier.fillMaxWidth().height(COMPACT_CARD_HEIGHT).reveal(ready, 800, 300, riseBy = 24.dp))
+            }
+        }
+    }
+}
+
+private val COMPACT_CARD_HEIGHT = 168.dp
+
+private enum class HomeCard { Fuel, Phone, Media }
+
+/** The cards under the cluster, as chosen in Settings › Home. */
+private fun homeCards(settings: HmiSettings): List<HomeCard> = buildList {
+    if (settings.showFuelWidget) add(HomeCard.Fuel)
+    if (settings.showPhoneCard) add(HomeCard.Phone)
+    if (settings.showMediaCard) add(HomeCard.Media)
+}
+
+@Composable
+private fun HomeCards(
+    cards: List<HomeCard>,
+    state: HmiUiState,
+    live: LiveTelemetry,
+    now: LocalDateTime,
+    timeFormat: DateTimeFormatter,
+    actions: HmiActions,
+    modifier: Modifier,
+) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(if (LocalCompact.current) 24.dp else 28.dp)) {
+        cards.forEach { card ->
+            when (card) {
+                HomeCard.Fuel -> {
+                    val shortcut = state.settings.fuelWidgetApp?.let { key -> state.apps.firstOrNull { it.key == key } }
+                    if (shortcut != null) {
+                        AppShortcutCard(shortcut, actions, Modifier.weight(1f).fillMaxHeight())
+                    } else {
+                        FuelCard(live, Modifier.weight(1f).fillMaxHeight())
+                    }
+                }
+                HomeCard.Phone -> PhoneCard(state.phone, now, timeFormat, actions, Modifier.weight(1f).fillMaxHeight())
+                HomeCard.Media -> MediaCard(
+                    state.nowPlaying,
+                    state.system.hasMediaAccess,
+                    state.phone.link?.name,
+                    actions,
+                    Modifier.weight(1.4f).fillMaxHeight(),
+                )
+            }
+        }
+    }
+}
+
+/** A home card's inner margins; the compact layout's cards are shorter. */
+@Composable
+private fun cardPadding(): PaddingValues =
+    if (LocalCompact.current) PaddingValues(horizontal = 24.dp, vertical = 18.dp) else PaddingValues(horizontal = 28.dp, vertical = 22.dp)
 
 @Composable
 private fun StatusBar(
@@ -194,18 +299,28 @@ private fun StatusBar(
     }
 }
 
+/** [stacked] puts RPM and the gear under the speed instead of beside it, for a narrow cluster. */
 @Composable
-private fun Cluster(live: LiveTelemetry, visible: Boolean, gears: Int, modifier: Modifier) {
+private fun Cluster(live: LiveTelemetry, visible: Boolean, gears: Int, modifier: Modifier, stacked: Boolean = false) {
     val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(600, easing = Hmi.Ease), label = "frame")
-    Row(
-        modifier
-            .graphicsLayer { this.alpha = alpha }
-            .border(1.dp, Hmi.Line)
-            .drawWithContent {
-                drawContent()
-                drawCornerBrackets(live.introSeconds, live.phase)
-            },
-    ) {
+    val frame = modifier
+        .graphicsLayer { this.alpha = alpha }
+        .border(1.dp, Hmi.Line)
+        .drawWithContent {
+            drawContent()
+            drawCornerBrackets(live.introSeconds, live.phase)
+        }
+    if (stacked) {
+        Column(frame) {
+            SpeedPanel(live, Modifier.weight(1f).fillMaxWidth().edgeLine())
+            Row(Modifier.fillMaxWidth().height(STACKED_GAUGES_HEIGHT)) {
+                RpmPanel(live, Modifier.weight(1f).fillMaxHeight().edgeLine(bottom = false))
+                GearPanel(live, gears, Modifier.weight(1f).fillMaxHeight(), spread = true)
+            }
+        }
+        return
+    }
+    Row(frame) {
         SpeedPanel(live, Modifier.weight(1f).fillMaxHeight().edgeLine(bottom = false))
         Column(Modifier.width(400.dp).fillMaxHeight()) {
             RpmPanel(live, Modifier.weight(1f).fillMaxWidth().edgeLine())
@@ -213,6 +328,9 @@ private fun Cluster(live: LiveTelemetry, visible: Boolean, gears: Int, modifier:
         }
     }
 }
+
+/** The RPM and gear row under the speed in a stacked cluster. */
+private val STACKED_GAUGES_HEIGHT = 212.dp
 
 /** The four cyan corner marks, which fly in from 318px arms to 18px as the cluster powers up. */
 private fun DrawScope.drawCornerBrackets(introSeconds: Float, phase: Int) {
@@ -238,7 +356,11 @@ private fun SpeedPanel(live: LiveTelemetry, modifier: Modifier) {
     BoxWithConstraints(modifier) {
         // The digits shrink from the design's 150 when the panel is squeezed, so they never run into the side readings or the scale.
         val digitSize = minOf(150f, maxHeight.value * 0.4f, (maxWidth.value - 80f - 20f - 190f) / 2.7f).coerceAtLeast(60f)
-        Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 36.dp), verticalArrangement = Arrangement.SpaceBetween) {
+        val compact = LocalCompact.current
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = if (compact) 32.dp else 40.dp, vertical = if (compact) 24.dp else 36.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Caption("SPEED · KM/H")
                 Caption("MAX 200")
@@ -315,14 +437,18 @@ private fun SpeedScale(fraction: () -> Float, modifier: Modifier) {
 
 @Composable
 private fun RpmPanel(live: LiveTelemetry, modifier: Modifier) {
-    Column(modifier.padding(horizontal = 32.dp, vertical = 36.dp), verticalArrangement = Arrangement.SpaceBetween) {
+    val compact = LocalCompact.current
+    Column(
+        modifier.padding(horizontal = if (compact) 28.dp else 32.dp, vertical = if (compact) 20.dp else 36.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Caption("RPM ×1000")
             Caption("RED 6.0", color = Hmi.Red)
         }
         RpmReadout(live)
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            RpmSegments({ live.rpmFraction }, Modifier.fillMaxWidth().height(40.dp))
+            RpmSegments({ live.rpmFraction }, Modifier.fillMaxWidth().height(if (compact) 32.dp else 40.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 listOf("0", "2", "4", "6", "8").forEach { HText(it, size = 13.sp, color = Hmi.Muted) }
             }
@@ -354,15 +480,21 @@ private fun RpmSegments(fraction: () -> Float, modifier: Modifier) {
     }
 }
 
+/** [spread] pushes the caption to the top and the gears to the bottom, to line up beside the RPM panel. */
 @Composable
-private fun GearPanel(live: LiveTelemetry, gears: Int, modifier: Modifier) {
+private fun GearPanel(live: LiveTelemetry, gears: Int, modifier: Modifier, spread: Boolean = false) {
     val selected = live.gearIndex
     val strip = remember(gears) {
         listOf(DriveSimulator.GEAR_REVERSE to "R") + (1..gears).map { it to "$it" } + (DriveSimulator.GEAR_NEUTRAL to "N")
     }
+    val compact = LocalCompact.current
     Column(
-        modifier.padding(start = 32.dp, end = 32.dp, top = 24.dp, bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        if (compact) {
+            modifier.padding(start = 28.dp, end = 28.dp, top = 14.dp, bottom = 18.dp)
+        } else {
+            modifier.padding(start = 32.dp, end = 32.dp, top = 24.dp, bottom = 28.dp)
+        },
+        verticalArrangement = if (spread) Arrangement.SpaceBetween else Arrangement.spacedBy(if (compact) 10.dp else 14.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Caption("GEAR")
@@ -398,7 +530,7 @@ private fun AppShortcutCard(app: LauncherApp, actions: HmiActions, modifier: Mod
         border = Hmi.Line,
         pressedBorder = Hmi.Cyan,
     ) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 22.dp), verticalArrangement = Arrangement.SpaceBetween) {
+        Column(Modifier.fillMaxSize().padding(cardPadding()), verticalArrangement = Arrangement.SpaceBetween) {
             Caption("SHORTCUT")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 AppIcon(app, 64.dp)
@@ -413,7 +545,7 @@ private fun AppShortcutCard(app: LauncherApp, actions: HmiActions, modifier: Mod
 private fun FuelCard(live: LiveTelemetry, modifier: Modifier) {
     val figures = live.figures
     Column(
-        modifier.border(1.dp, Hmi.Line).padding(horizontal = 28.dp, vertical = 22.dp),
+        modifier.border(1.dp, Hmi.Line).padding(cardPadding()),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Caption("FUEL · RANGE")
@@ -436,14 +568,14 @@ private fun FuelCard(live: LiveTelemetry, modifier: Modifier) {
 private fun PhoneCard(phone: PhoneState, now: LocalDateTime, timeFormat: DateTimeFormatter, actions: HmiActions, modifier: Modifier) {
     val lastCall = phone.recents.firstOrNull()
     Column(
-        modifier.border(1.dp, Hmi.Line).padding(horizontal = 28.dp, vertical = 22.dp),
+        modifier.border(1.dp, Hmi.Line).padding(cardPadding()),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Caption("PHONE")
             Caption(PhoneFormat.badge(phone.link), Modifier.weight(1f, fill = false).padding(start = 16.dp), maxLines = 1)
         }
-        val button = Modifier.fillMaxWidth().height(52.dp)
+        val button = Modifier.fillMaxWidth().height(if (LocalCompact.current) 48.dp else 52.dp)
         val name = phone.link?.name.orEmpty()
         val openPhone = { actions.open(HmiApp.Phone) }
         when {
@@ -498,7 +630,7 @@ private fun LastCall(title: String, detail: String, detailColor: Color) {
 @Composable
 private fun MediaCard(nowPlaying: NowPlaying?, hasAccess: Boolean, phoneName: String?, actions: HmiActions, modifier: Modifier) {
     Row(
-        modifier.border(1.dp, Hmi.Line).padding(horizontal = 28.dp, vertical = 22.dp),
+        modifier.border(1.dp, Hmi.Line).padding(cardPadding()),
         horizontalArrangement = Arrangement.spacedBy(24.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -82,6 +82,10 @@ class MainActivity : ComponentActivity(), HmiActions {
         viewModel.onLocationPermissionResult()
     }
 
+    private val carPlayIdentityPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) viewModel.importCarPlayIdentity(uris)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
@@ -161,6 +165,8 @@ class MainActivity : ComponentActivity(), HmiActions {
     override fun open(app: HmiApp) = viewModel.open(app)
     override fun openMapsSearch() = viewModel.openMapsSearch()
     override fun mapsSearchShown() = viewModel.mapsSearchShown()
+    override fun openCarPlaySettings() = viewModel.openCarPlaySettings()
+    override fun carPlaySettingsShown() = viewModel.carPlaySettingsShown()
 
     override fun goHome() = viewModel.goHome()
 
@@ -277,7 +283,14 @@ class MainActivity : ComponentActivity(), HmiActions {
     override fun toggleSetting(key: String) = viewModel.toggleSetting(key)
     override fun clearTroubleCodes() = viewModel.clearTroubleCodes()
     override fun setChoice(key: String, index: Int) = viewModel.setChoice(key, index)
+    override fun setGoogleApiKey(key: String?) = viewModel.setGoogleApiKey(key)
     override fun setRearCameraId(id: String?) = viewModel.setRearCameraId(id)
+
+    override fun importCarPlayIdentity() {
+        // Some head units ship without a document picker; launching can throw before any result.
+        runCatching { carPlayIdentityPicker.launch(arrayOf("*/*")) }
+            .onFailure { Toast.makeText(this, R.string.no_file_picker, Toast.LENGTH_LONG).show() }
+    }
     override fun setProjectionApp(app: LauncherApp?) = viewModel.setProjectionApp(app)
     override fun setFuelWidgetApp(app: LauncherApp?) = viewModel.setFuelWidgetApp(app)
     override fun hangUp() = viewModel.hangUp()

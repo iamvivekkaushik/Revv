@@ -174,3 +174,105 @@ object PhotonParser {
     // optString turns a JSON null into the text "null", so check for it first.
     private fun JSONObject.text(key: String): String? = if (isNull(key)) null else optString(key).takeIf { it.isNotBlank() }
 }
+
+/** Reads Google Places API (New) Text Search answers into places. */
+object GooglePlacesParser {
+
+    fun parse(json: String): List<Place> {
+        val results = JSONObject(json).optJSONArray("places") ?: return emptyList()
+        val places = ArrayList<Place>()
+        for (i in 0 until results.length()) {
+            val result = results.getJSONObject(i)
+            val location = result.optJSONObject("location") ?: continue
+            val name = result.optJSONObject("displayName")?.optString("text")?.takeIf { it.isNotBlank() } ?: continue
+            val address = result.optString("formattedAddress")
+            // The address often starts with the name again.
+            val detail = address.removePrefix(name).trimStart(',', ' ')
+            places += Place(name, detail, LatLon(location.getDouble("latitude"), location.getDouble("longitude")))
+        }
+        return places
+    }
+
+    /** Google's reason for an error answer, cut to its first sentence; null when there is none. */
+    fun error(json: String): String? = runCatching {
+        JSONObject(json).getJSONObject("error").getString("message").substringBefore(". ").trimEnd('.')
+    }.getOrNull()?.takeIf { it.isNotBlank() }?.let { "Google: $it" }
+}
+
+/** Reads Google Routes API `computeRoutes` answers into a route Navigation can follow. */
+object GoogleRoutesParser {
+
+    fun parse(json: String): Route {
+        val root = try {
+            JSONObject(json)
+        } catch (e: JSONException) {
+            throw RouteException("Google sent something unreadable")
+        }
+        val route = root.optJSONArray("routes")?.optJSONObject(0) ?: throw RouteException("No road route between these places")
+        val steps = route.optJSONArray("legs")?.optJSONObject(0)?.optJSONArray("steps")
+        // The steps' polylines joined make the path, and each step's maneuver happens where it starts.
+        val points = ArrayList<LatLon>()
+        val starts = ArrayList<Int>()
+        for (i in 0 until (steps?.length() ?: 0)) {
+            val encoded = steps!!.getJSONObject(i).optJSONObject("polyline")?.optString("encodedPolyline").orEmpty()
+            val stepPoints = Geo.decodePolyline(encoded, precision = 5)
+            starts += (points.size - 1).coerceAtLeast(0)
+            points += if (points.isEmpty()) stepPoints else stepPoints.drop(1)
+        }
+        if (points.isEmpty()) {
+            points += Geo.decodePolyline(route.optJSONObject("polyline")?.optString("encodedPolyline").orEmpty(), precision = 5)
+        }
+        if (points.isEmpty()) throw RouteException("Google sent a route without a path")
+        if (points.size == 1) points += points[0]
+        val path = Path(points)
+        val stepSeconds = (0 until starts.size).map { seconds(steps!!.getJSONObject(it).optString("staticDuration")) }
+        val total = seconds(route.optString("duration")).takeIf { it > 0 } ?: stepSeconds.sum()
+        // Steps are timed without traffic; share the traffic-aware total out between them.
+        val traffic = if (stepSeconds.sum() > 0) total / stepSeconds.sum() else 1.0
+        val maneuvers = starts.indices.map { i ->
+            val instruction = steps!!.getJSONObject(i).optJSONObject("navigationInstruction")
+            val text = instruction?.optString("instructions").orEmpty().lineSequence().firstOrNull().orEmpty()
+            Maneuver(
+                turn = turnFor(instruction?.optString("maneuver").orEmpty()),
+                road = roadIn(text),
+                along = path.along[starts[i].coerceIn(0, points.size - 1)],
+                seconds = stepSeconds[i] * traffic,
+                roundaboutExit = EXIT.find(text)?.groupValues?.get(1)?.toIntOrNull(),
+            )
+        } + Maneuver(Turn.Arrive, null, path.length, 0.0)
+        // Google only says whether there are tolls in a dearer tier; Navigation doesn't use it.
+        return Route(path, maneuvers, total, hasTolls = false)
+    }
+
+    /** Google's `Maneuver` names. */
+    internal fun turnFor(maneuver: String): Turn = when (maneuver) {
+        "DEPART" -> Turn.Depart
+        "TURN_SLIGHT_LEFT" -> Turn.SlightLeft
+        "TURN_SHARP_LEFT" -> Turn.SharpLeft
+        "UTURN_LEFT" -> Turn.UTurnLeft
+        "TURN_LEFT" -> Turn.Left
+        "TURN_SLIGHT_RIGHT" -> Turn.SlightRight
+        "TURN_SHARP_RIGHT" -> Turn.SharpRight
+        "UTURN_RIGHT" -> Turn.UTurnRight
+        "TURN_RIGHT" -> Turn.Right
+        "RAMP_LEFT" -> Turn.RampLeft
+        "RAMP_RIGHT" -> Turn.RampRight
+        "MERGE" -> Turn.Merge
+        "FORK_LEFT" -> Turn.KeepLeft
+        "FORK_RIGHT" -> Turn.KeepRight
+        "FERRY", "FERRY_TRAIN" -> Turn.Ferry
+        "ROUNDABOUT_LEFT", "ROUNDABOUT_RIGHT" -> Turn.Roundabout
+        // STRAIGHT, NAME_CHANGE and anything newer.
+        else -> Turn.Straight
+    }
+
+    /** The road an instruction leads onto: "Turn left onto MG Road" → "MG Road". */
+    internal fun roadIn(instruction: String): String? =
+        ROAD.find(instruction)?.groupValues?.get(1)?.trim()?.trimEnd('.')?.takeIf { it.isNotEmpty() }
+
+    /** Google's durations look like "754s". */
+    private fun seconds(duration: String): Double = duration.removeSuffix("s").toDoubleOrNull() ?: 0.0
+
+    private val ROAD = Regex("""\b(?:onto|on|toward|towards)\s+(.+)$""")
+    private val EXIT = Regex("""(\d+)(?:st|nd|rd|th) exit""")
+}

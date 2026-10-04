@@ -24,6 +24,8 @@ data class HmiSettings(
     val projectionApp: AppKey? = null,
     /** The camera id the Rear Cam screen shows; null picks an external (USB) camera, else the back one. */
     val rearCameraId: String? = null,
+    /** The driver's Google Maps Platform key, for Google place search; null when none was entered. */
+    val googleApiKey: String? = null,
 ) {
     fun isOn(key: String): Boolean = toggles[key] ?: false
     fun level(key: String): Int = levels[key] ?: 0
@@ -49,6 +51,12 @@ data class HmiSettings(
 
     /** Index into the date layouts offered in Settings; 0 is the design's "THU 01 OCT". */
     val dateFormat: Int get() = level(SettingsStore.DATE_FORMAT)
+
+    /** Navigation's place search and routes: [SettingsStore.SEARCH_OSM] or [SettingsStore.SEARCH_GOOGLE]. */
+    val placeSearch: Int get() = level(SettingsStore.PLACE_SEARCH)
+
+    /** The key searches and routes go to Google with; null uses OpenStreetMap, as without a key. */
+    val googleSearchKey: String? get() = googleApiKey?.takeIf { placeSearch == SettingsStore.SEARCH_GOOGLE }
 
     /** How big everything is drawn, in percent of the design size. */
     val displaySize: Int
@@ -93,6 +101,11 @@ class SettingsStore(context: Context) {
     fun setFuelWidgetApp(app: AppKey?) {
         prefs.edit { if (app == null) remove(FUEL_WIDGET_APP) else putString(FUEL_WIDGET_APP, app.serialize()) }
         _settings.value = _settings.value.copy(fuelWidgetApp = app)
+    }
+
+    fun setGoogleApiKey(key: String?) {
+        prefs.edit { if (key == null) remove(GOOGLE_API_KEY) else putString(GOOGLE_API_KEY, key) }
+        _settings.value = _settings.value.copy(googleApiKey = key)
     }
 
     fun setRearCameraId(id: String?) {
@@ -149,6 +162,7 @@ class SettingsStore(context: Context) {
         fuelWidgetApp = prefs.getString(FUEL_WIDGET_APP, null)?.let(AppKey::parse),
         projectionApp = prefs.getString(PROJECTION_APP, null)?.let(AppKey::parse),
         rearCameraId = prefs.getString(REAR_CAMERA, null),
+        googleApiKey = prefs.getString(GOOGLE_API_KEY, null),
     )
 
     companion object {
@@ -171,19 +185,35 @@ class SettingsStore(context: Context) {
         const val TIME_FORMAT = "timeFormat"
         const val DATE_FORMAT = "dateFormat"
         const val DISPLAY_SIZE_DEFAULT = 100
-        val DISPLAY_SIZES = listOf(80, 90, 100, 110, 120, 130)
+        val DISPLAY_SIZES = listOf(80, 90, 100, 110, 120, 130, 140, 150, 160)
         const val MEDIA_VOLUME = "vol"
         const val NAV_VOLUME = "navVol"
         const val AVOID_TOLLS = "avoidTolls"
         const val SAVE_OBD_LOG = "obdLog"
         /** CarPlay fills the Auto screen instead of sharing it with its status column. */
         const val CARPLAY_WIDE = "carplayWide"
+        /** Without wide screen, the Auto screen's side column shows CarPlay's settings instead of its status and controls. */
+        const val CARPLAY_SETTINGS_BESIDE = "carplaySettingsBeside"
+        /** Without wide screen, CarPlay sits right of its side column instead of left. */
+        const val CARPLAY_ON_RIGHT = "carplayOnRight"
+        /**
+         * Experimental: Revv's map routes to where CarPlay guides, found by the destination's name,
+         * and shows CarPlay's turns without a match. Off, Revv's map ignores CarPlay's route.
+         */
+        const val CARPLAY_FOLLOW_ROUTE = "carplayFollowRoute"
+        /** Experimental: with [CARPLAY_FOLLOW_ROUTE] off, Revv's map still shows CarPlay's turns and ETA. */
+        const val CARPLAY_SHOW_TURNS = "carplayShowTurns"
+        /** Which services Navigation's place search and routes use. */
+        const val PLACE_SEARCH = "placeSearch"
+        const val SEARCH_OSM = 0
+        const val SEARCH_GOOGLE = 1
 
         private const val TOGGLE_PREFIX = "toggle."
         private const val LEVEL_PREFIX = "level."
         private const val REAR_CAMERA = "camera.rearId"
         private const val PROJECTION_APP = "auto.projectionApp"
         private const val FUEL_WIDGET_APP = "home.fuelWidgetApp"
+        private const val GOOGLE_API_KEY = "search.googleApiKey"
         private const val OBD_KIND = "obd.kind"
         private const val OBD_ADDRESS = "obd.address"
         private const val OBD_NAME = "obd.name"
@@ -199,6 +229,10 @@ class SettingsStore(context: Context) {
         // Defaults from the design. Most are placeholders until the matching integration exists.
         private val DEFAULT_TOGGLES = mapOf(
             CARPLAY_WIDE to false,
+            CARPLAY_SETTINGS_BESIDE to false,
+            CARPLAY_ON_RIGHT to false,
+            CARPLAY_FOLLOW_ROUTE to false,
+            CARPLAY_SHOW_TURNS to false,
             DEMO_DRIVE to true,
             HOME_FUEL to true,
             MENU_SOUND to true,
@@ -219,6 +253,6 @@ class SettingsStore(context: Context) {
             "traffic" to true,
             "autoUpd" to true,
         )
-        private val DEFAULT_LEVELS = mapOf(NAV_VOLUME to 18, DISPLAY_SIZE to DISPLAY_SIZE_DEFAULT, TIME_FORMAT to 0, DATE_FORMAT to 0, CAMERA_ROTATION to 0)
+        private val DEFAULT_LEVELS = mapOf(NAV_VOLUME to 18, DISPLAY_SIZE to DISPLAY_SIZE_DEFAULT, TIME_FORMAT to 0, DATE_FORMAT to 0, CAMERA_ROTATION to 0, PLACE_SEARCH to SEARCH_OSM)
     }
 }

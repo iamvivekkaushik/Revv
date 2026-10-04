@@ -45,10 +45,12 @@ fun PlaceSearchPanel(
         query = text.take(MAX_QUERY)
         actions.searchPlaces(query)
     }
+    // Compact (display sizes above 130%) can't spare the keyboard's fixed width; it shares the row.
+    val compact = LocalCompact.current
     Row(
         // Covers the map, which would otherwise pan under a drag across the panel.
-        modifier.opaqueToTouch().background(Hmi.MapBg).blueprintGrid().padding(32.dp),
-        horizontalArrangement = Arrangement.spacedBy(36.dp),
+        modifier.opaqueToTouch().background(Hmi.MapBg).blueprintGrid().padding(if (compact) 24.dp else 32.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 28.dp else 36.dp),
     ) {
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -78,14 +80,15 @@ fun PlaceSearchPanel(
                 search.error != null && !waitingForAnswer -> Hint(search.error)
                 search.results.isEmpty() && waitingForAnswer -> Hint(if (query.trim().length < 2) "Keep typing…" else "Searching…")
                 search.results.isEmpty() -> Hint("No places found for “${query.trim()}”.")
-                else -> Places("RESULTS", search.results, near, onPick)
+                // Google's terms ask for its credit beside its results.
+                else -> Places(search.credit?.let { "RESULTS · $it" } ?: "RESULTS", search.results, near, onPick)
             }
         }
         TextKeyboard(
             onKey = { type(query + it) },
             onSpace = { if (query.isNotEmpty() && !query.endsWith(" ")) type("$query ") },
             onBackspace = { type(query.dropLast(1)) },
-            modifier = Modifier.width(920.dp).fillMaxHeight(),
+            modifier = (if (compact) Modifier.weight(1.5f) else Modifier.width(920.dp)).fillMaxHeight(),
         )
     }
 }
@@ -150,6 +153,59 @@ fun TextKeyboard(onKey: (String) -> Unit, onSpace: () -> Unit, onBackspace: () -
         }
     }
 }
+
+/**
+ * [TextKeyboard] with lower case, SHIFT and a page of symbols, for what must be typed exactly, such
+ * as a Wi-Fi name and password. SHIFT works as on a phone: one tap capitalises the next character,
+ * a second tap locks capitals until SHIFT is tapped again.
+ */
+@Composable
+fun FullKeyboard(onKey: (String) -> Unit, onSpace: () -> Unit, onBackspace: () -> Unit, modifier: Modifier = Modifier) {
+    var shift by rememberSaveable { mutableStateOf(Shift.Off) }
+    var symbols by rememberSaveable { mutableStateOf(false) }
+    val rows = if (symbols) SYMBOL_ROWS else LETTER_ROWS
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        rows.forEachIndexed { index, row ->
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (index == rows.lastIndex && !symbols) {
+                    KeyboardKey(Modifier.weight(1.5f), onClick = { shift = shift.next() }) {
+                        Caption(if (shift == Shift.Locked) "CAPS" else "SHIFT", color = if (shift == Shift.Off) Hmi.Muted else Hmi.Cyan)
+                    }
+                }
+                row.forEach { char ->
+                    val key = if (shift != Shift.Off && !symbols) char.uppercaseChar() else char
+                    KeyboardKey(Modifier.weight(1f), onClick = {
+                        onKey(key.toString())
+                        if (shift == Shift.Once) shift = Shift.Off
+                    }) {
+                        HText(key.toString(), size = 26.sp, family = Hmi.Mono)
+                    }
+                }
+                if (index == rows.lastIndex) {
+                    KeyboardKey(Modifier.weight(1.5f), onClick = onBackspace, repeatEveryMillis = KEY_REPEAT_MILLIS) { PathIcon(HmiIcons.BACKSPACE, 28.dp, Hmi.Text) }
+                }
+            }
+        }
+        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KeyboardKey(Modifier.weight(2f), onClick = { symbols = !symbols }) { Caption(if (symbols) "ABC" else "#+=") }
+            KeyboardKey(Modifier.weight(8f), onClick = onSpace, repeatEveryMillis = KEY_REPEAT_MILLIS) { Caption("SPACE") }
+        }
+    }
+}
+
+/** SHIFT: off, for the next character only, or locked on. */
+private enum class Shift {
+    Off, Once, Locked;
+
+    fun next() = when (this) {
+        Off -> Once
+        Once -> Locked
+        Locked -> Off
+    }
+}
+
+private val LETTER_ROWS = listOf("1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm")
+private val SYMBOL_ROWS = listOf("1234567890", "!@#\$%^&*()", "-_=+[]{};:", "'\"/\\?,.<>~`|")
 
 /** How often a held Space or Backspace key repeats. */
 private const val KEY_REPEAT_MILLIS = 70L
