@@ -774,6 +774,7 @@ private fun rowsFor(
             },
             autoNightRow(state, actions, clock),
             ToggleRow(SettingsStore.REDUCED_MOTION, "Reduced motion", "Fewer animations while driving"),
+            ToggleRow(SettingsStore.FULL_RPM, "Full rpm", "Rev counter in rpm, like 900, rather than thousands, like 0.9"),
             ValueRow("Theme", "Cluster · dark"),
         )
         Category.Home -> listOf(

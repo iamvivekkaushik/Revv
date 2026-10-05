@@ -44,6 +44,10 @@ class LiveTelemetry {
         private set
     var rpmTenths by mutableIntStateOf(0)
         private set
+
+    /** Revs as the rev counter shows them in full, to the nearest 10 rpm. */
+    var rpm by mutableIntStateOf(0)
+        private set
     var gearIndex by mutableIntStateOf(DriveSimulator.GEAR_NEUTRAL)
         private set
 
@@ -79,6 +83,7 @@ class LiveTelemetry {
         rpmFraction = telemetry.rpmFraction
         speedKmh = telemetry.speedKmh
         rpmTenths = (telemetry.rpmFraction * 80).roundToInt()
+        rpm = (telemetry.rpmFraction * DriveSimulator.MAX_RPM / 10).roundToInt() * 10
         gearIndex = telemetry.gearIndex
         kmPerLitreTenths = telemetry.kmPerLitre?.let { (it * 10).roundToInt() } ?: -1
         if (decorate) steer = telemetry.steer

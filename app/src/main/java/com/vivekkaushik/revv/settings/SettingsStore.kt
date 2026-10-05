@@ -187,6 +187,9 @@ class SettingsStore(context: Context) {
     companion object {
         const val DEMO_DRIVE = "demo"
         const val REDUCED_MOTION = "anim"
+
+        /** The rev counter in whole rpm (900) rather than thousands (0.9). */
+        const val FULL_RPM = "fullRpm"
         const val TOUCH_FEEDBACK = "haptic"
         const val HOME_FUEL = "homeFuel"
         const val MENU_SOUND = "menuSound"
@@ -283,6 +286,7 @@ class SettingsStore(context: Context) {
             HOME_MAP to true,
             SUNSET_DIMMING to false,
             REDUCED_MOTION to false,
+            FULL_RPM to false,
             "autoVol" to true,
             TOUCH_FEEDBACK to true,
             "hotspot" to true,

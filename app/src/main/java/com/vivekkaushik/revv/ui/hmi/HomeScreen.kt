@@ -64,6 +64,7 @@ import com.vivekkaushik.revv.phone.CallType
 import com.vivekkaushik.revv.phone.PhoneState
 import com.vivekkaushik.revv.phone.PhoneSync
 import com.vivekkaushik.revv.settings.HmiSettings
+import com.vivekkaushik.revv.settings.SettingsStore
 import com.vivekkaushik.revv.vehicle.DriveSimulator
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -113,7 +114,7 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxWidth().height(44.dp).reveal(ready, 800, 200),
                 )
                 Spacer(Modifier.height(28.dp))
-                Cluster(live, framed, state.settings.car.gears, Modifier.weight(1f).fillMaxWidth())
+                Cluster(live, framed, state.settings.car.gears, state.settings.isOn(SettingsStore.FULL_RPM), Modifier.weight(1f).fillMaxWidth())
                 val cards = homeCards(state.settings)
                 if (cards.isNotEmpty()) {
                     Spacer(Modifier.height(28.dp))
@@ -169,7 +170,7 @@ private fun CompactHome(
         )
         if (settings.showMapPanel) {
             Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Cluster(live, framed, settings.car.gears, Modifier.weight(1.2f).fillMaxHeight(), stacked = true)
+                Cluster(live, framed, settings.car.gears, settings.isOn(SettingsStore.FULL_RPM), Modifier.weight(1.2f).fillMaxHeight(), stacked = true)
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     NavPanel(
                         navigation,
@@ -192,7 +193,7 @@ private fun CompactHome(
                 }
             }
         } else {
-            Cluster(live, framed, settings.car.gears, Modifier.weight(1f).fillMaxWidth())
+            Cluster(live, framed, settings.car.gears, settings.isOn(SettingsStore.FULL_RPM), Modifier.weight(1f).fillMaxWidth())
             val cards = homeCards(settings)
             if (cards.isNotEmpty()) {
                 HomeCards(cards, state, live, now, timeFormat, actions, Modifier.fillMaxWidth().height(COMPACT_CARD_HEIGHT).reveal(ready, 800, 300, riseBy = 24.dp))
@@ -313,9 +314,12 @@ private fun StatusBar(
     }
 }
 
-/** [stacked] puts RPM and the gear under the speed instead of beside it, for a narrow cluster. */
+/**
+ * [stacked] puts RPM and the gear under the speed instead of beside it, for a narrow cluster;
+ * [fullRpm] shows the revs in rpm rather than thousands.
+ */
 @Composable
-private fun Cluster(live: LiveTelemetry, visible: Boolean, gears: Int, modifier: Modifier, stacked: Boolean = false) {
+private fun Cluster(live: LiveTelemetry, visible: Boolean, gears: Int, fullRpm: Boolean, modifier: Modifier, stacked: Boolean = false) {
     val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(600, easing = Hmi.Ease), label = "frame")
     val frame = modifier
         .graphicsLayer { this.alpha = alpha }
@@ -328,7 +332,7 @@ private fun Cluster(live: LiveTelemetry, visible: Boolean, gears: Int, modifier:
         Column(frame) {
             SpeedPanel(live, Modifier.weight(1f).fillMaxWidth().edgeLine())
             Row(Modifier.fillMaxWidth().height(STACKED_GAUGES_HEIGHT)) {
-                RpmPanel(live, Modifier.weight(1f).fillMaxHeight().edgeLine(bottom = false))
+                RpmPanel(live, fullRpm, Modifier.weight(1f).fillMaxHeight().edgeLine(bottom = false))
                 GearPanel(live, gears, Modifier.weight(1f).fillMaxHeight(), spread = true)
             }
         }
@@ -337,7 +341,7 @@ private fun Cluster(live: LiveTelemetry, visible: Boolean, gears: Int, modifier:
     Row(frame) {
         SpeedPanel(live, Modifier.weight(1f).fillMaxHeight().edgeLine(bottom = false))
         Column(Modifier.width(400.dp).fillMaxHeight()) {
-            RpmPanel(live, Modifier.weight(1f).fillMaxWidth().edgeLine())
+            RpmPanel(live, fullRpm, Modifier.weight(1f).fillMaxWidth().edgeLine())
             GearPanel(live, gears, Modifier.fillMaxWidth())
         }
     }
@@ -449,31 +453,40 @@ private fun SpeedScale(fraction: () -> Float, modifier: Modifier) {
     }
 }
 
+/** [full] shows the revs in rpm (900), else in thousands (0.9) as the caption says. */
 @Composable
-private fun RpmPanel(live: LiveTelemetry, modifier: Modifier) {
+private fun RpmPanel(live: LiveTelemetry, full: Boolean, modifier: Modifier) {
     val compact = LocalCompact.current
     Column(
         modifier.padding(horizontal = if (compact) 28.dp else 32.dp, vertical = if (compact) 20.dp else 36.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Caption("RPM ×1000")
-            Caption("RED 6.0", color = Hmi.Red)
+            Caption(if (full) "RPM" else "RPM ×1000")
+            Caption(if (full) "RED 6000" else "RED 6.0", color = Hmi.Red)
         }
-        RpmReadout(live)
+        RpmReadout(live, full)
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             RpmSegments({ live.rpmFraction }, Modifier.fillMaxWidth().height(if (compact) 32.dp else 40.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                listOf("0", "2", "4", "6", "8").forEach { HText(it, size = 13.sp, color = Hmi.Muted) }
+                (if (full) FULL_RPM_MARKS else RPM_MARKS).forEach { HText(it, size = 13.sp, color = Hmi.Muted) }
             }
         }
     }
 }
 
 @Composable
-private fun RpmReadout(live: LiveTelemetry) {
-    HText(if (live.hasNoData()) "--" else tenths(live.rpmTenths), size = 64.sp, family = Hmi.Display, spacing = (-2).sp, lineHeight = 64.sp)
+private fun RpmReadout(live: LiveTelemetry, full: Boolean) {
+    val text = when {
+        live.hasNoData() -> "--"
+        full -> live.rpm.toString()
+        else -> tenths(live.rpmTenths)
+    }
+    HText(text, size = 64.sp, family = Hmi.Display, spacing = (-2).sp, lineHeight = 64.sp)
 }
+
+private val RPM_MARKS = listOf("0", "2", "4", "6", "8")
+private val FULL_RPM_MARKS = listOf("0", "2000", "4000", "6000", "8000")
 
 /** Sixteen bars; the last four are the redline. */
 @Composable
