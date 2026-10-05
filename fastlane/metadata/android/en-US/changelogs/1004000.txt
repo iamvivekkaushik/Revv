@@ -1,0 +1,6 @@
+• Hear your engine start: the starter, then the engine catching (Settings › Sound › Start-up).
+• A deeper engine sound, like a big V8, that keeps up with the pedal.
+• No OBD-II adapter? A virtual GPS adapter drives the cluster from your speed.
+• CarPlay full screen; Revv's icon in CarPlay brings you back.
+• Seek from the home media card, CarPlay's music too.
+• Rev counter in full rpm, and tidier readings at large display sizes.
