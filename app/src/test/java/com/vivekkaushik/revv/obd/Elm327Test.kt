@@ -2,6 +2,7 @@ package com.vivekkaushik.revv.obd
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -266,6 +267,34 @@ class Elm327Test {
         val elm = Elm327(transport)
         elm.connectToEcu()
         assertEquals(listOf("P0171"), elm.readTroubleCodes())
+    }
+
+    @Test
+    fun theSimulatedCarStartsItsEngineBeforeDriving() {
+        var now = 0L
+        val elm = Elm327(SimulatedElm327(startEngine = true, clock = { now }))
+        elm.initialize()
+        elm.connectToEcu()
+        fun rpm() = elm.readPid(ObdPid.RPM)?.let(ObdPid::rpm)
+        fun speed() = elm.readPid(ObdPid.SPEED)?.let(ObdPid::speed)
+        assertEquals("ignition on, engine stopped", 0, rpm())
+        assertEquals(12.4f, elm.readVoltage()!!, 0.001f)
+        now = 5_400_000_000L
+        assertTrue("turned over by the starter", rpm()!! in 150..300)
+        assertEquals("the battery sags", 10.4f, elm.readVoltage()!!, 0.001f)
+        now = 6_250_000_000L
+        assertTrue("caught and flaring", rpm()!! > 1000)
+        now = 9_500_000_000L
+        assertEquals("settled to idle", 850.0, rpm()!!.toDouble(), 50.0)
+        assertEquals("still parked", 0, speed())
+        now = 18_000_000_000L
+        assertTrue("then sets off", speed()!! > 0)
+    }
+
+    @Test
+    fun theSimulatedCarStartsItsEngineOnlyOnce() {
+        SimulatedElm327.startsEngine()
+        assertFalse(SimulatedElm327.startsEngine())
     }
 
     @Test

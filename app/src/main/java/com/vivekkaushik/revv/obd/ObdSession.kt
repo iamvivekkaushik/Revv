@@ -234,7 +234,8 @@ class ObdSession(
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
 
     private fun open(adapter: ObdAdapter): ObdTransport = when (adapter.kind) {
-        ObdAdapter.Kind.Simulated -> SimulatedElm327(profile)
+        // The simulated car starts its engine once, as Revv starts, rather than on every reconnect.
+        ObdAdapter.Kind.Simulated -> SimulatedElm327(profile, startEngine = SimulatedElm327.startsEngine())
         ObdAdapter.Kind.Gps -> GpsElm327.open(context, { car }, profile) ?: throw MissingPermissionException()
         ObdAdapter.Kind.Bluetooth -> openBluetooth(adapter)
         ObdAdapter.Kind.BluetoothLe -> openBle(adapter)
