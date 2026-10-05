@@ -6,6 +6,7 @@ import java.nio.ByteOrder
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.log10
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 import org.junit.Assert.assertEquals
@@ -94,6 +95,27 @@ class DspTest {
     }
 
     @Test
+    fun stretchedImpulseResponseIsLongerAndStillUnitEnergy() {
+        val response = FloatArray(1000) { (sin(it / 3.0) * 0.99.pow(it)).toFloat() }
+        val stretched = ImpulseResponse.stretched(response, 1.03)
+        assertEquals(1030, stretched.size)
+        assertEquals(1.0, stretched.sumOf { it.toDouble() * it }, 1e-4)
+    }
+
+    @Test
+    fun overtonesComeAboveTheBandTheyAreMadeFrom() {
+        val rate = 44_100.0
+        val harmonics = BassHarmonics(300.0, 300.0, rate)
+        // A 100 Hz note gives back mostly 300, 500 and 700 Hz, none of the 100.
+        val out = DoubleArray(44_100) { harmonics.process(0.5 * sin(2 * PI * 100 * it / rate)) }
+        val tail = out.copyOfRange(22_050, out.size)
+        val atFundamental = tone(tail, 100.0, rate)
+        val atThird = tone(tail, 300.0, rate)
+        assertTrue("third $atThird vs fundamental $atFundamental", atThird > 10 * atFundamental)
+        assertTrue("about as loud as the note: $atThird", atThird > 0.05)
+    }
+
+    @Test
     fun bundledImpulseResponsesRead() {
         ExhaustNote.entries.forEach { note ->
             val response = ImpulseResponse.read(java.io.File("src/main/assets/${note.impulse}").readBytes())
@@ -102,6 +124,17 @@ class DspTest {
     }
 
     private fun decibels(gain: Double) = 20 * log10(gain)
+
+    /** The amplitude of [samples] at [hz]. */
+    private fun tone(samples: DoubleArray, hz: Double, rate: Double): Double {
+        var re = 0.0
+        var im = 0.0
+        for (n in samples.indices) {
+            re += samples[n] * kotlin.math.cos(2 * PI * hz * n / rate)
+            im += samples[n] * sin(2 * PI * hz * n / rate)
+        }
+        return 2 * sqrt(re * re + im * im) / samples.size
+    }
 
     private fun steadyGain(filter: ButterworthLowPass, hz: Double, rate: Double) = steadyGain(filter::process, hz, rate)
 

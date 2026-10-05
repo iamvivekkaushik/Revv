@@ -53,6 +53,7 @@ data class HmiSettings(
             volume = level(SettingsStore.ENGINE_VOLUME),
             bass = level(SettingsStore.ENGINE_BASS),
             crackle = isOn(SettingsStore.ENGINE_CRACKLE),
+            surround = isOn(SettingsStore.ENGINE_SURROUND),
         )
 
     val showFuelWidget: Boolean get() = isOn(SettingsStore.HOME_FUEL)
@@ -199,6 +200,8 @@ class SettingsStore(context: Context) {
         const val ENGINE_BASS = "engineBass"
         /** Pops from the exhaust on lifting off at high revs. */
         const val ENGINE_CRACKLE = "engineCrackle"
+        /** The engine in stereo, each bank's pipe on its own side. */
+        const val ENGINE_SURROUND = "engineSurround"
         const val CAMERA_ROTATION = "cameraRotation"
         const val HOME_PHONE = "homePhone"
         const val HOME_MEDIA = "homeMedia"
@@ -266,6 +269,7 @@ class SettingsStore(context: Context) {
             KEYBOARD_SOUND to true,
             ENGINE_SOUND to false,
             ENGINE_CRACKLE to true,
+            ENGINE_SURROUND to true,
             HOME_PHONE to true,
             HOME_MEDIA to true,
             HOME_MAP to true,

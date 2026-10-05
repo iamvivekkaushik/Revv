@@ -24,7 +24,7 @@ The screenshots use the demo drive and the simulated OBD-II adapter.
 
 - **Live OBD-II gauges** from an ELM327 adapter over Bluetooth, Bluetooth LE or Wi-Fi: speed, engine speed, load, throttle, coolant, intake air and battery voltage.
 - **Gear indicator**, worked out from the gearbox ratios and tyre size, or learnt as you drive.
-- **Engine sound** (experimental): a synthesised engine through the speakers that follows the car's rpm, load and gear changes, after [engine-sim](https://github.com/ange-yaghi/engine-sim)'s synthesizer. Pick an inline 3 to a V12, from a stock exhaust to a straight pipe, turn its bass up or down, with optional pops on lift-off, in **Settings › Sound**.
+- **Engine sound** (experimental): a synthesised engine through the speakers that follows the car's rpm, load and gear changes, after [engine-sim](https://github.com/ange-yaghi/engine-sim)'s synthesizer. Pick an inline 3 to a V12, from a stock exhaust to a straight pipe, turn its bass up or down, hear each bank's pipe from its own side in surround, with optional pops on lift-off, in **Settings › Sound**.
 - **Fault codes** in plain English, pending codes, clearing them, and low-battery and check-engine warnings with a badge on the dock.
 - **Maps and directions** on OpenStreetMap: place search, turn-by-turn routes with the next turn on the home screen, avoiding tolls, north-up or heading-up.
 - **Your phone over Bluetooth**, the way a car kit reads it: recent calls, favourites, contacts with A–Z quick scroll, a T9 dialer, and calls with a call bar and end-call button.

@@ -1,9 +1,13 @@
 package com.vivekkaushik.revv.engine
 
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** What the engine is doing, as the synthesiser needs it. */
 data class EngineState(
@@ -33,7 +37,8 @@ data class EngineState(
  *   with itself roughened by filtered noise;
  * - all of it is convolved with a recorded exhaust impulse response.
  *
- * Then, unlike engine-sim, it gets its low end back, which the derivative thins out, and is
+ * Then, unlike engine-sim, it plays in stereo, each bank's pipe on its own side; it gets its low
+ * end back, which the derivative thins out, or on a phone's speaker the overtones of it; and it is
  * compressed and rounded off under full scale so it can play about as loud as music.
  */
 class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
@@ -45,20 +50,48 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
     private var voices = emptyArray<Voice>()
     private var exhausts = emptyArray<Exhaust>()
     private var exhaustInput = DoubleArray(0)
-    private var convolver: Convolver? = null
+
+    /** How much of each exhaust goes to the left and right. */
+    private var exhaustLeft = DoubleArray(0)
+    private var exhaustRight = DoubleArray(0)
+    private var convolverMid: Convolver? = null
+
+    /** For the difference between the sides, only with a pipe per bank. */
+    private var convolverSide: Convolver? = null
+
+    /** The echoes' part in the sides, see [configure]. */
+    private var convolverWidth: Convolver? = null
+    private var bassDb = 0.0
     private var shelfDb = Double.NaN
-    private val bassShelf = Biquad.lowShelf(BASS_CORNER, 0.0, sampleRate.toDouble())
-    private val rumbleCut = Biquad.highPass(RUMBLE_CORNER, sampleRate.toDouble())
+    private val left = Channel(sampleRate.toDouble())
+    private val right = Channel(sampleRate.toDouble())
+    private val sideCut1 = Biquad.highPass(CENTRE_BELOW, sampleRate.toDouble())
+    private val sideCut2 = Biquad.highPass(CENTRE_BELOW, sampleRate.toDouble())
+    private val harmonics = BassHarmonics(SMALL_SPEAKER_CORNER, SMALL_SPEAKER_CORNER, sampleRate.toDouble())
     private val compressor = Compressor(COMPRESS_ABOVE_DB, COMPRESS_RATIO, BLOCK.toDouble() / sampleRate)
     private var squeeze = 1.0
+
+    /** Playing through a phone's own speaker, which can't play the low end, rather than the car's. */
+    @Volatile
+    var smallSpeaker = false
+
+    /** In stereo, rather than the same from both sides. */
+    @Volatile
+    var surround = true
+    private var sides = 1.0
 
     private var crank = 0.0
     private var rpm = 0.0
     private var load = 0.0
     private var gain = 0.0
     private var overrunSeconds = 0.0
-    private val mixed = DoubleArray(BLOCK)
-    private val convolved = DoubleArray(BLOCK)
+    private val mixedMid = DoubleArray(BLOCK)
+    private val mixedSide = DoubleArray(BLOCK)
+    private val convolvedMid = DoubleArray(BLOCK)
+    private val convolvedSide = DoubleArray(BLOCK)
+    private val convolvedWidth = DoubleArray(BLOCK)
+    private val outLeft = DoubleArray(BLOCK)
+    private val outRight = DoubleArray(BLOCK)
 
     // Per-sample factors for the pulses' exponential rise and fall: multiplying an envelope by
     // them each sample costs far less than exp(), which isn't an intrinsic in every ART build.
@@ -77,26 +110,47 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
      * it, and [bass] how many decibels to add below about 200 Hz, of which [ExhaustNote.bass] takes its share.
      */
     fun configure(layout: EngineLayout, note: ExhaustNote, impulse: FloatArray, crackle: Boolean, bass: Double) {
-        if (layout != this.layout || voices.isEmpty()) {
+        val newLayout = layout != this.layout || voices.isEmpty()
+        if (newLayout) {
             this.layout = layout
             voices = voicesOf(layout)
             exhausts = Array(layout.exhaustMetres.size) { Exhaust(sampleRate.toDouble(), noise) }
             exhaustInput = DoubleArray(exhausts.size)
+            // A pipe per bank: each comes out on its own side, with some of it on the other.
+            val count = exhausts.size
+            val pans = DoubleArray(count) { if (count == 1) 0.0 else EXHAUST_SPREAD * (2.0 * it / (count - 1) - 1) }
+            exhaustLeft = DoubleArray(count) { sqrt(2.0) * cos((pans[it] + 1) * PI / 4) }
+            exhaustRight = DoubleArray(count) { sqrt(2.0) * sin((pans[it] + 1) * PI / 4) }
         }
-        if (note != this.note || convolver == null) convolver = Convolver(impulse, BLOCK)
+        if (note != this.note || newLayout || convolverMid == null) {
+            convolverMid = Convolver(impulse, BLOCK)
+            convolverSide = if (exhausts.size > 1) Convolver(impulse, BLOCK) else null
+            // No two pipes are quite the same length: heard a little longer on the left and
+            // shorter on the right, the echoes part ways while the pulses stay together. Only the
+            // difference goes to the sides, so both together sound just as before.
+            val longer = ImpulseResponse.stretched(impulse, 1 + PIPE_DIFFERENCE)
+            val shorter = ImpulseResponse.stretched(impulse, 1 - PIPE_DIFFERENCE)
+            convolverWidth = Convolver(FloatArray(longer.size) { (WIDTH * (longer[it] - shorter.getOrElse(it) { 0f }) / 2).toFloat() }, BLOCK)
+        }
         this.note = note
         this.crackle = crackle
+        bassDb = bass
         val shelf = bass * note.bass
-        if (shelf != shelfDb) bassShelf.lowShelf(BASS_CORNER, shelf, sampleRate.toDouble())
+        if (shelf != shelfDb) {
+            left.bass(shelf)
+            right.bass(shelf)
+        }
         shelfDb = shelf
     }
 
     /**
-     * Fills [out] (at least [BLOCK] long) with the next block, moving smoothly from the last
-     * block's engine and [volume] (a gain, 0 to [MAX_GAIN]) to these.
+     * Fills [out] (at least [BLOCK] × [CHANNELS] long) with the next block, left and right
+     * interleaved, moving smoothly from the last block's engine and [volume] (a gain, 0 to
+     * [MAX_GAIN]) to these.
      */
     fun render(out: FloatArray, state: EngineState, volume: Double) {
-        val convolver = convolver ?: error("Not configured")
+        val convolverMid = convolverMid ?: error("Not configured")
+        val convolverWidth = convolverWidth ?: error("Not configured")
         val fromRpm = rpm
         val fromLoad = load
         val fromGain = gain
@@ -112,38 +166,69 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
             val t = (n + 1).toDouble() / BLOCK
             val rpm = fromRpm + (toRpm - fromRpm) * t
             val load = fromLoad + (toLoad - fromLoad) * t
-            mixed[n] = sample(rpm, load, popChance)
+            sample(n, rpm, load, popChance)
         }
         rpm = toRpm
         load = toLoad
 
-        convolver.process(mixed, convolved)
+        convolverMid.process(mixedMid, convolvedMid)
+        val fromSides = sides
+        val toSides = if (surround) 1.0 else 0.0
+        if (fromSides > 0 || toSides > 0) {
+            // Off, the sides weren't kept up: start them from silence rather than from back then.
+            if (fromSides == 0.0) {
+                convolverWidth.clear()
+                convolverSide?.clear()
+            }
+            convolverWidth.process(mixedMid, convolvedWidth)
+            convolverSide?.process(mixedSide, convolvedSide) ?: convolvedSide.fill(0.0)
+        }
+        sides = toSides
         val loudness = OUTPUT_GAIN * note.loudness
+        val small = smallSpeaker
+        val overtones = HARMONICS * bassDb / MAX_BASS_DB
         var power = 0.0
         for (n in 0 until BLOCK) {
-            val x = rumbleCut.process(bassShelf.process(convolved[n])) * loudness
-            convolved[n] = x
-            power += x * x
+            // The low end stays in the middle: parted, it would thin out where the speakers meet.
+            val mid = convolvedMid[n]
+            val spread = fromSides + (toSides - fromSides) * (n + 1).toDouble() / BLOCK
+            val side = if (spread > 0) spread * sideCut2.process(sideCut1.process(convolvedSide[n] + convolvedWidth[n])) else 0.0
+            var x = mid + side
+            var y = mid - side
+            if (small) {
+                val growl = overtones * harmonics.process((x + y) / 2)
+                x = left.small(x) + growl
+                y = right.small(y) + growl
+            } else {
+                x = left.full(x)
+                y = right.full(y)
+            }
+            x *= loudness
+            y *= loudness
+            outLeft[n] = x
+            outRight[n] = y
+            power += x * x + y * y
         }
         val fromSqueeze = squeeze
-        val toSqueeze = compressor.gain(power / BLOCK)
+        val toSqueeze = compressor.gain(power / (CHANNELS * BLOCK))
         val toGain = volume.coerceIn(0.0, MAX_GAIN)
         var loudest = 0.0
         for (n in 0 until BLOCK) {
             val t = (n + 1).toDouble() / BLOCK
-            val g = fromGain + (toGain - fromGain) * t
-            val c = fromSqueeze + (toSqueeze - fromSqueeze) * t
-            val y = SoftClip.process(convolved[n] * c * g)
-            loudest = max(loudest, abs(y))
-            out[n] = y.toFloat()
+            val g = (fromGain + (toGain - fromGain) * t) * (fromSqueeze + (toSqueeze - fromSqueeze) * t)
+            val x = SoftClip.process(outLeft[n] * g)
+            val y = SoftClip.process(outRight[n] * g)
+            loudest = max(loudest, max(abs(x), abs(y)))
+            out[CHANNELS * n] = x.toFloat()
+            out[CHANNELS * n + 1] = y.toFloat()
         }
         gain = toGain
         squeeze = toSqueeze
         peak = loudest
     }
 
-    /** One sample of all the exhausts together, before the impulse response. */
-    private fun sample(rpm: Double, load: Double, popChance: Double): Double {
+    /** Sample [n] of the exhausts, panned, before the impulse response. */
+    private fun sample(n: Int, rpm: Double, load: Double, popChance: Double) {
         exhaustInput.fill(0.0)
         if (rpm > MIN_RPM) {
             val degreesPerSecond = rpm * 6.0
@@ -177,9 +262,15 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
                 exhaustInput[voice.exhaust] += pressure * voice.weight * spinUp
             }
         }
-        var sum = 0.0
-        for (i in exhausts.indices) sum += exhausts[i].process(exhaustInput[i], layout.jitter, note.noise, note.highFrequencyGain)
-        return sum
+        var l = 0.0
+        var r = 0.0
+        for (i in exhausts.indices) {
+            val pipe = exhausts[i].process(exhaustInput[i], layout.jitter, note.noise, note.highFrequencyGain)
+            l += pipe * exhaustLeft[i]
+            r += pipe * exhaustRight[i]
+        }
+        mixedMid[n] = (l + r) / 2
+        mixedSide[n] = (l - r) / 2
     }
 
     /**
@@ -234,6 +325,23 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         var popLeft = 0
     }
 
+    /** One side's filters after the convolution, for the car's speakers or a phone's. */
+    private class Channel(private val sampleRate: Double) {
+        private val shelf = Biquad.lowShelf(BASS_CORNER, 0.0, sampleRate)
+        private val rumble = Biquad.highPass(RUMBLE_CORNER, sampleRate)
+        private val speaker1 = Biquad.highPass(SMALL_SPEAKER_CORNER, sampleRate)
+        private val speaker2 = Biquad.highPass(SMALL_SPEAKER_CORNER, sampleRate)
+
+        fun bass(db: Double) {
+            shelf.lowShelf(BASS_CORNER, db, sampleRate)
+        }
+
+        fun full(x: Double) = rumble.process(shelf.process(x))
+
+        /** Without what a phone's speaker can't play, so it doesn't use up the headroom. */
+        fun small(x: Double) = speaker2.process(speaker1.process(x))
+    }
+
     /** One exhaust's share of engine-sim's Synthesizer::renderAudio, before the convolution. */
     private class Exhaust(private val sampleRate: Double, private val noise: Noise) {
         private val antialias = ButterworthLowPass(1900.0, sampleRate)
@@ -258,6 +366,9 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
 
         /** Samples rendered at a time: about 6 ms. */
         const val BLOCK = 256
+
+        /** Left and right, interleaved. */
+        const val CHANNELS = 2
 
         /** The loudest volume [render] takes: 6 dB over 1, which just keeps flat out clean. */
         const val MAX_GAIN = 2.0
@@ -308,6 +419,27 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
 
         /** Below what car speakers play, and where a boost would only eat headroom. */
         private const val RUMBLE_CORNER = 28.0
+
+        /** Below what a phone's speaker plays. */
+        private const val SMALL_SPEAKER_CORNER = 300.0
+
+        /** How loud the low end's overtones play on a phone's speaker, with the bass all the way up. */
+        private const val HARMONICS = 2.0
+
+        /** The most the bass setting adds, in decibels. */
+        const val MAX_BASS_DB = 15.0
+
+        /** Below this both sides play the same. */
+        private const val CENTRE_BELOW = 150.0
+
+        /** How far to the sides two pipes are, 0 together to 1 apart. */
+        private const val EXHAUST_SPREAD = 0.6
+
+        /** How much longer the left pipe sounds than the right. */
+        private const val PIPE_DIFFERENCE = 0.03
+
+        /** How much of the pipes' difference to play: more and the sides start to cancel out. */
+        private const val WIDTH = 0.6
 
         /** Into 0 until 720°; no floor(), which is a slow native call in debug builds. */
         private fun wrap(degrees: Double): Double {

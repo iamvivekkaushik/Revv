@@ -226,6 +226,42 @@ internal class Compressor(private val thresholdDb: Double, private val ratio: Do
     }
 }
 
+/**
+ * Overtones of the low end, for speakers too small to play it: the band below [fromHz] is
+ * squared off, which adds its odd harmonics, and only those above [toHz] are kept. The ear hears
+ * the missing fundamental in them, so a phone's speaker gives the rumble back as a growl. The
+ * squaring is done on the band divided by its own envelope, so the overtones follow the level of
+ * the low end linearly.
+ */
+internal class BassHarmonics(fromHz: Double, toHz: Double, sampleRate: Double) {
+    private val band = ButterworthLowPass(fromHz, sampleRate)
+    private val cutFundamental1 = Biquad.highPass(toHz, sampleRate)
+    private val cutFundamental2 = Biquad.highPass(toHz, sampleRate)
+    private val smooth = ButterworthLowPass(SMOOTH_HZ, sampleRate)
+    private val attack = 1 - exp(-1 / (sampleRate * ATTACK_SECONDS))
+    private val release = 1 - exp(-1 / (sampleRate * RELEASE_SECONDS))
+    private var envelope = 0.0
+
+    /** The overtones of [x]'s low end, about as loud as it. */
+    fun process(x: Double): Double {
+        val low = band.process(x)
+        val size = abs(low)
+        envelope += (size - envelope) * if (size > envelope) attack else release
+        if (envelope < 1e-12) envelope = 0.0
+        val squared = if (envelope == 0.0) 0.0 else (low * DRIVE / envelope).coerceIn(-1.0, 1.0) * envelope
+        return smooth.process(cutFundamental2.process(cutFundamental1.process(squared)))
+    }
+
+    private companion object {
+        const val DRIVE = 2.0
+        const val ATTACK_SECONDS = 0.002
+        const val RELEASE_SECONDS = 0.03
+
+        /** Rounds off the corners, so the overtones growl rather than buzz. */
+        const val SMOOTH_HZ = 2500.0
+    }
+}
+
 /** An in-place radix-2 complex FFT of a fixed power-of-two [size]. */
 internal class Fft(private val size: Int) {
     private val levels = Integer.numberOfTrailingZeros(size)
@@ -307,6 +343,13 @@ internal class Convolver(impulse: FloatArray, private val block: Int) {
         }
     }
 
+    /** Forgets the input so far, as if it had been silent. */
+    fun clear() {
+        window.fill(0.0)
+        inputRe.forEach { it.fill(0.0) }
+        inputIm.forEach { it.fill(0.0) }
+    }
+
     /** Convolves the next [block] samples of [input] into [output]. */
     fun process(input: DoubleArray, output: DoubleArray) {
         window.copyInto(window, destinationOffset = 0, startIndex = block, endIndex = size)
@@ -380,9 +423,27 @@ internal object ImpulseResponse {
         throw IllegalArgumentException("No audio in the WAV file")
     }
 
+    /**
+     * [response] played [factor] times as long, as through a pipe that much longer, its resonances
+     * that much lower; still at unit energy.
+     */
+    fun stretched(response: FloatArray, factor: Double): FloatArray {
+        val stretched = FloatArray(max((response.size * factor).toInt(), 1)) { i ->
+            val at = i / factor
+            val i0 = at.toInt()
+            val a = response.getOrElse(i0) { 0f }
+            val b = response.getOrElse(i0 + 1) { 0f }
+            (a + (b - a) * (at - i0)).toFloat()
+        }
+        return toUnitEnergy(stretched)
+    }
+
     private fun trimmed(samples: ShortArray): FloatArray {
         val end = (samples.indexOfLast { abs(it.toInt()) > SILENT } + 1).coerceAtMost(MAX_SAMPLES)
-        val response = FloatArray(max(end, 1)) { if (it < end) samples[it] / 32_768f else 0f }
+        return toUnitEnergy(FloatArray(max(end, 1)) { if (it < end) samples[it] / 32_768f else 0f })
+    }
+
+    private fun toUnitEnergy(response: FloatArray): FloatArray {
         val energy = sqrt(response.sumOf { it.toDouble() * it })
         if (energy > 0) for (i in response.indices) response[i] = (response[i] / energy).toFloat()
         return response

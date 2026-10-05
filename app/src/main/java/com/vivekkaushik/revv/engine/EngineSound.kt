@@ -2,7 +2,9 @@ package com.vivekkaushik.revv.engine
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
 import android.os.Process
 import android.os.SystemClock
@@ -19,6 +21,7 @@ data class EngineSoundSettings(
     val crackle: Boolean = true,
     /** 0 to [MAX_BASS]. */
     val bass: Int = DEFAULT_BASS,
+    val surround: Boolean = true,
 ) {
     /**
      * The volume as a gain, on a curve so each step sounds about as big as the last. The top
@@ -27,15 +30,14 @@ data class EngineSoundSettings(
      */
     val gain: Double get() = (volume.coerceIn(0, MAX_VOLUME).toDouble() / MAX_VOLUME).let { it * it * EngineSynth.MAX_GAIN }
 
-    /** The bass as decibels added to the low end, up to [MAX_BASS_DB]. */
-    val bassDb: Double get() = bass.coerceIn(0, MAX_BASS) * MAX_BASS_DB / MAX_BASS
+    /** The bass as decibels added to the low end, up to [EngineSynth.MAX_BASS_DB]. */
+    val bassDb: Double get() = bass.coerceIn(0, MAX_BASS) * EngineSynth.MAX_BASS_DB / MAX_BASS
 
     companion object {
         const val MAX_VOLUME = 30
         const val DEFAULT_VOLUME = 24
         const val MAX_BASS = 30
         const val DEFAULT_BASS = 18
-        private const val MAX_BASS_DB = 15.0
     }
 }
 
@@ -47,6 +49,12 @@ data class EngineSoundSettings(
 class EngineSound(private val context: Context) {
 
     private val follower = EngineFollower()
+    private val audioManager = context.getSystemService(AudioManager::class.java)
+
+    /** Phones have one; a head unit's built-in speakers are the car's. */
+    private val hasEarpiece by lazy {
+        audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+    }
     private val lock = Any()
     private var thread: Thread? = null
 
@@ -121,8 +129,9 @@ class EngineSound(private val context: Context) {
     private fun render(track: AudioTrack) {
         val synth = EngineSynth()
         val impulses = HashMap<ExhaustNote, FloatArray>()
-        val block = FloatArray(EngineSynth.BLOCK)
+        val block = FloatArray(EngineSynth.BLOCK * EngineSynth.CHANNELS)
         var applied: EngineSoundSettings? = null
+        var blocks = 0
         var level = 0.0
         var quietSince = SystemClock.elapsedRealtimeNanos()
         track.play()
@@ -133,6 +142,9 @@ class EngineSound(private val context: Context) {
                 synth.configure(settings.layout, settings.note, impulse, settings.crackle, settings.bassDb)
                 applied = settings
             }
+            synth.surround = settings.surround
+            // Headphones, Bluetooth and the car come and go: check every half second or so.
+            if (blocks++ % ROUTE_CHECK_BLOCKS == 0) synth.smallSpeaker = playsOnPhoneSpeaker(track)
             val now = SystemClock.elapsedRealtimeNanos()
             // Kept moving even while previewing, so it doesn't jump when the preview ends.
             val live = follower.advance(now)
@@ -168,6 +180,11 @@ class EngineSound(private val context: Context) {
         return settings.enabled && follower.advance(now).running
     }
 
+    private fun playsOnPhoneSpeaker(track: AudioTrack): Boolean {
+        val type = track.routedDevice?.type ?: return false
+        return hasEarpiece && (type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER || type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE)
+    }
+
     private fun readImpulse(note: ExhaustNote): FloatArray =
         context.assets.open(note.impulse).use { ImpulseResponse.read(it.readBytes()) }
 
@@ -175,9 +192,9 @@ class EngineSound(private val context: Context) {
         val format = AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
             .setSampleRate(EngineSynth.SAMPLE_RATE)
-            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+            .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
             .build()
-        val minimum = AudioTrack.getMinBufferSize(EngineSynth.SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+        val minimum = AudioTrack.getMinBufferSize(EngineSynth.SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
         return AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -187,7 +204,7 @@ class EngineSound(private val context: Context) {
             )
             .setAudioFormat(format)
             .setTransferMode(AudioTrack.MODE_STREAM)
-            .setBufferSizeInBytes(max(minimum, EngineSynth.BLOCK * Float.SIZE_BYTES * BUFFER_BLOCKS))
+            .setBufferSizeInBytes(max(minimum, EngineSynth.BLOCK * EngineSynth.CHANNELS * Float.SIZE_BYTES * BUFFER_BLOCKS))
             .build()
     }
 
@@ -197,6 +214,7 @@ class EngineSound(private val context: Context) {
         const val QUIET_NANOS = 2_000_000_000L
         const val IDLE_POLL_MILLIS = 100L
         const val RETRY_MILLIS = 1_000L
+        const val ROUTE_CHECK_BLOCKS = 80
 
         /** Per block: fades in and out over about 150 ms rather than clicking. */
         const val FADE_STEP = 0.04
