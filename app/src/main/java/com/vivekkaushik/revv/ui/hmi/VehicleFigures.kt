@@ -15,6 +15,9 @@ enum class DataSource {
     /** A live OBD-II adapter. */
     Obd,
 
+    /** The virtual GPS adapter: speed from GPS, the gear, revs and load worked out from it. */
+    Gps,
+
     /** Nothing: the adapter isn't answering, or the demo is off. Shown as dashes, never as fake data. */
     None,
 }
@@ -98,8 +101,14 @@ data class VehicleFigures(
                 averageKmpl = averageText,
                 driveTime = hoursAndMinutes(readings.tripEngineSeconds),
                 fuelLitres = litres?.roundToInt()?.toString() ?: DASH,
-                health = if (alert) Health.Alert else Health.Normal,
+                // GPS knows nothing of the car's health, so it mustn't call it normal.
+                health = when {
+                    status.estimated -> Health.Unknown
+                    alert -> Health.Alert
+                    else -> Health.Normal
+                },
                 healthText = when {
+                    status.estimated -> "GPS ONLY · NO DIAGNOSTICS"
                     !alert -> "ALL SYSTEMS NORMAL"
                     !engineAlert -> "LOW BATTERY · $battery V"
                     codeCount == 0 -> "CHECK ENGINE"

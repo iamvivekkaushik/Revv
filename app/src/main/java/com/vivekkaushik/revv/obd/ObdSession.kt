@@ -132,11 +132,11 @@ class ObdSession(
             try {
                 connectAndPoll(adapter) { retryMillis = FIRST_RETRY_MILLIS }
             } catch (e: MissingPermissionException) {
-                log.add("Stopped: Bluetooth access isn't allowed")
+                log.add("Stopped: ${access(adapter)} access isn't allowed")
                 _status.value = ObdStatus(ObdLink.NeedsPermission, adapter.name)
                 return
             } catch (e: SecurityException) {
-                log.add("Stopped: Bluetooth access isn't allowed")
+                log.add("Stopped: ${access(adapter)} access isn't allowed")
                 _status.value = ObdStatus(ObdLink.NeedsPermission, adapter.name)
                 return
             } catch (e: BluetoothOffException) {
@@ -173,8 +173,10 @@ class ObdSession(
             while (true) {
                 val supported = waitForEcu(elm, adapter)
                 elm.protocolNumber?.let { protocols.edit { putInt(protocolKey(adapter), it) } }
-                log.add("Live: ${elm.protocolName ?: "unknown protocol"}, car supports PIDs " + supported.sorted().joinToString(" ") { ObdResponse.hex(it) })
-                _status.value = ObdStatus(ObdLink.Live, adapter.name, protocol = elm.protocolName, endpoint = endpoint)
+                val gps = adapter.kind == ObdAdapter.Kind.Gps
+                val protocol = if (gps) GPS_SOURCE else elm.protocolName
+                log.add("Live: ${protocol ?: "unknown protocol"}, car supports PIDs " + supported.sorted().joinToString(" ") { ObdResponse.hex(it) })
+                _status.value = ObdStatus(ObdLink.Live, adapter.name, protocol = protocol, endpoint = endpoint, estimated = gps)
                 onLive()
                 val gearsKey = gearsKey(elm.protocolNumber, supported)
                 val estimator = GearEstimator(car, savedGears(gearsKey)).also { gears = it }
@@ -186,7 +188,7 @@ class ObdSession(
                     keepLearntGears(gearsKey, estimator)
                 }
                 polling = false
-                log.add("The car stopped answering")
+                log.add(if (gps) "GPS lost its fix" else "The car stopped answering")
                 // The car stopped answering (ignition off). Keep the adapter and wait for it again.
                 _readings.value = null
             }
@@ -205,6 +207,9 @@ class ObdSession(
     }
 
     private fun protocolKey(adapter: ObdAdapter) = "protocol.${adapter.kind}.${adapter.address}"
+
+    /** What the adapter needs to be allowed to use, for the log. */
+    private fun access(adapter: ObdAdapter) = if (adapter.kind == ObdAdapter.Kind.Gps) "Location" else "Bluetooth"
 
     /** Learnt gears are kept per car, told apart by its protocol and the readings it supports. */
     private fun gearsKey(protocol: Int?, supported: Set<Int>) =
@@ -230,6 +235,7 @@ class ObdSession(
 
     private fun open(adapter: ObdAdapter): ObdTransport = when (adapter.kind) {
         ObdAdapter.Kind.Simulated -> SimulatedElm327(profile)
+        ObdAdapter.Kind.Gps -> GpsElm327.open(context, { car }, profile) ?: throw MissingPermissionException()
         ObdAdapter.Kind.Bluetooth -> openBluetooth(adapter)
         ObdAdapter.Kind.BluetoothLe -> openBle(adapter)
         ObdAdapter.Kind.WiFi -> openWifi(adapter)
@@ -301,18 +307,20 @@ class ObdSession(
     }
 
     private suspend fun waitForEcu(elm: Elm327, adapter: ObdAdapter): Set<Int> {
+        // GPS has no bus to probe; it answers as soon as it has a fix.
+        val gps = adapter.kind == ObdAdapter.Kind.Gps
         var attempt = 0
         while (true) {
             // Trying every protocol by hand takes a minute or more with the ignition off, so only
             // now and then; the adapter's own search runs every time.
-            val probe = attempt % PROBE_EVERY == 0
+            val probe = !gps && attempt % PROBE_EVERY == 0
             if (probe) log.add("Asking the car for data, trying each protocol if the adapter's search fails")
             elm.connectToEcu(probe)?.let { return it }
             attempt++
             val volts = elm.readVoltage()
-            log.add("The car didn't answer" + (volts?.let { ", adapter reads $it V at the port" } ?: ""))
+            log.add(if (gps) "No GPS fix yet" else "The car didn't answer" + (volts?.let { ", adapter reads $it V at the port" } ?: ""))
             _status.value = ObdStatus(ObdLink.NoEcu, adapter.name, batteryVolts = volts)
-            delay(ECU_RETRY_MILLIS)
+            delay(if (gps) GPS_RETRY_MILLIS else ECU_RETRY_MILLIS)
         }
     }
 
@@ -449,6 +457,10 @@ class ObdSession(
         const val FIRST_RETRY_MILLIS = 2_000L
         const val MAX_RETRY_MILLIS = 15_000L
         const val ECU_RETRY_MILLIS = 5_000L
+        const val GPS_RETRY_MILLIS = 2_000L
+
+        /** Shown where a real adapter's bus protocol would be. */
+        const val GPS_SOURCE = "speed from GPS"
         const val PROBE_EVERY = 6
         const val SNAPSHOT_MILLIS = 10_000L
         const val GEARS_PREFIX = "gears."

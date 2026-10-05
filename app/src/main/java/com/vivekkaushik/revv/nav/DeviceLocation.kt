@@ -20,6 +20,8 @@ data class Fix(
     val speedMps: Double?,
     val accuracyMetres: Double?,
     val timeMillis: Long,
+    /** When it was measured, on the SystemClock.elapsedRealtimeNanos clock; 0 when not known. */
+    val elapsedNanos: Long = 0,
 )
 
 /**
@@ -96,6 +98,7 @@ class DeviceLocation(private val context: Context) {
         speedMps = if (hasSpeed()) speed.toDouble() else null,
         accuracyMetres = if (hasAccuracy()) accuracy.toDouble() else null,
         timeMillis = time,
+        elapsedNanos = elapsedRealtimeNanos,
     )
 
     companion object {

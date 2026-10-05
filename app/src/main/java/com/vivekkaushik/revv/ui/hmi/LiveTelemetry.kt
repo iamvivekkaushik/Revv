@@ -151,7 +151,7 @@ class Ignition(private val simulator: DriveSimulator, private val profile: Vehic
         status: ObdStatus,
     ) {
         val source = when {
-            readings != null -> DataSource.Obd
+            readings != null -> if (status.estimated) DataSource.Gps else DataSource.Obd
             // With an adapter set up, a dropped link must never be papered over with fake driving.
             adapterSetUp -> DataSource.None
             demoDrive -> DataSource.Demo

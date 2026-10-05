@@ -6,8 +6,11 @@ package com.vivekkaushik.revv.obd
  */
 data class ObdAdapter(val kind: Kind, val address: String, val name: String) {
 
-    /** [Bluetooth] is Classic (serial port profile); [BluetoothLe] talks over GATT. */
-    enum class Kind { Bluetooth, BluetoothLe, WiFi, Simulated }
+    /**
+     * [Bluetooth] is Classic (serial port profile); [BluetoothLe] talks over GATT. [Gps] is no
+     * adapter at all: speed from the head unit's GPS, the engine worked out from it.
+     */
+    enum class Kind { Bluetooth, BluetoothLe, WiFi, Simulated, Gps }
 
     /** The typed-in address of a Wi-Fi adapter; null when Revv finds it by itself. */
     val wifiEndpoint: WifiEndpoint?
@@ -18,6 +21,9 @@ data class ObdAdapter(val kind: Kind, val address: String, val name: String) {
         val WiFi = ObdAdapter(Kind.WiFi, "auto", "Wi-Fi ELM327")
 
         val Simulated = ObdAdapter(Kind.Simulated, "simulated", "Simulated ELM327 (debug build)")
+
+        /** Stands in for an adapter from GPS alone, for cars without one. */
+        val Gps = ObdAdapter(Kind.Gps, "gps", "Virtual GPS adapter")
 
         fun bluetooth(address: String, name: String) = ObdAdapter(Kind.Bluetooth, address, name)
 
@@ -68,6 +74,11 @@ data class ObdStatus(
     val troubleCodes: List<String> = emptyList(),
     /** Faults seen once but not yet confirmed; they do not light the check-engine light. */
     val pendingCodes: List<String> = emptyList(),
+    /**
+     * The readings are worked out from GPS rather than read from the car, so there's nothing to
+     * say about its health.
+     */
+    val estimated: Boolean = false,
 )
 
 /** The latest live values; null fields weren't reported. Updated several times a second. */

@@ -107,6 +107,7 @@ private fun ObdCard(live: LiveTelemetry, modifier: Modifier) {
     Column(modifier.border(1.dp, Hmi.Line).verticalScroll(rememberScrollState()).padding(cardPadding(LocalCompact.current))) {
         val caption = when (live.source) {
             DataSource.Obd -> "LIVE OBD-II"
+            DataSource.Gps -> "ESTIMATED FROM GPS"
             DataSource.Demo -> "OBD-II · SIMULATED"
             DataSource.None -> "OBD-II · NOT CONNECTED"
         }

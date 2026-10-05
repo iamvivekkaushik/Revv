@@ -274,7 +274,7 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
     }
 }
 
-/** Lists the adapters Revv can use: Wi-Fi, each paired Bluetooth device, and a simulator in debug builds. */
+/** Lists the adapters Revv can use: Wi-Fi, each paired Bluetooth device, GPS without one, and a simulator in debug builds. */
 @Composable
 private fun AdapterPicker(state: HmiUiState, actions: HmiActions, onDone: () -> Unit) {
     val chosen = state.settings.obdAdapter
@@ -387,6 +387,17 @@ private fun AdapterPicker(state: HmiUiState, actions: HmiActions, onDone: () -> 
             items(bleAdapters, key = { it.kind.name + it.address }) { adapter ->
                 AdapterRow(adapter, selected = adapter == chosen) { choose(adapter, actions, onDone) }
             }
+            item(key = "virtual") {
+                PickerSection(
+                    "NO ADAPTER",
+                    "Speed from this head unit's GPS, with the gear and revs a calm driver would have at that " +
+                        "speed, from the gearing under Car. Drives the cluster and engine sound; no temperatures, " +
+                        "fuel or fault codes.",
+                )
+            }
+            items(byKind[ObdAdapter.Kind.Gps].orEmpty(), key = { it.kind.name + it.address }) { adapter ->
+                AdapterRow(adapter, selected = adapter == chosen) { choose(adapter, actions, onDone) }
+            }
             val simulated = byKind[ObdAdapter.Kind.Simulated].orEmpty()
             if (simulated.isNotEmpty()) {
                 item(key = "testing") { PickerSection("TESTING", "Answers like a real ELM327 from the demo drive.") }
@@ -461,10 +472,11 @@ private fun AdapterRow(adapter: ObdAdapter, selected: Boolean, onClick: () -> Un
         ObdAdapter.Kind.Bluetooth, ObdAdapter.Kind.BluetoothLe -> HmiIcons.BLUETOOTH to adapter.address
         ObdAdapter.Kind.WiFi -> HmiIcons.WIFI to "Tries ${WifiEndpoint.Default} and the network's gateway"
         ObdAdapter.Kind.Simulated -> HmiIcons.VEHICLE to null
+        ObdAdapter.Kind.Gps -> HmiIcons.MAPS to "Speed from GPS · gear and rpm estimated"
     }
     val tag = when {
         selected -> "IN USE"
-        adapter.kind != ObdAdapter.Kind.WiFi && adapter.kind != ObdAdapter.Kind.Simulated &&
+        (adapter.kind == ObdAdapter.Kind.Bluetooth || adapter.kind == ObdAdapter.Kind.BluetoothLe) &&
             BluetoothAccess.looksLikeObd(adapter.name) -> "OBD-II?"
         else -> null
     }
@@ -1285,28 +1297,38 @@ private fun sunsetDetail(schedule: NightSchedule, clock: DateTimeFormatter): Str
 private fun adapterRow(state: HmiUiState, actions: HmiActions, chooseAdapter: () -> Unit): SettingRow {
     val adapter = state.settings.obdAdapter ?: return ActionRow(
         "OBD-II adapter",
-        "Not set up · pair an ELM327, then choose it here",
+        "Not set up · pair an ELM327 or use GPS, then choose it here",
         "CHOOSE",
         chooseAdapter,
     )
     val status = state.obd
+    val gps = adapter.kind == ObdAdapter.Kind.Gps
+    val locationOff = gps && status.link == ObdLink.NoEcu && !state.system.locationOn
     val detail = when (status.link) {
         ObdLink.Off -> adapter.name
-        ObdLink.NeedsPermission -> "Allow Bluetooth access to connect"
+        ObdLink.NeedsPermission -> if (gps) "Allow location access to read speed from GPS" else "Allow Bluetooth access to connect"
         ObdLink.BluetoothOff -> "Bluetooth is off"
         ObdLink.NoWifi -> "Join the adapter's Wi-Fi network first"
-        ObdLink.Connecting -> "Connecting to ${adapter.wifiEndpoint ?: adapter.name}…"
-        ObdLink.NoEcu -> "Connected · car not answering, ignition off?" +
-            (status.batteryVolts?.let { " · %.1f V".format(Locale.ROOT, it) } ?: "")
+        ObdLink.Connecting -> if (gps) "Starting GPS…" else "Connecting to ${adapter.wifiEndpoint ?: adapter.name}…"
+        ObdLink.NoEcu -> when {
+            locationOff -> "Location is off on this head unit"
+            gps -> "Waiting for a GPS fix"
+            else -> "Connected · car not answering, ignition off?" +
+                (status.batteryVolts?.let { " · %.1f V".format(Locale.ROOT, it) } ?: "")
+        }
         ObdLink.Live -> listOfNotNull("Live", status.protocol, status.endpoint).joinToString(" · ")
         ObdLink.Retrying -> "Reconnecting · ${status.problem ?: "link lost"}"
     }
     val name = "OBD-II · ${adapter.name}"
-    return when (status.link) {
+    return when {
         // Fixing the link comes first, but switching adapters must stay possible too.
-        ObdLink.NeedsPermission -> ActionRow(name, detail, "ALLOW", actions::requestBluetoothPermission, "CHANGE" to chooseAdapter)
-        ObdLink.BluetoothOff -> ActionRow(name, detail, "OPEN", actions::openBluetoothSettings, "CHANGE" to chooseAdapter)
-        ObdLink.NoWifi -> ActionRow(name, detail, "JOIN", actions::openWifiSettings, "CHANGE" to chooseAdapter)
+        status.link == ObdLink.NeedsPermission && gps ->
+            ActionRow(name, detail, "ALLOW", actions::requestLocationPermission, "CHANGE" to chooseAdapter)
+        status.link == ObdLink.NeedsPermission ->
+            ActionRow(name, detail, "ALLOW", actions::requestBluetoothPermission, "CHANGE" to chooseAdapter)
+        locationOff -> ActionRow(name, detail, "OPEN", actions::openLocationSettings, "CHANGE" to chooseAdapter)
+        status.link == ObdLink.BluetoothOff -> ActionRow(name, detail, "OPEN", actions::openBluetoothSettings, "CHANGE" to chooseAdapter)
+        status.link == ObdLink.NoWifi -> ActionRow(name, detail, "JOIN", actions::openWifiSettings, "CHANGE" to chooseAdapter)
         else -> ActionRow(name, detail, "CHANGE", chooseAdapter)
     }
 }

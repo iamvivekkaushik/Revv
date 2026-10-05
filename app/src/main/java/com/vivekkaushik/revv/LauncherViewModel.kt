@@ -119,13 +119,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     /**
      * Adapters the user can pick: Wi-Fi, paired Bluetooth devices, Bluetooth LE devices found by the
-     * last scan, and in debug builds a simulated one.
+     * last scan, the virtual one that goes by GPS, and in debug builds a simulated one.
      */
     val adapterChoices: StateFlow<List<ObdAdapter>> = combine(pairedAdapters, bleScanner.found) { paired, scanned ->
         val pairedAddresses = paired.map { it.address }.toSet()
         listOf(ObdAdapter.WiFi) + paired + scanned.filter { it.address !in pairedAddresses } +
-            listOfNotNull(ObdAdapter.Simulated.takeIf { isDebugBuild })
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, listOf(ObdAdapter.WiFi))
+            listOfNotNull(ObdAdapter.Gps, ObdAdapter.Simulated.takeIf { isDebugBuild })
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, listOf(ObdAdapter.WiFi, ObdAdapter.Gps))
 
     val bleScanning: StateFlow<Boolean> = bleScanner.scanning
 
@@ -252,9 +252,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         nightDimmer.update(sunsetDimming())
         _system.value = readSystemState()
         navigator.refreshAccess()
-        // Bluetooth access may have been granted from Android's settings while Revv was away.
+        // Bluetooth or location access may have been granted from Android's settings while Revv was away.
         val adapter = settings.value.obdAdapter
-        if (adapter != null && obd.status.value.link == ObdLink.NeedsPermission && _system.value.hasBluetoothPermission) {
+        val permitted = if (adapter?.kind == ObdAdapter.Kind.Gps) _system.value.hasLocationPermission else _system.value.hasBluetoothPermission
+        if (adapter != null && obd.status.value.link == ObdLink.NeedsPermission && permitted) {
             obd.start(adapter)
         }
     }
