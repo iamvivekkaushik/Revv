@@ -188,7 +188,12 @@ private fun SessionAction(session: State.Session, companion: CarPlayCompanion, o
         } else {
             SolidButton("OPEN SETTINGS", actions::openCarPlaySettings, modifier)
         }
-        CarPlayCompanion.PHASE_IDLE, CarPlayCompanion.PHASE_FAILED -> SolidButton("CONNECT", companion::retry, modifier)
+        CarPlayCompanion.PHASE_FAILED -> if (session.resetWifiDirect) {
+            SolidButton("RESET & CONNECT", companion::resetWifiDirect, modifier)
+        } else {
+            SolidButton("CONNECT", companion::retry, modifier)
+        }
+        CarPlayCompanion.PHASE_IDLE -> SolidButton("CONNECT", companion::retry, modifier)
         else -> GhostButton("DISCONNECT", companion::stop, modifier)
     }
 }
@@ -231,7 +236,7 @@ internal fun State.headline(): String = when (this) {
         CarPlayCompanion.PHASE_CONNECTING -> "Looking for your iPhone"
         CarPlayCompanion.PHASE_CONNECTED -> "CarPlay connected"
         CarPlayCompanion.PHASE_RECONNECTING -> "Reconnecting"
-        CarPlayCompanion.PHASE_FAILED -> "CarPlay stopped"
+        CarPlayCompanion.PHASE_FAILED -> if (resetWifiDirect) "Wi-Fi Direct is busy" else "CarPlay stopped"
         else -> phase
     }
 }
@@ -254,6 +259,7 @@ internal fun State.explanation(): String = when (this) {
             }
         }.ifBlank { detail }
         CarPlayCompanion.PHASE_CONNECTED -> if (videoActive) "Your iPhone's maps, calls, messages and media, right here." else detail
+        CarPlayCompanion.PHASE_FAILED -> if (resetWifiDirect) "$detail Reset & connect ends it and connects CarPlay." else detail
         else -> detail
     }
 }

@@ -44,6 +44,11 @@ class CarPlayCompanion(context: Context) {
             val videoActive: Boolean,
             /** What the driver must do in the companion first (SETUP_*), when [phase] is [PHASE_SETUP_REQUIRED]. */
             val missing: List<String>,
+            /**
+             * Stopped because another Wi-Fi Direct connection, such as screen mirroring, holds the
+             * radio ([detail] names it): [resetWifiDirect] ends it and connects.
+             */
+            val resetWifiDirect: Boolean = false,
         ) : State
         /** The companion refused the view (ERROR_*). */
         data class Refused(val error: String) : State
@@ -305,6 +310,12 @@ class CarPlayCompanion(context: Context) {
     /** Turns the head unit's hotspot on now; choosing the car hotspot link and connecting over it do too. */
     fun turnOnHotspot() = send(MSG_HOTSPOT_ON) {}
 
+    /**
+     * Ends the head unit's other Wi-Fi Direct connection, whichever app made it, and connects
+     * CarPlay. Only when the driver asks: it ends screen mirroring to a TV, for one.
+     */
+    fun resetWifiDirect() = send(MSG_RESET_WIFI_DIRECT) {}
+
     /** Chooses the link: USB ([wireless] false), or wireless over Wi-Fi Direct / the car hotspot. */
     fun configure(wireless: Boolean, hotspotMode: String? = null) = send(MSG_CONFIGURE) {
         putBoolean(KEY_WIRELESS, wireless)
@@ -351,6 +362,7 @@ class CarPlayCompanion(context: Context) {
                 hotspotMode = message.data.getString(KEY_HOTSPOT_MODE) ?: HOTSPOT_P2P,
                 videoActive = message.data.getBoolean(KEY_VIDEO_ACTIVE),
                 missing = message.data.getStringArray(KEY_MISSING)?.toList().orEmpty(),
+                resetWifiDirect = message.data.getBoolean(KEY_RESET_WIFI_DIRECT),
             )
             MSG_SETTINGS -> message.data.getBundle(KEY_SETTINGS)?.let { _settings.value = settingsOf(it) }
             MSG_GUIDANCE -> _guidance.value = guidanceOf(message.data)
@@ -440,6 +452,7 @@ class CarPlayCompanion(context: Context) {
         private const val MSG_REMOVE_IDENTITY = 13
         private const val MSG_SAVE_REPORT = 14
         private const val MSG_HOTSPOT_ON = 15
+        private const val MSG_RESET_WIFI_DIRECT = 16
         private const val MSG_ATTACHED = 101
         private const val MSG_STATE = 102
         private const val MSG_SETTINGS = 103
@@ -459,6 +472,7 @@ class CarPlayCompanion(context: Context) {
         private const val KEY_WIRELESS = "wireless"
         private const val KEY_VIDEO_ACTIVE = "videoActive"
         private const val KEY_MISSING = "missing"
+        private const val KEY_RESET_WIFI_DIRECT = "resetWifiDirect"
         private const val KEY_ERROR = "error"
         private const val KEY_EVENT = "event"
         private const val KEY_HOTSPOT_MODE = "hotspotMode"
