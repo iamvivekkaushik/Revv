@@ -17,6 +17,9 @@ object ObdPid {
     const val FUEL_LEVEL = 0x2F
     const val AMBIENT_TEMP = 0x46
 
+    /** Accelerator pedal position D: the pedal itself on drive-by-wire cars, ahead of the throttle. */
+    const val ACCELERATOR_PEDAL = 0x49
+
     fun speed(data: ByteArray): Int? = data.byteAt(0)
 
     fun rpm(data: ByteArray): Int? {

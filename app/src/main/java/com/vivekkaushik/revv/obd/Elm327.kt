@@ -21,6 +21,13 @@ class Elm327(
     private var canBus = false
 
     /**
+     * Whether to ask for one reply only ("010C1"), so the adapter answers as soon as the engine
+     * computer has rather than waiting out its timeout for others. ELM327 1.3 and later take it on
+     * CAN; an adapter that doesn't is asked the plain way from then on.
+     */
+    private var oneReply = true
+
+    /**
      * Resets whatever is listening and checks it answers like an ELM327 ("ELM327 v1.5", or an
      * STN chip's compatible banner). An open TCP port alone could just as well be a router.
      */
@@ -69,7 +76,17 @@ class Elm327(
     }
 
     /** The data bytes for mode 01 [pid], or null if the car didn't answer. */
-    fun readPid(pid: Int): ByteArray? = query(0x01, pid)
+    fun readPid(pid: Int): ByteArray? {
+        if (!canBus || !oneReply) return query(0x01, pid)
+        val reply = command(ObdResponse.hex(0x01) + ObdResponse.hex(pid) + "1")
+        if (reply != null && ObdResponse.lines(reply).none { it == "?" }) {
+            ObdResponse.payload(reply, 0x01, pid)?.let { return it }
+        }
+        // Not understood, or nothing came back: ask the plain way, and keep to it if that works.
+        val plain = query(0x01, pid)
+        if (plain != null) oneReply = false
+        return plain
+    }
 
     /** Voltage at the OBD port, measured by the adapter itself; works with the ignition off. */
     fun readVoltage(): Float? = command("ATRV")?.let(ObdResponse::voltage)

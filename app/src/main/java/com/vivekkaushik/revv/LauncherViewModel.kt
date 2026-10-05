@@ -199,8 +199,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                         gear = readings.gear,
                         airFill = readings.airFill,
                         engineLoad = readings.engineLoad,
-                        throttle = readings.throttle,
-                        atNanos = SystemClock.elapsedRealtimeNanos(),
+                        throttle = readings.pedal ?: readings.throttle,
+                        // When the revs were read, not when they got here: the rest of the poll takes a while.
+                        atNanos = readings.engineAtNanos.takeIf { it > 0 } ?: SystemClock.elapsedRealtimeNanos(),
                     ),
                 )
             }

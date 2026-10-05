@@ -317,8 +317,9 @@ class ObdSession(
     }
 
     /**
-     * Reads speed and rpm every cycle and everything else less often, estimating the gear with
-     * [estimator]. Returns when the car goes quiet. [everyFewSeconds] runs alongside the log snapshot.
+     * Reads rpm, the accelerator, speed and air flow every cycle and everything else less often,
+     * estimating the gear with [estimator]. Returns when the car goes quiet. [everyFewSeconds] runs
+     * alongside the log snapshot.
      */
     private suspend fun poll(elm: Elm327, supported: Set<Int>, estimator: GearEstimator, everyFewSeconds: () -> Unit) {
         var readings = ObdReadings()
@@ -326,10 +327,27 @@ class ObdSession(
         var misses = 0
         var lastSample = SystemClock.elapsedRealtime()
         var lastSnapshot = 0L
+        var cycleMillis = 0.0
+        // The pedal says what the driver wants before the revs or the air flow can.
+        val pedalPid = listOf(ObdPid.ACCELERATOR_PEDAL, ObdPid.THROTTLE).firstOrNull { it in supported }
         while (true) {
             currentCoroutineContext().ensureActive()
-            val speed = elm.readPid(ObdPid.SPEED)?.let(ObdPid::speed)
+            // Revs and pedal first, and out at once: the engine sound waits on nothing else.
+            val started = SystemClock.elapsedRealtimeNanos()
             val rpm = elm.readPid(ObdPid.RPM)?.let(ObdPid::rpm)
+            // The engine computer answered about halfway through the round trip.
+            val engineAt = (started + SystemClock.elapsedRealtimeNanos()) / 2
+            val pedal = pedalPid?.let { elm.readPid(it)?.let(ObdPid::percent) }
+            if (rpm != null) {
+                readings = readings.copy(
+                    rpm = rpm,
+                    pedal = pedal,
+                    throttle = if (pedalPid == ObdPid.THROTTLE) pedal else readings.throttle,
+                    engineAtNanos = engineAt,
+                )
+                _readings.value = readings
+            }
+            val speed = elm.readPid(ObdPid.SPEED)?.let(ObdPid::speed)
             if (speed == null && rpm == null) {
                 if (++misses >= MAX_MISSES) return
                 continue
@@ -341,18 +359,11 @@ class ObdSession(
             if (cycle % MEDIUM_EVERY == 0) {
                 readings = readings.copy(
                     engineLoad = elm.readSupported(supported, ObdPid.ENGINE_LOAD, ObdPid::percent),
-                    throttle = elm.readSupported(supported, ObdPid.THROTTLE, ObdPid::percent),
+                    throttle = if (pedalPid == ObdPid.THROTTLE) readings.throttle else elm.readSupported(supported, ObdPid.THROTTLE, ObdPid::percent),
                 )
             }
-            if (cycle % SLOW_EVERY == 0) {
-                readings = readings.copy(
-                    coolantC = elm.readSupported(supported, ObdPid.COOLANT_TEMP, ObdPid::temperature),
-                    intakeAirC = elm.readSupported(supported, ObdPid.INTAKE_AIR_TEMP, ObdPid::temperature),
-                    ambientC = elm.readSupported(supported, ObdPid.AMBIENT_TEMP, ObdPid::temperature),
-                    fuelLevel = elm.readSupported(supported, ObdPid.FUEL_LEVEL, ObdPid::percent),
-                    batteryVolts = elm.readVoltage(),
-                )
-            }
+            // One slow reading every other cycle, rather than all of them at once stalling the revs.
+            if (cycle % SLOW_EVERY == 0) readings = readSlow(elm, supported, readings, cycle / SLOW_EVERY)
             if (clearRequested) {
                 clearRequested = false
                 val cleared = elm.clearTroubleCodes()
@@ -378,13 +389,24 @@ class ObdSession(
                 tripEngineSeconds = trip.engineSeconds.toLong(),
             )
             _readings.value = readings
+            val took = (SystemClock.elapsedRealtimeNanos() - started) / 1e6
+            cycleMillis = if (cycleMillis == 0.0) took else cycleMillis + (took - cycleMillis) * 0.1
             if (now - lastSnapshot >= SNAPSHOT_MILLIS) {
                 lastSnapshot = now
-                log.add(snapshot(readings, maf, manifold))
+                log.add(snapshot(readings, maf, manifold) + ", cycle ${cycleMillis.toInt()} ms")
                 everyFewSeconds()
             }
             cycle++
         }
+    }
+
+    /** The [turn]th of the slowly changing readings, in rotation. */
+    private fun readSlow(elm: Elm327, supported: Set<Int>, readings: ObdReadings, turn: Int): ObdReadings = when (turn % 5) {
+        0 -> readings.copy(coolantC = elm.readSupported(supported, ObdPid.COOLANT_TEMP, ObdPid::temperature))
+        1 -> readings.copy(intakeAirC = elm.readSupported(supported, ObdPid.INTAKE_AIR_TEMP, ObdPid::temperature))
+        2 -> readings.copy(fuelLevel = elm.readSupported(supported, ObdPid.FUEL_LEVEL, ObdPid::percent))
+        3 -> readings.copy(ambientC = elm.readSupported(supported, ObdPid.AMBIENT_TEMP, ObdPid::temperature))
+        else -> readings.copy(batteryVolts = elm.readVoltage())
     }
 
     /** One line of what the car reported, so a saved log shows the drive as well as the connection. */
@@ -439,7 +461,9 @@ class ObdSession(
         const val MAX_MISSES = 5
 
         const val MEDIUM_EVERY = 3
-        const val SLOW_EVERY = 10
+
+        /** Each of the five slow readings comes round every five times this. */
+        const val SLOW_EVERY = 2
         const val HEALTH_EVERY = 150
 
         /** Used for the air density estimate until the intake temperature has been read. */

@@ -38,8 +38,9 @@ class SimulatedElm327(private val profile: VehicleProfile = VehicleProfile.SWIFT
         command == "04" -> "44\r\r".also { clearedCycle = cycle() }
         command == "07" -> if (pending()) "47010420\r\r" else "4700\r\r"
         command == "03" -> if (faulty()) "430201710301\r\r" else "4300\r\r"
-        command.length == 4 && command.startsWith("01") -> {
-            val pid = command.substring(2)
+        // An optional fifth digit asks for that many replies, which one engine computer always meets.
+        (command.length == 4 || command.length == 5 && command[4].isDigit()) && command.startsWith("01") -> {
+            val pid = command.substring(2, 4)
             val data = data(pid.toInt(16))
             val search = if (searched) "" else "SEARCHING...\r".also { searched = true }
             if (data == null) "${search}NO DATA\r\r" else "${search}41$pid$data\r\r"

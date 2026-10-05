@@ -79,6 +79,13 @@ data class ObdReadings(
     val ambientC: Int? = null,
     val engineLoad: Int? = null,
     val throttle: Int? = null,
+    /**
+     * How far the accelerator is down, percent: the pedal where the car reports it, else the
+     * throttle. Read every cycle with [rpm], before anything else.
+     */
+    val pedal: Int? = null,
+    /** When [rpm] and [pedal] were read, on the SystemClock.elapsedRealtimeNanos clock. */
+    val engineAtNanos: Long = 0,
     /** How full the cylinders are, from manifold pressure or air flow: 1 is wide open. Read every cycle, unlike [engineLoad]. */
     val airFill: Float? = null,
     val fuelLevel: Int? = null,

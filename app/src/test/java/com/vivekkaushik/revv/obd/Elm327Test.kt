@@ -51,6 +51,53 @@ class Elm327Test {
     }
 
     @Test
+    fun readPid_onCanAsksForOneReplySoTheAdapterAnswersAtOnce() {
+        val transport = ScriptedTransport(
+            mapOf(
+                "0100" to "4100983A8001\r\r",
+                "ATDPN" to "A6\r\r",
+                "010C1" to "410C1AF8\r\r",
+            ),
+        )
+        val elm = Elm327(transport)
+        elm.connectToEcu()
+        assertArrayEquals(byteArrayOf(0x1A, 0xF8.toByte()), elm.readPid(ObdPid.RPM))
+        assertEquals("010C1", transport.sent.last())
+    }
+
+    @Test
+    fun readPid_asksThePlainWayForGoodOnceTheAdapterDoesntUnderstand() {
+        val transport = ScriptedTransport(
+            mapOf(
+                "0100" to "4100983A8001\r\r",
+                "ATDPN" to "A6\r\r",
+                "010C" to "410C1AF8\r\r",
+                "010D" to "410D32\r\r",
+            ),
+        )
+        val elm = Elm327(transport)
+        elm.connectToEcu()
+        assertArrayEquals(byteArrayOf(0x1A, 0xF8.toByte()), elm.readPid(ObdPid.RPM))
+        assertArrayEquals(byteArrayOf(0x32), elm.readPid(ObdPid.SPEED))
+        assertEquals(listOf("010C1", "010C", "010D"), transport.sent.takeLast(3))
+    }
+
+    @Test
+    fun readPid_keepsToOneRequestOffCan() {
+        val transport = ScriptedTransport(
+            mapOf(
+                "0100" to "4100983A8001\r\r",
+                "ATDPN" to "A5\r\r",
+                "010C" to "410C1AF8\r\r",
+            ),
+        )
+        val elm = Elm327(transport)
+        elm.connectToEcu()
+        assertArrayEquals(byteArrayOf(0x1A, 0xF8.toByte()), elm.readPid(ObdPid.RPM))
+        assertEquals("010C", transport.sent.last())
+    }
+
+    @Test
     fun connectToEcu_isNullWithTheIgnitionOff() {
         val transport = ScriptedTransport(mapOf("0100" to "SEARCHING...\rUNABLE TO CONNECT\r\r"))
         assertNull(Elm327(transport).connectToEcu())
