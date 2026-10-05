@@ -1328,6 +1328,7 @@ private fun engineSoundRows(settings: HmiSettings, actions: HmiActions): List<Se
             actions.setChoice(SettingsStore.ENGINE_EXHAUST, it)
         },
         LevelRow(SettingsStore.ENGINE_VOLUME, "Engine volume", "Under the media volume, which turns it up and down too", engine.volume, EngineSoundSettings.MAX_VOLUME),
+        LevelRow(SettingsStore.ENGINE_BASS, "Bass", "The engine's low rumble, for the speakers it plays through", engine.bass, EngineSoundSettings.MAX_BASS),
         ToggleRow(SettingsStore.ENGINE_CRACKLE, "Pops on lift-off", "Crackles from the exhaust when you lift off at high revs"),
         ActionRow("Preview", "Hear the chosen engine rev, parked", "REV", actions::previewEngineSound),
     )

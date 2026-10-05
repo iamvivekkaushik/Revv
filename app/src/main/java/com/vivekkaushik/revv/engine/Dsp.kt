@@ -5,8 +5,11 @@ import java.nio.ByteOrder
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tan
@@ -93,6 +96,61 @@ internal class OnePoleLowPass(cutoffHz: Double, sampleRate: Double) {
     }
 }
 
+/** A second-order filter of Robert Bristow-Johnson's cookbook, transposed direct form II. */
+internal class Biquad private constructor() {
+    private var b0 = 1.0
+    private var b1 = 0.0
+    private var b2 = 0.0
+    private var a1 = 0.0
+    private var a2 = 0.0
+    private var z1 = 0.0
+    private var z2 = 0.0
+
+    /** Turns everything below about [cornerHz] up by [gainDb], leaving the rest alone; the signal passing through carries on. */
+    fun lowShelf(cornerHz: Double, gainDb: Double, sampleRate: Double): Biquad {
+        val a = 10.0.pow(gainDb / 40)
+        val w = 2 * PI * cornerHz / sampleRate
+        val c = cos(w)
+        // A shelf slope of 1, as steep as it goes without a bump.
+        val beta = sqrt(2 * a) * sin(w)
+        val a0 = (a + 1) + (a - 1) * c + beta
+        b0 = a * ((a + 1) - (a - 1) * c + beta) / a0
+        b1 = 2 * a * ((a - 1) - (a + 1) * c) / a0
+        b2 = a * ((a + 1) - (a - 1) * c - beta) / a0
+        a1 = -2 * ((a - 1) + (a + 1) * c) / a0
+        a2 = ((a + 1) + (a - 1) * c - beta) / a0
+        return this
+    }
+
+    /** Removes what's below [cornerHz], Butterworth-flat above it. */
+    fun highPass(cornerHz: Double, sampleRate: Double): Biquad {
+        val w = 2 * PI * cornerHz / sampleRate
+        val c = cos(w)
+        val alpha = sin(w) / sqrt(2.0)
+        val a0 = 1 + alpha
+        b0 = (1 + c) / 2 / a0
+        b1 = -(1 + c) / a0
+        b2 = (1 + c) / 2 / a0
+        a1 = -2 * c / a0
+        a2 = (1 - alpha) / a0
+        return this
+    }
+
+    fun process(x: Double): Double {
+        val y = b0 * x + z1
+        z1 = b1 * x - a1 * y + z2
+        z2 = b2 * x - a2 * y
+        if (abs(z1) < 1e-30) z1 = 0.0
+        if (abs(z2) < 1e-30) z2 = 0.0
+        return y
+    }
+
+    companion object {
+        fun lowShelf(cornerHz: Double, gainDb: Double, sampleRate: Double) = Biquad().lowShelf(cornerHz, gainDb, sampleRate)
+        fun highPass(cornerHz: Double, sampleRate: Double) = Biquad().highPass(cornerHz, sampleRate)
+    }
+}
+
 /**
  * engine-sim's jitter filter: reads the signal back from a slightly random point in its recent
  * past, the randomness itself smoothed, so pulses wander by a fraction of a millisecond and the
@@ -120,24 +178,51 @@ internal class JitterFilter(private val maxJitter: Int, noiseCutoffHz: Double, s
 }
 
 /**
- * engine-sim's leveling filter, used here only to hold peaks under [target]: it follows the
- * signal's peak and turns the gain down at once when the peak rises above it, then eases back
- * up, never past 1.
+ * Passes everything up to [KNEE] untouched and bends what's above it smoothly towards [CEILING],
+ * never reaching it: the odd peak is rounded off rather than the whole sound turned down, as a
+ * limiter would.
  */
-internal class Limiter(private val target: Double) {
-    private var peak = 0.0
-    private var gain = 1.0
+internal object SoftClip {
+    const val KNEE = 0.6
+    const val CEILING = 0.98
 
     fun process(x: Double): Double {
-        peak = max(abs(x), peak * PEAK_DECAY)
-        val wanted = if (peak > target) target / peak else 1.0
-        gain = if (wanted < gain) wanted else gain + (wanted - gain) * RELEASE
-        return (x * gain).coerceIn(-1.0, 1.0)
+        val a = abs(x)
+        if (a <= KNEE) return x
+        val over = (a - KNEE) / (CEILING - KNEE)
+        val y = KNEE + (CEILING - KNEE) * over / (1 + over)
+        return if (x < 0) -y else y
+    }
+}
+
+/**
+ * Evens out how loud the engine plays, a block at a time: above [thresholdDb], of its smoothed
+ * RMS, each [ratio] decibels in come out as one, easing in over a [KNEE_DB]-wide knee. It follows
+ * a rising level within a few blocks and lets go over a few hundred milliseconds, so a blip is
+ * held back without the note pumping.
+ */
+internal class Compressor(private val thresholdDb: Double, private val ratio: Double, blockSeconds: Double) {
+    private val attack = 1 - exp(-blockSeconds / ATTACK_SECONDS)
+    private val release = 1 - exp(-blockSeconds / RELEASE_SECONDS)
+    private var power = 0.0
+
+    /** The gain for a block whose samples' mean square is [meanSquare]. */
+    fun gain(meanSquare: Double): Double {
+        power += (meanSquare - power) * if (meanSquare > power) attack else release
+        if (power < 1e-12) return 1.0
+        val over = 10 * log10(power) - thresholdDb
+        val reduce = when {
+            over <= -KNEE_DB / 2 -> 0.0
+            over >= KNEE_DB / 2 -> over
+            else -> (over + KNEE_DB / 2).let { it * it } / (2 * KNEE_DB)
+        } * (1 - 1 / ratio)
+        return 10.0.pow(-reduce / 20)
     }
 
     private companion object {
-        const val PEAK_DECAY = 0.9995
-        const val RELEASE = 0.001
+        const val ATTACK_SECONDS = 0.02
+        const val RELEASE_SECONDS = 0.3
+        const val KNEE_DB = 6.0
     }
 }
 

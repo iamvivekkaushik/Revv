@@ -17,13 +17,25 @@ data class EngineSoundSettings(
     /** 0 to [MAX_VOLUME]. */
     val volume: Int = DEFAULT_VOLUME,
     val crackle: Boolean = true,
+    /** 0 to [MAX_BASS]. */
+    val bass: Int = DEFAULT_BASS,
 ) {
-    /** The volume as a gain, on a curve so each step sounds about as big as the last. */
-    val gain: Double get() = (volume.coerceIn(0, MAX_VOLUME).toDouble() / MAX_VOLUME).let { it * it }
+    /**
+     * The volume as a gain, on a curve so each step sounds about as big as the last. The top
+     * third goes past 1, up to [EngineSynth.MAX_GAIN], driving the peaks into the soft clip:
+     * louder, and a little rougher, to hold its own against music.
+     */
+    val gain: Double get() = (volume.coerceIn(0, MAX_VOLUME).toDouble() / MAX_VOLUME).let { it * it * EngineSynth.MAX_GAIN }
+
+    /** The bass as decibels added to the low end, up to [MAX_BASS_DB]. */
+    val bassDb: Double get() = bass.coerceIn(0, MAX_BASS) * MAX_BASS_DB / MAX_BASS
 
     companion object {
         const val MAX_VOLUME = 30
-        const val DEFAULT_VOLUME = 20
+        const val DEFAULT_VOLUME = 24
+        const val MAX_BASS = 30
+        const val DEFAULT_BASS = 18
+        private const val MAX_BASS_DB = 15.0
     }
 }
 
@@ -116,9 +128,9 @@ class EngineSound(private val context: Context) {
         track.play()
         while (!released) {
             val settings = settings
-            if (applied == null || settings.layout != applied.layout || settings.note != applied.note || settings.crackle != applied.crackle) {
+            if (applied == null || settings.layout != applied.layout || settings.note != applied.note || settings.crackle != applied.crackle || settings.bass != applied.bass) {
                 val impulse = impulses.getOrPut(settings.note) { readImpulse(settings.note) }
-                synth.configure(settings.layout, settings.note, impulse, settings.crackle)
+                synth.configure(settings.layout, settings.note, impulse, settings.crackle, settings.bassDb)
                 applied = settings
             }
             val now = SystemClock.elapsedRealtimeNanos()

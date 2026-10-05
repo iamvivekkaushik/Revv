@@ -4,6 +4,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
+import kotlin.math.log10
 import kotlin.math.sqrt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -24,14 +25,33 @@ class EngineSynthTest {
         for (layout in EngineLayout.entries) for (note in ExhaustNote.entries) {
             val idle = render(layout, note, EngineState(850.0, 0.07, overrun = false, running = true), seconds = 1.5)
             val flatOut = render(layout, note, EngineState(6000.0, 1.0, overrun = false, running = true), seconds = 1.5)
+            val turnedUp = render(layout, note, EngineState(6000.0, 1.0, overrun = false, running = true), seconds = 1.5, volume = EngineSynth.MAX_GAIN)
             val name = "$layout / $note"
             assertTrue("$name finite", flatOut.all { it.isFinite() } && idle.all { it.isFinite() })
-            assertTrue("$name within full scale", flatOut.all { abs(it) <= 1f })
+            assertTrue("$name within full scale", turnedUp.all { abs(it) < 1f })
             assertTrue("$name idle audible: ${rms(idle)}", rms(idle) > 0.01)
             // A muffler swallows a lot of the high revs, so only the sporty exhausts must roar.
-            val louder = if (note == ExhaustNote.SPORT) 3.0 else 1.3
+            val louder = if (note == ExhaustNote.SPORT) 2.0 else 1.3
             assertTrue("$name flat out louder: ${rms(flatOut)} vs ${rms(idle)}", rms(flatOut) > louder * rms(idle))
         }
+    }
+
+    @Test
+    fun cruisingPlaysAboutAsLoudAsMusic() {
+        for (layout in EngineLayout.entries) for (note in ExhaustNote.entries) {
+            val cruise = render(layout, note, EngineState(2200.0, 0.35, overrun = false, running = true), seconds = 1.5)
+            val dbfs = 20 * log10(rms(cruise))
+            assertTrue("$layout / $note cruising at $dbfs dBFS", dbfs > -18)
+        }
+    }
+
+    @Test
+    fun bassTurnsUpTheLowEnd() {
+        val idle = EngineState(850.0, 0.1, overrun = false, running = true)
+        val flat = render(EngineLayout.V8_CROSS_PLANE, ExhaustNote.SPORT, idle, seconds = 1.5, bass = 0.0)
+        val boosted = render(EngineLayout.V8_CROSS_PLANE, ExhaustNote.SPORT, idle, seconds = 1.5, bass = 12.0)
+        val gain = 20 * log10(lowShare(boosted) / lowShare(flat))
+        assertTrue("low end up $gain dB", gain > 6)
     }
 
     @Test
@@ -52,18 +72,22 @@ class EngineSynthTest {
         assertTrue("pops ${peak(popping)} vs ${peak(quiet)}", peak(popping) > 1.5 * peak(quiet))
     }
 
-    /** Writes WAVs to listen to, with REVV_ENGINE_RENDER set to a folder: a rev for every engine and exhaust. */
+    /**
+     * Writes WAVs to listen to, with REVV_ENGINE_RENDER set to a folder: a rev for every engine and
+     * exhaust, at the default volume or REVV_ENGINE_VOLUME's (0 to 30).
+     */
     @Test
     fun renderRevs() {
         val folder = System.getenv("REVV_ENGINE_RENDER") ?: return assumeTrue(false)
         File(folder).mkdirs()
+        val volume = System.getenv("REVV_ENGINE_VOLUME")?.let { EngineSoundSettings(volume = it.toInt()) } ?: EngineSoundSettings()
         for (layout in EngineLayout.entries) for (note in ExhaustNote.entries) {
             val synth = synth(layout, note)
             val block = FloatArray(EngineSynth.BLOCK)
             val samples = ArrayList<Float>()
             var elapsed = 0L
             while (elapsed < PreviewRev.NANOS) {
-                synth.render(block, PreviewRev.at(elapsed), 1.0)
+                synth.render(block, PreviewRev.at(elapsed), volume.gain)
                 block.forEach { samples += it }
                 elapsed += EngineSynth.BLOCK * 1_000_000_000L / EngineSynth.SAMPLE_RATE
             }
@@ -79,24 +103,40 @@ class EngineSynthTest {
         return best.toDouble()
     }
 
-    private fun render(layout: EngineLayout, note: ExhaustNote, state: EngineState, seconds: Double, crackle: Boolean = true): FloatArray {
-        val synth = synth(layout, note, crackle)
+    private fun render(
+        layout: EngineLayout,
+        note: ExhaustNote,
+        state: EngineState,
+        seconds: Double,
+        crackle: Boolean = true,
+        bass: Double = EngineSoundSettings().bassDb,
+        volume: Double = 1.0,
+    ): FloatArray {
+        val synth = synth(layout, note, crackle, bass)
         val block = FloatArray(EngineSynth.BLOCK)
         val blocks = (seconds * EngineSynth.SAMPLE_RATE / EngineSynth.BLOCK).toInt()
         val out = FloatArray(blocks * EngineSynth.BLOCK)
         repeat(blocks) { i ->
-            synth.render(block, state, 1.0)
+            synth.render(block, state, volume)
             block.copyInto(out, destinationOffset = i * EngineSynth.BLOCK)
         }
         // The first half second is the engine and the filters settling.
         return out.copyOfRange(EngineSynth.SAMPLE_RATE / 2, out.size)
     }
 
-    private fun synth(layout: EngineLayout, note: ExhaustNote, crackle: Boolean = true) = EngineSynth().apply {
-        configure(layout, note, ImpulseResponse.read(File("src/main/assets/${note.impulse}").readBytes()), crackle)
-    }
+    private fun synth(layout: EngineLayout, note: ExhaustNote, crackle: Boolean = true, bass: Double = EngineSoundSettings().bassDb) =
+        EngineSynth().apply {
+            configure(layout, note, ImpulseResponse.read(File("src/main/assets/${note.impulse}").readBytes()), crackle, bass)
+        }
 
     private fun rms(samples: FloatArray) = sqrt(samples.sumOf { it.toDouble() * it } / samples.size)
+
+    /** How much of [samples]' RMS lies below 160 Hz. */
+    private fun lowShare(samples: FloatArray): Double {
+        val lowPass = ButterworthLowPass(160.0, EngineSynth.SAMPLE_RATE.toDouble())
+        val low = FloatArray(samples.size) { lowPass.process(samples[it].toDouble()).toFloat() }
+        return rms(low) / rms(samples)
+    }
 
     private fun peak(samples: FloatArray) = samples.maxOf { abs(it) }
 

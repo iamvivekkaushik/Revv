@@ -31,7 +31,10 @@ data class EngineState(
  *   length squared, and pulses add up per exhaust;
  * - each exhaust is low-passed at 1.9 kHz, jittered, has its DC removed, and mixes its derivative
  *   with itself roughened by filtered noise;
- * - all of it is convolved with a recorded exhaust impulse response and held under full scale.
+ * - all of it is convolved with a recorded exhaust impulse response.
+ *
+ * Then, unlike engine-sim, it gets its low end back, which the derivative thins out, and is
+ * compressed and rounded off under full scale so it can play about as loud as music.
  */
 class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
 
@@ -43,7 +46,11 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
     private var exhausts = emptyArray<Exhaust>()
     private var exhaustInput = DoubleArray(0)
     private var convolver: Convolver? = null
-    private val limiter = Limiter(LIMIT)
+    private var shelfDb = Double.NaN
+    private val bassShelf = Biquad.lowShelf(BASS_CORNER, 0.0, sampleRate.toDouble())
+    private val rumbleCut = Biquad.highPass(RUMBLE_CORNER, sampleRate.toDouble())
+    private val compressor = Compressor(COMPRESS_ABOVE_DB, COMPRESS_RATIO, BLOCK.toDouble() / sampleRate)
+    private var squeeze = 1.0
 
     private var crank = 0.0
     private var rpm = 0.0
@@ -65,8 +72,11 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
     var peak = 0.0
         private set
 
-    /** Switches engine and exhaust; [impulse] is [note]'s response, as [ImpulseResponse.read] gives it. */
-    fun configure(layout: EngineLayout, note: ExhaustNote, impulse: FloatArray, crackle: Boolean) {
+    /**
+     * Switches engine and exhaust; [impulse] is [note]'s response, as [ImpulseResponse.read] gives
+     * it, and [bass] how many decibels to add below about 200 Hz, of which [ExhaustNote.bass] takes its share.
+     */
+    fun configure(layout: EngineLayout, note: ExhaustNote, impulse: FloatArray, crackle: Boolean, bass: Double) {
         if (layout != this.layout || voices.isEmpty()) {
             this.layout = layout
             voices = voicesOf(layout)
@@ -76,11 +86,14 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         if (note != this.note || convolver == null) convolver = Convolver(impulse, BLOCK)
         this.note = note
         this.crackle = crackle
+        val shelf = bass * note.bass
+        if (shelf != shelfDb) bassShelf.lowShelf(BASS_CORNER, shelf, sampleRate.toDouble())
+        shelfDb = shelf
     }
 
     /**
      * Fills [out] (at least [BLOCK] long) with the next block, moving smoothly from the last
-     * block's engine and [volume] (0 to 1) to these.
+     * block's engine and [volume] (a gain, 0 to [MAX_GAIN]) to these.
      */
     fun render(out: FloatArray, state: EngineState, volume: Double) {
         val convolver = convolver ?: error("Not configured")
@@ -105,16 +118,27 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         load = toLoad
 
         convolver.process(mixed, convolved)
-        val toGain = volume.coerceIn(0.0, 1.0)
         val loudness = OUTPUT_GAIN * note.loudness
+        var power = 0.0
+        for (n in 0 until BLOCK) {
+            val x = rumbleCut.process(bassShelf.process(convolved[n])) * loudness
+            convolved[n] = x
+            power += x * x
+        }
+        val fromSqueeze = squeeze
+        val toSqueeze = compressor.gain(power / BLOCK)
+        val toGain = volume.coerceIn(0.0, MAX_GAIN)
         var loudest = 0.0
         for (n in 0 until BLOCK) {
-            val g = fromGain + (toGain - fromGain) * (n + 1).toDouble() / BLOCK
-            val y = limiter.process(convolved[n] * loudness) * g
+            val t = (n + 1).toDouble() / BLOCK
+            val g = fromGain + (toGain - fromGain) * t
+            val c = fromSqueeze + (toSqueeze - fromSqueeze) * t
+            val y = SoftClip.process(convolved[n] * c * g)
             loudest = max(loudest, abs(y))
             out[n] = y.toFloat()
         }
         gain = toGain
+        squeeze = toSqueeze
         peak = loudest
     }
 
@@ -235,6 +259,9 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         /** Samples rendered at a time: about 6 ms. */
         const val BLOCK = 256
 
+        /** The loudest volume [render] takes: 6 dB over 1, which just keeps flat out clean. */
+        const val MAX_GAIN = 2.0
+
         private const val CYCLE = 720.0
         private const val MAX_RPM = 12_000.0
         private const val MAX_LOAD = 1.5
@@ -254,7 +281,7 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         private const val PULSE_END = 250.0
 
         /** Even with the throttle shut a cylinder breathes, so its pulse never quite goes. */
-        private const val PUMPING = 0.25
+        private const val PUMPING = 0.15
 
         private const val POP_MIN_RPM = 1800.0
         private const val POP_CHANCE = 0.05
@@ -268,11 +295,19 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         private const val POP_SECONDS = 0.012
 
         /**
-         * Brings the convolved signal to full scale: measured across every engine and exhaust, a
-         * sporty exhaust peaks around 0.7 flat out, cruising sits near -20 dBFS and idle -30.
+         * Brings the convolved signal up to play about as loud as music: measured across every
+         * engine and exhaust at a volume of 1, after the compressor, idle sits near -20 dBFS RMS,
+         * cruising -14 and flat out -10, the odd peak rounded off above [SoftClip.KNEE].
          */
-        private const val OUTPUT_GAIN = 0.012
-        private const val LIMIT = 0.9
+        private const val OUTPUT_GAIN = 0.06
+        private const val COMPRESS_ABOVE_DB = -22.0
+        private const val COMPRESS_RATIO = 2.0
+
+        /** The derivative that gives the pulses their edge thins out the firing note below this. */
+        private const val BASS_CORNER = 200.0
+
+        /** Below what car speakers play, and where a boost would only eat headroom. */
+        private const val RUMBLE_CORNER = 28.0
 
         /** Into 0 until 720°; no floor(), which is a slow native call in debug builds. */
         private fun wrap(degrees: Double): Double {

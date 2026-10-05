@@ -51,6 +51,7 @@ data class HmiSettings(
             layout = EngineLayout.entries.getOrElse(level(SettingsStore.ENGINE_LAYOUT)) { EngineLayout.DEFAULT },
             note = ExhaustNote.entries.getOrElse(level(SettingsStore.ENGINE_EXHAUST)) { ExhaustNote.DEFAULT },
             volume = level(SettingsStore.ENGINE_VOLUME),
+            bass = level(SettingsStore.ENGINE_BASS),
             crackle = isOn(SettingsStore.ENGINE_CRACKLE),
         )
 
@@ -194,6 +195,8 @@ class SettingsStore(context: Context) {
         /** Which [ExhaustNote], by position. */
         const val ENGINE_EXHAUST = "engineExhaust"
         const val ENGINE_VOLUME = "engineVol"
+        /** How much to turn up the engine's low end. */
+        const val ENGINE_BASS = "engineBass"
         /** Pops from the exhaust on lifting off at high revs. */
         const val ENGINE_CRACKLE = "engineCrackle"
         const val CAMERA_ROTATION = "cameraRotation"
@@ -288,6 +291,7 @@ class SettingsStore(context: Context) {
             ENGINE_LAYOUT to EngineLayout.DEFAULT.ordinal,
             ENGINE_EXHAUST to ExhaustNote.DEFAULT.ordinal,
             ENGINE_VOLUME to EngineSoundSettings.DEFAULT_VOLUME,
+            ENGINE_BASS to EngineSoundSettings.DEFAULT_BASS,
         )
     }
 }

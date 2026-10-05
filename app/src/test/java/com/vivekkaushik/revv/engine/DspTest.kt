@@ -5,6 +5,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.log10
 import kotlin.math.sin
 import kotlin.math.sqrt
 import org.junit.Assert.assertEquals
@@ -44,6 +45,47 @@ class DspTest {
     }
 
     @Test
+    fun lowShelfLiftsOnlyTheLowEnd() {
+        val rate = 44_100.0
+        assertEquals(12.0, decibels(steadyGain(Biquad.lowShelf(200.0, 12.0, rate)::process, 0.0, rate)), 0.01)
+        assertEquals(0.0, decibels(steadyGain(Biquad.lowShelf(200.0, 12.0, rate)::process, 5000.0, rate)), 0.2)
+        // Halfway, in decibels, at the corner.
+        assertEquals(6.0, decibels(steadyGain(Biquad.lowShelf(200.0, 12.0, rate)::process, 200.0, rate)), 0.2)
+    }
+
+    @Test
+    fun highPassBlocksDcAndPassesTheNote() {
+        val rate = 44_100.0
+        assertTrue(steadyGain(Biquad.highPass(28.0, rate)::process, 0.0, rate) < 1e-3)
+        assertEquals(1 / sqrt(2.0), steadyGain(Biquad.highPass(28.0, rate)::process, 28.0, rate), 0.01)
+        assertEquals(1.0, steadyGain(Biquad.highPass(28.0, rate)::process, 200.0, rate), 0.02)
+    }
+
+    @Test
+    fun compressorTurnsDownOnlyWhatIsAboveItsThreshold() {
+        val quiet = Compressor(-20.0, 2.0, 0.006)
+        repeat(500) { assertEquals(1.0, quiet.gain(0.001), 1e-9) }
+        // 10 dB over at 2:1 comes out 5 dB over.
+        val loud = Compressor(-20.0, 2.0, 0.006)
+        var gain = 1.0
+        repeat(500) { gain = loud.gain(0.1) }
+        assertEquals(-5.0, decibels(gain), 0.01)
+    }
+
+    @Test
+    fun softClipLeavesTheBodyAloneAndStaysUnderFullScale() {
+        assertEquals(0.5, SoftClip.process(0.5), 0.0)
+        assertEquals(-0.5, SoftClip.process(-0.5), 0.0)
+        var previous = 0.0
+        for (i in 1..1000) {
+            val y = SoftClip.process(i / 100.0)
+            assertTrue("rising at ${i / 100.0}", y > previous)
+            assertTrue("under full scale at ${i / 100.0}", y < SoftClip.CEILING)
+            previous = y
+        }
+    }
+
+    @Test
     fun impulseResponseIsTrimmedAndScaledToUnitEnergy() {
         val samples = ShortArray(500) { if (it < 200) (10_000 * sin(it / 5.0)).toInt().toShort() else 50 }
         val response = ImpulseResponse.read(wav(samples))
@@ -59,10 +101,14 @@ class DspTest {
         }
     }
 
-    private fun steadyGain(filter: ButterworthLowPass, hz: Double, rate: Double): Double {
+    private fun decibels(gain: Double) = 20 * log10(gain)
+
+    private fun steadyGain(filter: ButterworthLowPass, hz: Double, rate: Double) = steadyGain(filter::process, hz, rate)
+
+    private fun steadyGain(filter: (Double) -> Double, hz: Double, rate: Double): Double {
         var peak = 0.0
         for (n in 0 until 20_000) {
-            val y = filter.process(if (hz == 0.0) 1.0 else sin(2 * PI * hz * n / rate))
+            val y = filter(if (hz == 0.0) 1.0 else sin(2 * PI * hz * n / rate))
             if (n > 10_000) peak = maxOf(peak, abs(y))
         }
         return peak

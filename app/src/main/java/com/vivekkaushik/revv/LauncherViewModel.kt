@@ -475,7 +475,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private companion object {
         const val ASK_TO_BE_HOME = "ask_to_be_home"
-        val LEVEL_MAX = mapOf(SettingsStore.NAV_VOLUME to 30, SettingsStore.ENGINE_VOLUME to EngineSoundSettings.MAX_VOLUME)
+        val LEVEL_MAX = mapOf(
+            SettingsStore.NAV_VOLUME to 30,
+            SettingsStore.ENGINE_VOLUME to EngineSoundSettings.MAX_VOLUME,
+            SettingsStore.ENGINE_BASS to EngineSoundSettings.MAX_BASS,
+        )
 
         /** List settings, saved as the chosen option's position. */
         val CHOICES = setOf(
