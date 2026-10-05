@@ -383,9 +383,18 @@ private fun SpeedPanel(live: LiveTelemetry, modifier: Modifier) {
                 Caption("SPEED · KM/H")
                 Caption("MAX 200")
             }
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            // Compact, the digits shrink to fit the height and leave room to the right: the readings go to the edge.
+            Row(
+                if (compact) Modifier.fillMaxWidth() else Modifier,
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = if (compact) Arrangement.SpaceBetween else Arrangement.spacedBy(20.dp),
+            ) {
                 SpeedReadout(live, digitSize, Modifier.width((digitSize * 2.7f).dp))
-                Column(Modifier.padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(
+                    Modifier.padding(start = if (compact) 20.dp else 0.dp, bottom = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalAlignment = if (compact) Alignment.End else Alignment.Start,
+                ) {
                     EconomyLine(live)
                     CoolantLine(live)
                 }
