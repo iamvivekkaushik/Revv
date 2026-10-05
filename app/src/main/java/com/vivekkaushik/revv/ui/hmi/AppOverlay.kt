@@ -81,8 +81,11 @@ fun AppOverlay(
             val carPlay = app == HmiApp.Auto && state.carPlay != null
             HText(if (carPlay) "CARPLAY" else app.title.uppercase(), size = 18.sp, color = Hmi.Muted, spacing = 4.sp)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                // CarPlay's settings, kept out of the CarPlay picture.
+                // CarPlay's full screen and settings, kept out of the CarPlay picture.
                 if (carPlay) {
+                    Pressable({ actions.setCarPlayFullScreen(true) }, Modifier.size(44.dp)) {
+                        PathIcon(HmiIcons.FULL_SCREEN, 22.dp, Hmi.Muted, strokeWidth = 2f)
+                    }
                     Pressable(actions::openCarPlaySettings, Modifier.size(44.dp)) {
                         PathIcon(HmiIcons.GEAR, 22.dp, Hmi.Muted)
                     }
@@ -154,8 +157,10 @@ private fun AutoScreen(state: HmiUiState, actions: HmiActions) {
         }
         return
     }
-    // With the RevvCarPlay companion installed, CarPlay itself runs inside this screen.
+    // With the RevvCarPlay companion installed, CarPlay itself runs inside this screen, unless it
+    // is full screen over all of Revv (see HmiRoot): one view at a time.
     val carPlay = state.carPlay
+    if (carPlay != null && state.screen.carPlayFullScreen) return
     if (carPlay != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         CarPlayAutoScreen(
             carPlay,

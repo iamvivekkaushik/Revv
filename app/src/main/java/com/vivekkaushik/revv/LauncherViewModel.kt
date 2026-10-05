@@ -180,6 +180,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             settings.map { it.isOn(SettingsStore.CARPLAY_FOLLOW_ROUTE) }.distinctUntilChanged().collect { carPlayRoute.enabled = it }
         }
         viewModelScope.launch {
+            _carPlay.collectLatest { companion -> companion?.hostUiRequests?.collect { carPlayAskedForRevv() } }
+        }
+        viewModelScope.launch {
             _carPlay.collectLatest { companion ->
                 if (companion == null) carPlayRoute.update(null, null)
                 else companion.guidance.collect { carPlayRoute.update(it?.destination, it?.routeMeters) }
@@ -377,6 +380,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun mapsSearchShown() = _screen.update { it.copy(searchRequested = false) }
 
     fun openCarPlaySettings() = _screen.update { it.open(HmiApp.Settings).copy(carPlaySettingsRequested = true) }
+
+    fun setCarPlayFullScreen(on: Boolean) = _screen.update { if (on && it.app != HmiApp.Auto) it else it.copy(carPlayFullScreen = on) }
+
+    /**
+     * The driver tapped Revv's icon in CarPlay, asking for the car's own screen: full-screen
+     * CarPlay shrinks back into the Auto screen, otherwise Revv goes home.
+     */
+    private fun carPlayAskedForRevv() {
+        if (_screen.value.carPlayFullScreen) setCarPlayFullScreen(false) else goHome()
+    }
 
     fun carPlaySettingsShown() = _screen.update { it.copy(carPlaySettingsRequested = false) }
 

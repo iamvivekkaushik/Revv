@@ -166,6 +166,8 @@ class MainActivity : ComponentActivity(), HmiActions {
     override fun openMapsSearch() = viewModel.openMapsSearch()
     override fun mapsSearchShown() = viewModel.mapsSearchShown()
     override fun openCarPlaySettings() = viewModel.openCarPlaySettings()
+
+    override fun setCarPlayFullScreen(on: Boolean) = viewModel.setCarPlayFullScreen(on)
     override fun carPlaySettingsShown() = viewModel.carPlaySettingsShown()
 
     override fun goHome() = viewModel.goHome()

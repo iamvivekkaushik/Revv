@@ -38,19 +38,23 @@ data class ScreenState(
     val searchRequested: Boolean = false,
     /** Set when Settings was opened for CarPlay's settings; Settings clears it once that page is up. */
     val carPlaySettingsRequested: Boolean = false,
+    /** CarPlay covers all of Revv, header and dock included; only while the Auto screen is open. */
+    val carPlayFullScreen: Boolean = false,
 ) {
     /** [app] opened over this screen. An app already in the stack moves to the top rather than repeating. */
     fun open(app: HmiApp): ScreenState =
-        if (app == this.app) this else copy(app = app, previous = (previous + listOfNotNull(this.app)) - app)
+        if (app == this.app) this else copy(app = app, previous = (previous + listOfNotNull(this.app)) - app, carPlayFullScreen = false)
 
-    /** One step back: the app this one was opened from, or home. */
-    fun back(): ScreenState =
-        previous.lastOrNull()?.let { copy(app = it, previous = previous.dropLast(1)) } ?: copy(app = null)
+    /** One step back: out of full-screen CarPlay, else the app this one was opened from, or home. */
+    fun back(): ScreenState = when {
+        carPlayFullScreen -> copy(carPlayFullScreen = false)
+        else -> previous.lastOrNull()?.let { copy(app = it, previous = previous.dropLast(1)) } ?: copy(app = null)
+    }
 
     /** Home, forgetting the stack. [animate] false makes the open app vanish at once. */
     fun home(animate: Boolean): ScreenState = when {
         app == null -> this
-        animate -> copy(app = null, previous = emptyList())
+        animate -> copy(app = null, previous = emptyList(), carPlayFullScreen = false)
         else -> ScreenState(resetCount = resetCount + 1)
     }
 }
@@ -123,6 +127,9 @@ interface HmiActions {
 
     /** Opens Settings on its CarPlay page. */
     fun openCarPlaySettings()
+
+    /** CarPlay over all of Revv, or back into the Auto screen. */
+    fun setCarPlayFullScreen(on: Boolean)
 
     /** Settings has put its CarPlay page up for a [ScreenState.carPlaySettingsRequested]. */
     fun carPlaySettingsShown()

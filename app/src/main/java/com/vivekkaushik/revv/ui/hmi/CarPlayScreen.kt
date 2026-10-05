@@ -79,6 +79,32 @@ fun CarPlayAutoScreen(
     }
 }
 
+/**
+ * CarPlay over all of Revv, header and dock included, from the full-screen button beside its
+ * settings. Revv's icon in CarPlay, or back, brings it back into the Auto screen (see
+ * LauncherViewModel); until the iPhone's picture is up, a button does too.
+ */
+@RequiresApi(Build.VERSION_CODES.R)
+@Composable
+fun CarPlayFullScreen(companion: CarPlayCompanion, onExit: () -> Unit) {
+    val state by companion.state.collectAsState()
+    val live = (state as? State.Session)?.let { it.phase == CarPlayCompanion.PHASE_CONNECTED && it.videoActive } == true
+    Box(Modifier.fillMaxSize().opaqueToTouch().background(Hmi.Black)) {
+        CarPlayPanel(companion, Modifier.fillMaxSize())
+        if (state !is State.Session) Cover(state)
+        if (!live) {
+            Column(
+                Modifier.align(Alignment.Center).padding(top = 120.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (state is State.Session) HText(state.headline(), size = 22.sp, color = Hmi.Muted, family = Hmi.Display)
+                GhostButton("EXIT FULL SCREEN", onExit, Modifier.height(56.dp))
+            }
+        }
+    }
+}
+
 /** CarPlay itself, covered while there is no session to show. */
 @RequiresApi(Build.VERSION_CODES.R)
 @Composable

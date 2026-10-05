@@ -18,7 +18,9 @@ import com.vivekkaushik.revv.nav.Turn
 import android.view.MotionEvent
 import android.view.SurfaceControlViewHost
 import androidx.annotation.RequiresApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -152,6 +154,11 @@ class CarPlayCompanion(context: Context) {
     private val _settings = MutableStateFlow<Settings?>(null)
     /** Null until the companion answers. */
     val settings: StateFlow<Settings?> = _settings
+
+    private val _hostUiRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** The driver tapped Revv's icon in CarPlay, asking for Revv's own screen (companion protocol 5). */
+    val hostUiRequests: SharedFlow<Unit> = _hostUiRequests
 
     private val _guidance = MutableStateFlow<Guidance?>(null)
     /** CarPlay's route while the iPhone guides one; null otherwise, or when Revv may not read it. */
@@ -366,6 +373,7 @@ class CarPlayCompanion(context: Context) {
             )
             MSG_SETTINGS -> message.data.getBundle(KEY_SETTINGS)?.let { _settings.value = settingsOf(it) }
             MSG_GUIDANCE -> _guidance.value = guidanceOf(message.data)
+            MSG_HOST_UI -> _hostUiRequests.tryEmit(Unit)
             // How an import, a hotspot save or a report went.
             MSG_NOTICE -> message.data.getString(KEY_NOTICE)?.let { Toast.makeText(app, it, Toast.LENGTH_LONG).show() }
             MSG_ERROR -> when (val error = message.data.getString(KEY_ERROR) ?: "unknown") {
@@ -458,6 +466,7 @@ class CarPlayCompanion(context: Context) {
         private const val MSG_SETTINGS = 103
         private const val MSG_NOTICE = 104
         private const val MSG_GUIDANCE = 105
+        private const val MSG_HOST_UI = 106
         private const val MSG_ERROR = 199
         private const val KEY_HOST_TOKEN = "hostToken"
         private const val KEY_DISPLAY_ID = "displayId"
