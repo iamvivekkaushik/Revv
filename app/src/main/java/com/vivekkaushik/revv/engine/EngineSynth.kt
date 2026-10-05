@@ -37,9 +37,10 @@ data class EngineState(
  *   with itself roughened by filtered noise;
  * - all of it is convolved with a recorded exhaust impulse response.
  *
- * Then, unlike engine-sim, it plays in stereo, each bank's pipe on its own side; it gets its low
- * end back, which the derivative thins out, or on a phone's speaker the overtones of it; and it is
- * compressed and rounded off under full scale so it can play about as loud as music.
+ * Then, unlike engine-sim, it plays in stereo, each bank's pipe on its own side; it adds the firing
+ * note underneath, which the derivative thins out, and the tailpipe's hiss on top, so it sounds as
+ * full as music through the same speakers; on a phone's speaker it plays the low end's overtones
+ * instead; and it is compressed and rounded off under full scale so it can play as loud as music.
  */
 class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
 
@@ -50,6 +51,27 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
     private var voices = emptyArray<Voice>()
     private var exhausts = emptyArray<Exhaust>()
     private var exhaustInput = DoubleArray(0)
+
+    /**
+     * Each exhaust's ring when a pop goes off in it: the pipe's own note, the thump, and a bang a
+     * few times higher that small speakers can play. [kicks] are this sample's pops.
+     */
+    private var thumps = emptyArray<Resonator>()
+
+    /** The pops' crack through the exhaust, kept out of the compressor; only run while pops ring. */
+    private var convolverCrack: Convolver? = null
+    private var recording: Recording? = null
+    private val crackEdge = CrackEdge(sampleRate.toDouble())
+
+    /** The burning gas's roughness in a pop, kept below the band where it would only fizz. */
+    private val grit = OnePoleLowPass(GRIT_HZ, sampleRate.toDouble())
+    private var crackRinging = 0
+    private var duck = 1.0
+    private var bangs = emptyArray<Resonator>()
+    private var kicks = DoubleArray(0)
+
+    /** Each exhaust's push, smoothed, for the hiss to follow: a whoosh per pulse rather than a click. */
+    private var hissEnvelopes = emptyArray<OnePoleLowPass>()
 
     /** How much of each exhaust goes to the left and right. */
     private var exhaustLeft = DoubleArray(0)
@@ -67,6 +89,11 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
     private val right = Channel(sampleRate.toDouble())
     private val sideCut1 = Biquad.highPass(CENTRE_BELOW, sampleRate.toDouble())
     private val sideCut2 = Biquad.highPass(CENTRE_BELOW, sampleRate.toDouble())
+    private val body = ButterworthLowPass(BODY_HZ, sampleRate.toDouble())
+    private val raspMid = Rasp(sampleRate.toDouble())
+    private val raspSide = Rasp(sampleRate.toDouble())
+    private val listenLeft = Biquad.highPass(SIDECHAIN_HZ, sampleRate.toDouble())
+    private val listenRight = Biquad.highPass(SIDECHAIN_HZ, sampleRate.toDouble())
     private val harmonics = BassHarmonics(SMALL_SPEAKER_CORNER, SMALL_SPEAKER_CORNER, sampleRate.toDouble())
     private val compressor = Compressor(COMPRESS_ABOVE_DB, COMPRESS_RATIO, BLOCK.toDouble() / sampleRate)
     private var squeeze = 1.0
@@ -87,6 +114,17 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
     private var overrunSeconds = 0.0
     private val mixedMid = DoubleArray(BLOCK)
     private val mixedSide = DoubleArray(BLOCK)
+    private val mixedBody = DoubleArray(BLOCK)
+    private val mixedRaspMid = DoubleArray(BLOCK)
+    private val mixedRaspSide = DoubleArray(BLOCK)
+    private val mixedCrack = DoubleArray(BLOCK)
+    private val convolvedCrack = DoubleArray(BLOCK)
+    private val mixedThumpMid = DoubleArray(BLOCK)
+    private val mixedThumpSide = DoubleArray(BLOCK)
+    private val thumpLeft = DoubleArray(BLOCK)
+    private val thumpRight = DoubleArray(BLOCK)
+    private val thumpCutLeft = Biquad.highPass(SMALL_SPEAKER_CORNER, sampleRate.toDouble())
+    private val thumpCutRight = Biquad.highPass(SMALL_SPEAKER_CORNER, sampleRate.toDouble())
     private val convolvedMid = DoubleArray(BLOCK)
     private val convolvedSide = DoubleArray(BLOCK)
     private val convolvedWidth = DoubleArray(BLOCK)
@@ -109,28 +147,36 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
      * Switches engine and exhaust; [impulse] is [note]'s response, as [ImpulseResponse.read] gives
      * it, and [bass] how many decibels to add below about 200 Hz, of which [ExhaustNote.bass] takes its share.
      */
-    fun configure(layout: EngineLayout, note: ExhaustNote, impulse: FloatArray, crackle: Boolean, bass: Double) {
+    fun configure(layout: EngineLayout, note: ExhaustNote, impulse: FloatArray, crackle: Boolean, bass: Double) =
+        configure(prepare(layout, note, impulse), crackle, bass)
+
+    /** As above, with the slow part already done by [prepare], so it can switch while playing. */
+    fun configure(recording: Recording, crackle: Boolean, bass: Double) {
+        val layout = recording.layout
+        val note = recording.note
         val newLayout = layout != this.layout || voices.isEmpty()
         if (newLayout) {
             this.layout = layout
             voices = voicesOf(layout)
-            exhausts = Array(layout.exhaustMetres.size) { Exhaust(sampleRate.toDouble(), noise) }
+            exhausts = Array(layout.exhaustMetres.size) { Exhaust(sampleRate.toDouble(), noise, ANTIALIAS_HZ) }
             exhaustInput = DoubleArray(exhausts.size)
+            kicks = DoubleArray(exhausts.size)
+            hissEnvelopes = Array(exhausts.size) { OnePoleLowPass(HISS_ENVELOPE_HZ, sampleRate.toDouble()) }
+            thumps = Array(exhausts.size) { Resonator(pipeNote(layout, it), THUMP_SECONDS, sampleRate.toDouble()) }
+            bangs = Array(exhausts.size) { Resonator(pipeNote(layout, it) * BANG_NOTE, BANG_SECONDS, sampleRate.toDouble()) }
             // A pipe per bank: each comes out on its own side, with some of it on the other.
             val count = exhausts.size
             val pans = DoubleArray(count) { if (count == 1) 0.0 else EXHAUST_SPREAD * (2.0 * it / (count - 1) - 1) }
             exhaustLeft = DoubleArray(count) { sqrt(2.0) * cos((pans[it] + 1) * PI / 4) }
             exhaustRight = DoubleArray(count) { sqrt(2.0) * sin((pans[it] + 1) * PI / 4) }
         }
-        if (note != this.note || newLayout || convolverMid == null) {
-            convolverMid = Convolver(impulse, BLOCK)
-            convolverSide = if (exhausts.size > 1) Convolver(impulse, BLOCK) else null
-            // No two pipes are quite the same length: heard a little longer on the left and
-            // shorter on the right, the echoes part ways while the pulses stay together. Only the
-            // difference goes to the sides, so both together sound just as before.
-            val longer = ImpulseResponse.stretched(impulse, 1 + PIPE_DIFFERENCE)
-            val shorter = ImpulseResponse.stretched(impulse, 1 - PIPE_DIFFERENCE)
-            convolverWidth = Convolver(FloatArray(longer.size) { (WIDTH * (longer[it] - shorter.getOrElse(it) { 0f }) / 2).toFloat() }, BLOCK)
+        if (recording !== this.recording) {
+            this.recording = recording
+            convolverMid = recording.mid
+            convolverCrack = recording.crack
+            convolverSide = recording.side
+            convolverWidth = recording.width
+            crackRinging = 0
         }
         this.note = note
         this.crackle = crackle
@@ -172,6 +218,18 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         load = toLoad
 
         convolverMid.process(mixedMid, convolvedMid)
+        val crackConvolver = convolverCrack ?: error("Not configured")
+        if (mixedCrack.any { it != 0.0 }) {
+            // Off since the last pop died away: start from silence rather than from back then.
+            if (crackRinging == 0) crackConvolver.clear()
+            crackRinging = CRACK_RING_BLOCKS
+        }
+        if (crackRinging > 0) {
+            crackConvolver.process(mixedCrack, convolvedCrack)
+            crackRinging--
+        } else {
+            convolvedCrack.fill(0.0)
+        }
         val fromSides = sides
         val toSides = if (surround) 1.0 else 0.0
         if (fromSides > 0 || toSides > 0) {
@@ -187,12 +245,31 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         val loudness = OUTPUT_GAIN * note.loudness
         val small = smallSpeaker
         val overtones = HARMONICS * bassDb / MAX_BASS_DB
+        // The firing note and the hiss don't come through the recording, so its loudness is no business of theirs.
+        val bodyGain = OUTPUT_GAIN * BODY * (0.5 + bassDb / MAX_BASS_DB)
+        // Jet noise grows steeply with how fast the gas leaves: a whisper at idle, a rasp flat out.
+        val flow = sqrt(toLoad * toRpm / CRUISE_FLOW).coerceIn(MIN_HISS, MAX_HISS)
+        val raspGain = OUTPUT_GAIN * RASP * note.rasp * flow
+        val thumpGain = OUTPUT_GAIN * THUMP
+        val crackGain = loudness * CRACK
+        // Lifting off, the engine drops back, as it does with the throttle shut, and leaves room for the pops.
+        val fromDuck = duck
+        val toDuck = if (state.overrun) OVERRUN_LEVEL else 1.0
+        duck = fromDuck + (toDuck - fromDuck) * DUCK_STEP
         var power = 0.0
         for (n in 0 until BLOCK) {
             // The low end stays in the middle: parted, it would thin out where the speakers meet.
-            val mid = convolvedMid[n]
             val spread = fromSides + (toSides - fromSides) * (n + 1).toDouble() / BLOCK
-            val side = if (spread > 0) spread * sideCut2.process(sideCut1.process(convolvedSide[n] + convolvedWidth[n])) else 0.0
+            // Pops go round the compressor, so they punch out of the engine rather than turn it down.
+            val boomSide = if (spread > 0) spread * mixedThumpSide[n] else 0.0
+            val crack = crackGain * convolvedCrack[n]
+            val boomLeft = thumpGain * (mixedThumpMid[n] + boomSide) + crack
+            val boomRight = thumpGain * (mixedThumpMid[n] - boomSide) + crack
+            thumpLeft[n] = if (small) thumpCutLeft.process(boomLeft) else boomLeft
+            thumpRight[n] = if (small) thumpCutRight.process(boomRight) else boomRight
+            val mid = loudness * convolvedMid[n] + bodyGain * body.process(mixedBody[n]) + raspGain * raspMid.process(mixedRaspMid[n])
+            val sideRasp = raspGain * raspSide.process(mixedRaspSide[n])
+            val side = if (spread > 0) spread * (loudness * sideCut2.process(sideCut1.process(convolvedSide[n] + convolvedWidth[n])) + sideRasp) else 0.0
             var x = mid + side
             var y = mid - side
             if (small) {
@@ -203,11 +280,11 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
                 x = left.full(x)
                 y = right.full(y)
             }
-            x *= loudness
-            y *= loudness
             outLeft[n] = x
             outRight[n] = y
-            power += x * x + y * y
+            val heardLeft = listenLeft.process(x)
+            val heardRight = listenRight.process(y)
+            power += heardLeft * heardLeft + heardRight * heardRight
         }
         val fromSqueeze = squeeze
         val toSqueeze = compressor.gain(power / (CHANNELS * BLOCK))
@@ -215,9 +292,10 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         var loudest = 0.0
         for (n in 0 until BLOCK) {
             val t = (n + 1).toDouble() / BLOCK
-            val g = (fromGain + (toGain - fromGain) * t) * (fromSqueeze + (toSqueeze - fromSqueeze) * t)
-            val x = SoftClip.process(outLeft[n] * g)
-            val y = SoftClip.process(outRight[n] * g)
+            val g = fromGain + (toGain - fromGain) * t
+            val c = (fromSqueeze + (toSqueeze - fromSqueeze) * t) * (fromDuck + (duck - fromDuck) * t)
+            val x = SoftClip.process((outLeft[n] * c + thumpLeft[n]) * g)
+            val y = SoftClip.process((outRight[n] * c + thumpRight[n]) * g)
             loudest = max(loudest, max(abs(x), abs(y)))
             out[CHANNELS * n] = x.toFloat()
             out[CHANNELS * n + 1] = y.toFloat()
@@ -230,6 +308,8 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
     /** Sample [n] of the exhausts, panned, before the impulse response. */
     private fun sample(n: Int, rpm: Double, load: Double, popChance: Double) {
         exhaustInput.fill(0.0)
+        var crack = 0.0
+        val roughness = grit.process(2 * noise.next() - 1)
         if (rpm > MIN_RPM) {
             val degreesPerSecond = rpm * 6.0
             crank += degreesPerSecond / sampleRate
@@ -252,9 +332,10 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
                     voice.popRise = 1.0
                     voice.popDecay = 1.0
                     voice.popLeft = popSamples
+                    kicks[voice.exhaust] += voice.popAmplitude * voice.weight
                 }
                 if (voice.popLeft > 0) {
-                    pressure += voice.popAmplitude * (1 - voice.popRise) * voice.popDecay * (0.4 + noise.next())
+                    crack += voice.weight * voice.popAmplitude * (1 - voice.popRise) * voice.popDecay * (1 + GRIT * roughness)
                     voice.popRise *= popRiseStep
                     voice.popDecay *= popDecayStep
                     voice.popLeft--
@@ -264,13 +345,35 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         }
         var l = 0.0
         var r = 0.0
+        var lowEnd = 0.0
+        var hissLeft = 0.0
+        var hissRight = 0.0
+        var boomLeft = 0.0
+        var boomRight = 0.0
         for (i in exhausts.indices) {
-            val pipe = exhausts[i].process(exhaustInput[i], layout.jitter, note.noise, note.highFrequencyGain)
+            val exhaust = exhausts[i]
+            val pipe = exhaust.process(exhaustInput[i], layout.jitter, note.noise, note.highFrequencyGain)
             l += pipe * exhaustLeft[i]
             r += pipe * exhaustRight[i]
+            lowEnd += exhaust.pressure
+            // The gas leaving the tailpipe hisses as hard as it's pushed.
+            val hiss = (2 * noise.next() - 1) * hissEnvelopes[i].process(exhaustInput[i])
+            hissLeft += hiss * exhaustLeft[i]
+            hissRight += hiss * exhaustRight[i]
+            val kick = kicks[i]
+            kicks[i] = 0.0
+            val boom = thumps[i].process(kick) + BANG * bangs[i].process(kick)
+            boomLeft += boom * exhaustLeft[i]
+            boomRight += boom * exhaustRight[i]
         }
         mixedMid[n] = (l + r) / 2
         mixedSide[n] = (l - r) / 2
+        mixedBody[n] = lowEnd
+        mixedRaspMid[n] = (hissLeft + hissRight) / 2
+        mixedRaspSide[n] = (hissLeft - hissRight) / 2
+        mixedCrack[n] = crackEdge.process(crack)
+        mixedThumpMid[n] = (boomLeft + boomRight) / 2
+        mixedThumpSide[n] = (boomLeft - boomRight) / 2
     }
 
     /**
@@ -300,6 +403,13 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         return PUSH * 4 * x * (1 - x)
     }
 
+    /** The note an exhaust rings at when a pop goes off in it: its half-wave resonance, kept where speakers play. */
+    private fun pipeNote(layout: EngineLayout, exhaust: Int): Double {
+        val primaries = layout.cylinders.filter { it.exhaust == exhaust }.map { it.primaryMetres }
+        val metres = layout.exhaustMetres[exhaust] + (primaries.average().takeIf { !it.isNaN() } ?: 0.0)
+        return (SPEED_OF_SOUND / (2 * metres)).coerceIn(LOWEST_THUMP, HIGHEST_THUMP)
+    }
+
     private fun voicesOf(layout: EngineLayout): Array<Voice> {
         val voices = layout.cylinders.map { cylinder ->
             val metres = cylinder.primaryMetres + layout.exhaustMetres[cylinder.exhaust]
@@ -325,6 +435,19 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         var popLeft = 0
     }
 
+    /**
+     * An exhaust recording made ready to play one engine through: building it takes longer than
+     * the audio buffer lasts, so [prepare] it away from the audio thread.
+     */
+    class Recording internal constructor(
+        val layout: EngineLayout,
+        val note: ExhaustNote,
+        internal val mid: Convolver,
+        internal val side: Convolver?,
+        internal val width: Convolver,
+        internal val crack: Convolver,
+    )
+
     /** One side's filters after the convolution, for the car's speakers or a phone's. */
     private class Channel(private val sampleRate: Double) {
         private val shelf = Biquad.lowShelf(BASS_CORNER, 0.0, sampleRate)
@@ -342,17 +465,43 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         fun small(x: Double) = speaker2.process(speaker1.process(x))
     }
 
+    /** The pops' pressure as engine-sim would hear it: low-passed and mostly its edges, without the roughness. */
+    private class CrackEdge(private val sampleRate: Double) {
+        private val antialias = ButterworthLowPass(ANTIALIAS_HZ, sampleRate)
+        private var previous = 0.0
+
+        fun process(x: Double): Double {
+            val sample = antialias.process(x)
+            val slope = (sample - previous) * sampleRate
+            previous = sample
+            return slope * CRACK_EDGE + sample * (1 - CRACK_EDGE)
+        }
+    }
+
+    /** The tailpipe's hiss: noise as loud as the pulses pushing it, in the band where it's heard. */
+    private class Rasp(sampleRate: Double) {
+        private val highPass = Biquad.highPass(RASP_FROM, sampleRate)
+        private val lowPass = Biquad.lowPass(RASP_TO, sampleRate)
+
+        fun process(x: Double) = lowPass.process(highPass.process(x))
+    }
+
     /** One exhaust's share of engine-sim's Synthesizer::renderAudio, before the convolution. */
-    private class Exhaust(private val sampleRate: Double, private val noise: Noise) {
-        private val antialias = ButterworthLowPass(1900.0, sampleRate)
+    private class Exhaust(private val sampleRate: Double, private val noise: Noise, antialiasHz: Double) {
+        private val antialias = ButterworthLowPass(antialiasHz, sampleRate)
         private val jitter = JitterFilter(10, 10_000.0, sampleRate, noise)
         private val dc = OnePoleLowPass(10.0, sampleRate)
         private val air = ButterworthLowPass(2000.0, sampleRate)
         private var previous = 0.0
 
+        /** The pulses' pressure as of the last [process], smooth and without its average: the firing note. */
+        var pressure = 0.0
+            private set
+
         fun process(x: Double, jitterScale: Double, airNoise: Double, highFrequencyGain: Double): Double {
             val sample = jitter.process(antialias.process(x), jitterScale)
             val f = sample - dc.process(sample)
+            pressure = f
             val slope = (sample - previous) * sampleRate
             previous = sample
             val roughness = airNoise * air.process(2 * noise.next() - 1) + (1 - airNoise)
@@ -401,24 +550,55 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         private const val POP_SPREAD = 300.0
         private const val POP_MIN = 1.5
         private const val POP_EXTRA = 2.0
-        private const val POP_RISE = 0.0001
-        private const val POP_DECAY = 0.0012
-        private const val POP_SECONDS = 0.012
+        /** A pop's bang: a few milliseconds, not the click of a millisecond a speaker glitch makes. */
+        private const val POP_RISE = 0.0004
+        private const val POP_DECAY = 0.004
+        private const val POP_SECONDS = 0.03
+
+        /** How loud a pop's thump is, and how long it rings. */
+        private const val THUMP = 1.8
+        private const val THUMP_SECONDS = 0.06
+        private const val LOWEST_THUMP = 45.0
+        private const val HIGHEST_THUMP = 110.0
 
         /**
-         * Brings the convolved signal up to play about as loud as music: measured across every
-         * engine and exhaust at a volume of 1, after the compressor, idle sits near -20 dBFS RMS,
-         * cruising -14 and flat out -10, the odd peak rounded off above [SoftClip.KNEE].
+         * How loud a pop's crack is through the exhaust, and how much of it is its edge. With
+         * [THUMP], loud pops just reach the soft clip at the default volume rather than flatten on it.
          */
-        private const val OUTPUT_GAIN = 0.06
-        private const val COMPRESS_ABOVE_DB = -22.0
+        private const val CRACK = 0.45
+        private const val CRACK_EDGE = 0.002
+
+        /** How rough the burning gas makes a pop, and up to where: above, it would only fizz. */
+        private const val GRIT = 1.5
+        private const val GRIT_HZ = 2000.0
+
+        /** Blocks the crack's echoes last after a pop: the exhaust recording's length and a little. */
+        private const val CRACK_RING_BLOCKS = ImpulseResponse.MAX_SAMPLES / BLOCK + 2
+
+        /** How far the engine drops back with the throttle shut at revs, and how quickly, per block. */
+        private const val OVERRUN_LEVEL = 0.5
+        private const val DUCK_STEP = 0.05
+
+        /** The bang a few times above the thump, shorter, for speakers too small for the thump. */
+        private const val BANG = 0.6
+        private const val BANG_NOTE = 4.0
+        private const val BANG_SECONDS = 0.025
+
+        /**
+         * Brings the convolved signal up to play as loud as music: in a car, next to a song at
+         * the same volume, the engine was 2 LU quieter. The rev preview now plays near -8 LUFS
+         * at the default volume and -6 at full, where about a sixth of it goes through the soft
+         * clip's knee.
+         */
+        private const val OUTPUT_GAIN = 0.085
+        private const val COMPRESS_ABOVE_DB = -19.0
         private const val COMPRESS_RATIO = 2.0
 
-        /** The derivative that gives the pulses their edge thins out the firing note below this. */
-        private const val BASS_CORNER = 200.0
+        /** Where Bass lifts the low end, below the boom of the exhaust's resonances. */
+        private const val BASS_CORNER = 100.0
 
         /** Below what car speakers play, and where a boost would only eat headroom. */
-        private const val RUMBLE_CORNER = 28.0
+        private const val RUMBLE_CORNER = 35.0
 
         /** Below what a phone's speaker plays. */
         private const val SMALL_SPEAKER_CORNER = 300.0
@@ -440,6 +620,54 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
 
         /** How much of the pipes' difference to play: more and the sides start to cancel out. */
         private const val WIDTH = 0.6
+
+        /**
+         * engine-sim low-passes each exhaust at 1.9 kHz, which left the engine 20 dB short of
+         * music above 2.5 kHz in a car; this keeps the pulses' overtones up to where the ear is
+         * keenest.
+         */
+        private const val ANTIALIAS_HZ = 6000.0
+
+        /**
+         * How loud the firing note plays underneath, below [BODY_HZ]: the derivative's edge thins
+         * it out, which left the engine 8-10 dB short of music below 80 Hz. Bass turns it from
+         * half this to one and a half times.
+         */
+        private const val BODY = 50.0
+        private const val BODY_HZ = 120.0
+
+        /** How loud the tailpipe's hiss plays cruising, between [RASP_FROM] and [RASP_TO]. */
+        private const val RASP = 68.0
+
+        /** Load times rpm cruising, where the hiss is [RASP]; it follows the square root, within these. */
+        private const val CRUISE_FLOW = 600.0
+        private const val MIN_HISS = 0.1
+
+        /** How quickly the hiss follows each pulse. */
+        private const val HISS_ENVELOPE_HZ = 300.0
+        private const val MAX_HISS = 2.0
+        private const val RASP_FROM = 1000.0
+        private const val RASP_TO = 7000.0
+
+        /** The compressor listens above this, so the low end doesn't turn the rest down. */
+        private const val SIDECHAIN_HZ = 120.0
+
+        /** Readies [note]'s [impulse], as [ImpulseResponse.read] gives it, to play [layout] through. */
+        fun prepare(layout: EngineLayout, note: ExhaustNote, impulse: FloatArray): Recording {
+            // No two pipes are quite the same length: heard a little longer on the left and
+            // shorter on the right, the echoes part ways while the pulses stay together. Only the
+            // difference goes to the sides, so both together sound just as before.
+            val longer = ImpulseResponse.stretched(impulse, 1 + PIPE_DIFFERENCE)
+            val shorter = ImpulseResponse.stretched(impulse, 1 - PIPE_DIFFERENCE)
+            return Recording(
+                layout,
+                note,
+                mid = Convolver(impulse, BLOCK),
+                side = if (layout.exhaustMetres.size > 1) Convolver(impulse, BLOCK) else null,
+                width = Convolver(FloatArray(longer.size) { (WIDTH * (longer[it] - shorter.getOrElse(it) { 0f }) / 2).toFloat() }, BLOCK),
+                crack = Convolver(impulse, BLOCK),
+            )
+        }
 
         /** Into 0 until 720°; no floor(), which is a slow native call in debug builds. */
         private fun wrap(degrees: Double): Double {

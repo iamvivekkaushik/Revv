@@ -1329,6 +1329,13 @@ private fun engineSoundRows(settings: HmiSettings, actions: HmiActions): List<Se
         },
         LevelRow(SettingsStore.ENGINE_VOLUME, "Engine volume", "Under the media volume, which turns it up and down too", engine.volume, EngineSoundSettings.MAX_VOLUME),
         LevelRow(SettingsStore.ENGINE_BASS, "Bass", "The engine's low rumble, for the speakers it plays through", engine.bass, EngineSoundSettings.MAX_BASS),
+        LevelRow(
+            SettingsStore.ENGINE_SMOOTHING,
+            "Rev smoothing",
+            "How the revs glide between the car's readings, so you hear them climb and fall; 0 jumps straight to each",
+            engine.smoothing,
+            EngineSoundSettings.MAX_SMOOTHING,
+        ),
         ToggleRow(SettingsStore.ENGINE_SURROUND, "Surround", "Each bank's exhaust from its own side and the echoes around you; off plays the same from every speaker"),
         ToggleRow(SettingsStore.ENGINE_CRACKLE, "Pops on lift-off", "Crackles from the exhaust when you lift off at high revs"),
         ActionRow("Preview", "Hear the chosen engine rev, parked", "REV", actions::previewEngineSound),

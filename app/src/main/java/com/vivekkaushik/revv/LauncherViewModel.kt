@@ -480,6 +480,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             SettingsStore.NAV_VOLUME to 30,
             SettingsStore.ENGINE_VOLUME to EngineSoundSettings.MAX_VOLUME,
             SettingsStore.ENGINE_BASS to EngineSoundSettings.MAX_BASS,
+            SettingsStore.ENGINE_SMOOTHING to EngineSoundSettings.MAX_SMOOTHING,
         )
 
         /** List settings, saved as the chosen option's position. */

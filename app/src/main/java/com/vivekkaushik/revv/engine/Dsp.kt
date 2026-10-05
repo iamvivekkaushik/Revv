@@ -122,6 +122,20 @@ internal class Biquad private constructor() {
         return this
     }
 
+    /** Removes what's above [cornerHz], Butterworth-flat below it. */
+    fun lowPass(cornerHz: Double, sampleRate: Double): Biquad {
+        val w = 2 * PI * cornerHz / sampleRate
+        val c = cos(w)
+        val alpha = sin(w) / sqrt(2.0)
+        val a0 = 1 + alpha
+        b0 = (1 - c) / 2 / a0
+        b1 = (1 - c) / a0
+        b2 = (1 - c) / 2 / a0
+        a1 = -2 * c / a0
+        a2 = (1 - alpha) / a0
+        return this
+    }
+
     /** Removes what's below [cornerHz], Butterworth-flat above it. */
     fun highPass(cornerHz: Double, sampleRate: Double): Biquad {
         val w = 2 * PI * cornerHz / sampleRate
@@ -148,6 +162,7 @@ internal class Biquad private constructor() {
     companion object {
         fun lowShelf(cornerHz: Double, gainDb: Double, sampleRate: Double) = Biquad().lowShelf(cornerHz, gainDb, sampleRate)
         fun highPass(cornerHz: Double, sampleRate: Double) = Biquad().highPass(cornerHz, sampleRate)
+        fun lowPass(cornerHz: Double, sampleRate: Double) = Biquad().lowPass(cornerHz, sampleRate)
     }
 }
 
@@ -174,6 +189,27 @@ internal class JitterFilter(private val maxJitter: Int, noiseCutoffHz: Double, s
         val v0 = history[(i0 + offset) % maxJitter]
         val v1 = history[(i1 + offset) % maxJitter]
         return v1 * fraction + v0 * (1 - fraction)
+    }
+}
+
+/**
+ * A ringing note: every push sets off a sine at [hz], as loud as the push, dying away over about
+ * [seconds]. Two poles on the unit circle's inside, so it rings without being driven.
+ */
+internal class Resonator(hz: Double, seconds: Double, sampleRate: Double) {
+    private val w = 2 * PI * hz / sampleRate
+    private val r = exp(-1 / (seconds * sampleRate))
+    private val a1 = 2 * r * cos(w)
+    private val a2 = -r * r
+    private val b0 = sin(w)
+    private var y1 = 0.0
+    private var y2 = 0.0
+
+    fun process(x: Double): Double {
+        val y = b0 * x + a1 * y1 + a2 * y2
+        y2 = y1
+        y1 = if (abs(y) < 1e-30) 0.0 else y
+        return y
     }
 }
 

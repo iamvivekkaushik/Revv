@@ -69,6 +69,49 @@ class EngineFollowerTest {
         assertTrue("back on to ${after.load}", after.load > 0.6)
     }
 
+    @Test
+    fun pressingThePedalIsHeardBeforeTheAirFlowCatchesUp() {
+        drive(seconds = 1.0) { reading(rpm = 850, throttle = 14, airFill = 0.3f, at = it) }
+        val cruising = drive(seconds = 1.0, start = 1.0) { reading(rpm = 2000, throttle = 25, airFill = 0.45f, at = it) }
+        // Floored at 2 s; the air flow reads the same until the next poll.
+        follower.report(reading(rpm = 2000, throttle = 80, airFill = 0.45f, at = 2.0))
+        var state = cruising
+        for (step in 0 until STEPS_PER_SECOND / 10) state = follower.advance(nanos(2.0 + step.toDouble() / STEPS_PER_SECOND))
+        assertTrue("load ${state.load} from ${cruising.load} within 0.1 s", state.load > cruising.load + 0.5)
+    }
+
+    @Test
+    fun aJumpBetweenReadingsIsHeardAsTheRevsClimbing() {
+        fun jump(smoothing: Double): List<Double> {
+            val follower = EngineFollower().also { it.smoothing = smoothing }
+            val heard = mutableListOf<Double>()
+            for (step in 0 until 2 * STEPS_PER_SECOND) {
+                val t = step.toDouble() / STEPS_PER_SECOND
+                // 1,500 rpm, then 3,500 from the reading at 1 s on.
+                if (step % (STEPS_PER_SECOND / 5) == 0) follower.report(reading(rpm = if (t < 1.0) 1500 else 3500, at = t))
+                val state = follower.advance(nanos(t))
+                if (t >= 1.0) heard += state.rpm
+            }
+            return heard
+        }
+        val tenth = STEPS_PER_SECOND / 10
+        val instant = jump(0.0)
+        assertTrue("straight there: ${instant[tenth]}", instant[tenth] > 3200)
+        val smooth = jump(1.0)
+        assertTrue("climbing a tenth of a second on: ${smooth[tenth]}", smooth[tenth] < 2200)
+        assertTrue("there within a second: ${smooth.last()}", smooth.last() > 3400)
+    }
+
+    @Test
+    fun theSlowerReadingsCatchingUpKeepTheTrend() {
+        drive(seconds = 1.0) { reading(rpm = (1000 + 1000 * it).toInt(), throttle = 14, airFill = 0.6f, at = it) }
+        // The same moment again, now with the air flow: the revs should still climb.
+        follower.report(reading(rpm = 1800, throttle = 14, airFill = 0.7f, at = 0.8))
+        val before = follower.advance(nanos(1.0))
+        val after = follower.advance(nanos(1.1))
+        assertTrue("still climbing: ${before.rpm} to ${after.rpm}", after.rpm > before.rpm)
+    }
+
     /**
      * Advances the follower for [seconds] from [start], reporting a new reading five times a
      * second, and returns the last state.

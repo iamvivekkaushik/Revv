@@ -30,9 +30,12 @@ class EngineSynthTest {
             assertTrue("$name finite", flatOut.all { it.isFinite() } && idle.all { it.isFinite() })
             assertTrue("$name within full scale", turnedUp.all { abs(it) < 1f })
             assertTrue("$name idle audible: ${rms(idle)}", rms(idle) > 0.01)
-            // A muffler swallows a lot of the high revs, so only the sporty exhausts must roar.
-            val louder = if (note == ExhaustNote.SPORT) 2.0 else 1.3
-            assertTrue("$name flat out louder: ${rms(flatOut)} vs ${rms(idle)}", rms(flatOut) > louder * rms(idle))
+            // A muffler swallows a lot of the high revs, so only the sporty exhausts must roar, and
+            // a V12 fires so evenly that it idles closest to how it revs.
+            val louder = if (note == ExhaustNote.SPORT) 1.9 else 1.3
+            val heardIdle = rms(heard(mono(idle)))
+            val heardFlatOut = rms(heard(mono(flatOut)))
+            assertTrue("$name flat out louder: $heardFlatOut vs $heardIdle", heardFlatOut > louder * heardIdle)
         }
     }
 
@@ -52,6 +55,23 @@ class EngineSynthTest {
         val boosted = render(EngineLayout.V8_CROSS_PLANE, ExhaustNote.SPORT, idle, seconds = 1.5, bass = 12.0)
         val gain = 20 * log10(lowShare(mono(boosted)) / lowShare(mono(flat)))
         assertTrue("low end up $gain dB", gain > 6)
+    }
+
+    @Test
+    fun soundsFullFromTheLowEndToTheHiss() {
+        // Next to music in a car, engine-sim's sound was 8-10 dB short below 80 Hz and 20 dB
+        // above 2.5 kHz. Against the mids, where the exhausts resonate, the sporty one idled
+        // 13-22 dB short below 80 Hz and every one cruised 24-31 dB short above 2.5 kHz.
+        val idle = EngineState(800.0, 0.15, overrun = false, running = true)
+        val cruise = EngineState(2000.0, 0.3, overrun = false, running = true)
+        for (note in listOf(ExhaustNote.STOCK, ExhaustNote.SPORT)) for (layout in listOf(EngineLayout.V6, EngineLayout.V12)) {
+            val idling = mono(render(layout, note, idle, seconds = 1.5))
+            val low = 20 * log10(rms(band(idling, 40.0, 80.0)) / rms(band(idling, 320.0, 640.0)))
+            val cruising = mono(render(layout, note, cruise, seconds = 1.5))
+            val hiss = 20 * log10(rms(band(cruising, 2560.0, 5120.0)) / rms(band(cruising, 320.0, 640.0)))
+            assertTrue("$layout / $note low end $low dB against the mids", low > 0)
+            assertTrue("$layout / $note hiss $hiss dB under the mids", hiss > -15)
+        }
     }
 
     @Test
@@ -119,6 +139,9 @@ class EngineSynthTest {
         val quiet = render(EngineLayout.INLINE_4, ExhaustNote.SPORT, coasting, seconds = 1.0, crackle = false)
         val popping = render(EngineLayout.INLINE_4, ExhaustNote.SPORT, coasting, seconds = 1.0, crackle = true)
         assertTrue("pops ${peak(popping)} vs ${peak(quiet)}", peak(popping) > 1.5 * peak(quiet))
+        // And thump: the pipe rings under each crack, which used to be all there was.
+        val thump = peak(lowPassed(mono(popping), 150.0)) / peak(lowPassed(mono(quiet), 150.0))
+        assertTrue("thump ${20 * log10(thump)} dB", thump > 8)
     }
 
     /**
@@ -206,8 +229,21 @@ class EngineSynthTest {
 
     private fun rms(samples: FloatArray) = sqrt(samples.sumOf { it.toDouble() * it } / samples.size)
 
-    /** How much of [samples]' RMS lies below 160 Hz. */
-    private fun lowShare(samples: FloatArray) = rms(lowPassed(samples, 160.0)) / rms(samples)
+    /** How much of [samples]' RMS lies below 100 Hz. */
+    private fun band(samples: FloatArray, from: Double, to: Double): FloatArray {
+        val rate = EngineSynth.SAMPLE_RATE.toDouble()
+        val highPass = listOf(Biquad.highPass(from, rate), Biquad.highPass(from, rate))
+        val lowPass = ButterworthLowPass(to, rate)
+        return FloatArray(samples.size) { lowPass.process(highPass[1].process(highPass[0].process(samples[it].toDouble()))).toFloat() }
+    }
+
+    private fun lowShare(samples: FloatArray) = rms(lowPassed(samples, 100.0)) / rms(samples)
+
+    /** Without the deep bass, which the ear hardly counts in how loud something is, as the compressor listens. */
+    private fun heard(samples: FloatArray): FloatArray {
+        val highPass = Biquad.highPass(100.0, EngineSynth.SAMPLE_RATE.toDouble())
+        return FloatArray(samples.size) { highPass.process(samples[it].toDouble()).toFloat() }
+    }
 
     private fun peak(samples: FloatArray) = samples.maxOf { abs(it) }
 

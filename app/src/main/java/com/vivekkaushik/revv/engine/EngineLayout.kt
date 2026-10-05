@@ -200,11 +200,13 @@ enum class ExhaustNote(
     val loudness: Double,
     /** How much of the bass setting it takes: the muffler keeps the low end the others lose, so idle would drown out the revs. */
     val bass: Double,
+    /** How much the gas hisses leaving the tailpipe, 0 to 1: a muffler slows it down. */
+    val rasp: Double,
 ) {
-    STOCK("Stock", "engine/mild_exhaust.wav", noise = 0.6, highFrequencyGain = 0.006, loudness = 2.7, bass = 0.5),
-    SPORT("Sport", "engine/smooth_39.wav", noise = 1.0, highFrequencyGain = 0.01, loudness = 1.0, bass = 1.0),
-    OPEN("Open", "engine/minimal_muffling_02.wav", noise = 1.0, highFrequencyGain = 0.01, loudness = 1.2, bass = 1.0),
-    STRAIGHT_PIPE("Straight pipe", "engine/minimal_muffling_01.wav", noise = 1.0, highFrequencyGain = 0.012, loudness = 1.5, bass = 1.0),
+    STOCK("Stock", "engine/mild_exhaust.wav", noise = 0.6, highFrequencyGain = 0.006, loudness = 2.7, bass = 0.5, rasp = 0.5),
+    SPORT("Sport", "engine/smooth_39.wav", noise = 1.0, highFrequencyGain = 0.01, loudness = 1.0, bass = 1.0, rasp = 0.6),
+    OPEN("Open", "engine/minimal_muffling_02.wav", noise = 1.0, highFrequencyGain = 0.01, loudness = 1.2, bass = 1.0, rasp = 0.7),
+    STRAIGHT_PIPE("Straight pipe", "engine/minimal_muffling_01.wav", noise = 1.0, highFrequencyGain = 0.012, loudness = 1.5, bass = 1.0, rasp = 0.8),
     ;
 
     companion object {
