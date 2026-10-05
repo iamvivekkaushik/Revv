@@ -18,6 +18,8 @@ data class NowPlaying(
     val playbackSpeed: Float,
     val canSkipPrevious: Boolean,
     val canSkipNext: Boolean,
+    /** The player takes a position to jump to, and has said how long the track is. */
+    val canSeek: Boolean = false,
     /** The phone's own player, heard over Bluetooth: the head unit's Bluetooth publishes it as a session. */
     val fromPhone: Boolean = false,
 ) {

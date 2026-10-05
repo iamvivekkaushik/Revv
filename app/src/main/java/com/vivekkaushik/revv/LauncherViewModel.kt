@@ -396,7 +396,19 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun playPause() = media.playPause()
     fun skipToNext() = media.skipToNext()
     fun skipToPrevious() = media.skipToPrevious()
-    fun openPlayer(): Boolean = media.openPlayer()
+    fun seekTo(positionMs: Long) = media.seekTo(positionMs)
+    /**
+     * Opens the player behind the media card. CarPlay's music is the iPhone's, played through
+     * RevvCarPlay: that opens CarPlay here, in the Auto screen, rather than the companion's own.
+     */
+    fun openPlayer(): Boolean {
+        val playing = media.nowPlaying.value?.packageName
+        if (playing != null && playing == CarPlayCompanion.packageName(getApplication())) {
+            open(HmiApp.Auto)
+            return true
+        }
+        return media.openPlayer()
+    }
 
     fun toggleSetting(key: String) = settingsStore.toggle(key)
 

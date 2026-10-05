@@ -545,6 +545,9 @@ class CarPlayCompanion(context: Context) {
         fun available(context: Context): Boolean =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && serviceIntent(context) != null
 
+        /** RevvCarPlay's package (release or debug), or null when it isn't installed. */
+        fun packageName(context: Context): String? = serviceIntent(context)?.component?.packageName
+
         /** Opens RevvCarPlay's own screen, for its one-time permission and VPN prompts. */
         fun launchIntent(context: Context): Intent? {
             val pkg = serviceIntent(context)?.component?.packageName ?: return null

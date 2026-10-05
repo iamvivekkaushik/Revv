@@ -60,6 +60,9 @@ data class HmiSettings(
     val showFuelWidget: Boolean get() = isOn(SettingsStore.HOME_FUEL)
     val showPhoneCard: Boolean get() = isOn(SettingsStore.HOME_PHONE)
     val showMediaCard: Boolean get() = isOn(SettingsStore.HOME_MEDIA)
+
+    /** Swiping the home media card scrubs through the track. */
+    val mediaSwipeToSeek: Boolean get() = isOn(SettingsStore.HOME_MEDIA_SWIPE)
     val showMapPanel: Boolean get() = isOn(SettingsStore.HOME_MAP)
 
     /** 0 follows the system clock setting, 1 is 12-hour, 2 is 24-hour. */
@@ -208,6 +211,7 @@ class SettingsStore(context: Context) {
         const val CAMERA_ROTATION = "cameraRotation"
         const val HOME_PHONE = "homePhone"
         const val HOME_MEDIA = "homeMedia"
+        const val HOME_MEDIA_SWIPE = "homeMediaSwipe"
         const val HOME_MAP = "homeMap"
         const val BRIGHTNESS = "bright"
 
@@ -275,6 +279,7 @@ class SettingsStore(context: Context) {
             ENGINE_SURROUND to true,
             HOME_PHONE to true,
             HOME_MEDIA to true,
+            HOME_MEDIA_SWIPE to false,
             HOME_MAP to true,
             SUNSET_DIMMING to false,
             REDUCED_MOTION to false,

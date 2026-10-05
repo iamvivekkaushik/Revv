@@ -9,6 +9,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,22 +24,31 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -172,6 +184,7 @@ private fun CompactHome(
                             state.nowPlaying,
                             state.system.hasMediaAccess,
                             state.phone.link?.name,
+                            settings.mediaSwipeToSeek,
                             actions,
                             Modifier.fillMaxWidth().height(COMPACT_CARD_HEIGHT).reveal(ready, 800, 300, riseBy = 24.dp),
                         )
@@ -225,6 +238,7 @@ private fun HomeCards(
                     state.nowPlaying,
                     state.system.hasMediaAccess,
                     state.phone.link?.name,
+                    state.settings.mediaSwipeToSeek,
                     actions,
                     Modifier.weight(1.4f).fillMaxHeight(),
                 )
@@ -628,23 +642,34 @@ private fun LastCall(title: String, detail: String, detailColor: Color) {
 }
 
 @Composable
-private fun MediaCard(nowPlaying: NowPlaying?, hasAccess: Boolean, phoneName: String?, actions: HmiActions, modifier: Modifier) {
+private fun MediaCard(
+    nowPlaying: NowPlaying?,
+    hasAccess: Boolean,
+    phoneName: String?,
+    swipeToSeek: Boolean,
+    actions: HmiActions,
+    modifier: Modifier,
+) {
+    val seek = remember(nowPlaying?.packageName, nowPlaying?.title) { SeekState() }
     Row(
         modifier.border(1.dp, Hmi.Line).padding(cardPadding()),
         horizontalArrangement = Arrangement.spacedBy(24.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
+        Column(
+            Modifier.weight(1f).fillMaxHeight().swipeToSeek(nowPlaying.takeIf { swipeToSeek && hasAccess }, seek, actions::seekTo),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
             when {
                 !hasAccess -> {
                     Caption("MEDIA")
                     TrackText("Media access", "TAP ALLOW TO CONNECT")
-                    Spacer(Modifier.height(19.dp))
+                    Spacer(Modifier.height(SEEK_TOUCH_HEIGHT))
                 }
                 nowPlaying == null -> {
                     Caption("MEDIA")
                     TrackText("Nothing playing", "PRESS PLAY TO OPEN MUSIC")
-                    Spacer(Modifier.height(19.dp))
+                    Spacer(Modifier.height(SEEK_TOUCH_HEIGHT))
                 }
                 else -> {
                     // The phone's music, over Bluetooth, goes by the phone's name rather than "Bluetooth".
@@ -659,7 +684,7 @@ private fun MediaCard(nowPlaying: NowPlaying?, hasAccess: Boolean, phoneName: St
                             onClick = actions::openPlayer,
                         ),
                     )
-                    PlaybackProgress(nowPlaying)
+                    PlaybackProgress(nowPlaying, seek, actions::seekTo)
                 }
             }
         }
@@ -706,15 +731,138 @@ private fun TrackText(title: String, subtitle: String, modifier: Modifier = Modi
     }
 }
 
+/** The seek bar's touch area: easy to hit while driving, no taller than the buttons beside it. */
+private val SEEK_TOUCH_HEIGHT = 32.dp
+
+/** How long a seek shows where it asked for if the player never says where it went. */
+private const val SEEK_HOLD_MILLIS = 2_000L
+
+/**
+ * Where the track is. When the player can seek, a finger on the bar shows where it would jump
+ * to, and letting go jumps there; the bar then holds that spot until the player reports it.
+ */
+/**
+ * Where a seek is heading: under the finger while scrubbing the bar or swiping the card, then
+ * where it asked for until the player reports it.
+ */
+@Stable
+private class SeekState {
+    var scrubbing by mutableStateOf<Long?>(null)
+    var asked by mutableStateOf<Long?>(null)
+}
+
+/** How much of the track a swipe across the whole card covers, at most; the bar reaches any of it. */
+private const val SWIPE_SPAN_MILLIS = 5 * 60_000L
+
+/**
+ * Swiping left or right scrubs back or ahead from where the track is, across [nowPlaying]'s
+ * length or [SWIPE_SPAN_MILLIS] for the card's width; letting go jumps there. Taps pass through.
+ * Off with a null [nowPlaying] or a player that can't seek.
+ */
 @Composable
-private fun PlaybackProgress(nowPlaying: NowPlaying) {
-    val position by rememberPlaybackPosition(nowPlaying)
+private fun Modifier.swipeToSeek(nowPlaying: NowPlaying?, seek: SeekState, onSeek: (Long) -> Unit): Modifier {
+    val enabled = nowPlaying != null && nowPlaying.canSeek && nowPlaying.durationMs > 0
+    val track by rememberUpdatedState(nowPlaying)
+    if (!enabled) return this
+    return pointerInput(nowPlaying?.packageName, nowPlaying?.title) {
+        var from = 0L
+        var moved = 0f
+        detectHorizontalDragGestures(
+            onDragStart = {
+                val now = track ?: return@detectHorizontalDragGestures
+                from = seek.asked ?: now.positionAt(SystemClock.elapsedRealtime())
+                moved = 0f
+                seek.scrubbing = from
+            },
+            onHorizontalDrag = { change, dx ->
+                val now = track ?: return@detectHorizontalDragGestures
+                change.consume()
+                moved += dx
+                val span = minOf(now.durationMs, SWIPE_SPAN_MILLIS)
+                seek.scrubbing = (from + moved / size.width * span).toLong().coerceIn(0, now.durationMs)
+            },
+            onDragEnd = {
+                seek.scrubbing?.let {
+                    seek.asked = it
+                    onSeek(it)
+                }
+                seek.scrubbing = null
+            },
+            onDragCancel = { seek.scrubbing = null },
+        )
+    }
+}
+
+@Composable
+private fun PlaybackProgress(nowPlaying: NowPlaying, seek: SeekState, onSeek: (Long) -> Unit) {
+    val playing by rememberPlaybackPosition(nowPlaying)
     val duration = nowPlaying.durationMs
+    val seekable = nowPlaying.canSeek && duration > 0
+    // The player's next report says where it went.
+    LaunchedEffect(nowPlaying.positionUpdatedAt, nowPlaying.positionMs) { seek.asked = null }
+    LaunchedEffect(seek.asked) {
+        if (seek.asked != null) {
+            delay(SEEK_HOLD_MILLIS)
+            seek.asked = null
+        }
+    }
+    val scrubbing = seek.scrubbing
+    val position = scrubbing ?: seek.asked ?: playing
     val fraction = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    val active = scrubbing != null
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        HText(formatDuration(position), size = 15.sp)
-        Box(Modifier.weight(1f).height(4.dp).background(Hmi.Line)) {
-            Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(Hmi.Text))
+        HText(formatDuration(position), size = 15.sp, color = if (active) Hmi.Cyan else Hmi.Text)
+        BoxWithConstraints(
+            Modifier.weight(1f).height(SEEK_TOUCH_HEIGHT).then(
+                if (!seekable) {
+                    Modifier
+                } else {
+                    Modifier.pointerInput(duration, seek) {
+                        fun at(x: Float) = ((x / size.width).coerceIn(0f, 1f) * duration).toLong()
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            down.consume()
+                            var target: Long? = at(down.position.x)
+                            seek.scrubbing = target
+                            try {
+                                while (true) {
+                                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                                    if (change == null) {
+                                        target = null
+                                        break
+                                    }
+                                    if (!change.pressed) break
+                                    target = at(change.position.x)
+                                    seek.scrubbing = target
+                                    change.consume()
+                                }
+                            } finally {
+                                // Cancelled, say by the screen changing: no jump.
+                                seek.scrubbing = null
+                            }
+                            target?.let {
+                                seek.asked = it
+                                onSeek(it)
+                            }
+                        }
+                    }
+                },
+            ),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Box(Modifier.fillMaxWidth().height(if (active) 6.dp else 4.dp).background(Hmi.Line)) {
+                Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(if (active) Hmi.Cyan else Hmi.Text))
+            }
+            if (seekable) {
+                val thumb = if (active) 20.dp else 12.dp
+                Box(
+                    Modifier
+                        .offset(x = maxWidth * fraction - thumb / 2)
+                        .size(thumb)
+                        .clip(CircleShape)
+                        .background(if (active) Hmi.Cyan else Hmi.Text),
+                )
+            }
         }
         HText(if (duration > 0) formatDuration(duration) else "--:--", size = 15.sp, color = Hmi.Muted)
     }

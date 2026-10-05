@@ -87,6 +87,11 @@ class MediaSessionMonitor(private val context: Context) {
         controller?.transportControls?.skipToPrevious()
     }
 
+    /** Jumps to [positionMs] into the track, if the player takes it. */
+    fun seekTo(positionMs: Long) {
+        controller?.transportControls?.seekTo(positionMs.coerceAtLeast(0))
+    }
+
     /** Opens the player behind the current session. False if there is nothing to open. */
     fun openPlayer(): Boolean {
         val controller = controller ?: return false
@@ -132,6 +137,7 @@ class MediaSessionMonitor(private val context: Context) {
             ?: if (fromPhone) PHONE_AUDIO else return null
         val state = controller.playbackState
         val actions = state?.actions ?: 0L
+        val durationMs = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
         return NowPlaying(
             packageName = controller.packageName,
             appLabel = appLabel(controller.packageName),
@@ -139,13 +145,15 @@ class MediaSessionMonitor(private val context: Context) {
             subtitle = description?.subtitle?.toString().orEmpty(),
             art = description?.iconBitmap,
             isPlaying = state.isPlaying,
-            durationMs = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L,
+            durationMs = durationMs,
             positionMs = state?.position ?: 0L,
             positionUpdatedAt = state?.lastPositionUpdateTime ?: 0L,
             playbackSpeed = state?.playbackSpeed ?: 1f,
             // Players that don't declare their actions usually still handle skips.
             canSkipPrevious = actions == 0L || (actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS) != 0L,
             canSkipNext = actions == 0L || (actions and PlaybackState.ACTION_SKIP_TO_NEXT) != 0L,
+            // Unlike skips, only when declared: a phone's Bluetooth can't seek, nor can live radio.
+            canSeek = durationMs > 0 && (actions and PlaybackState.ACTION_SEEK_TO) != 0L,
             fromPhone = fromPhone,
         )
     }

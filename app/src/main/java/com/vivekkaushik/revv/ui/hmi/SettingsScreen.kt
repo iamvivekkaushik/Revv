@@ -769,6 +769,7 @@ private fun rowsFor(
             fuelWidgetRow(state, actions, chooseFuelApp),
             ToggleRow(SettingsStore.HOME_PHONE, "Phone card", "Last call and call back"),
             ToggleRow(SettingsStore.HOME_MEDIA, "Media card", "Now playing"),
+            ToggleRow(SettingsStore.HOME_MEDIA_SWIPE, "Swipe to seek", "Swipe the media card left or right to go back or ahead in the track"),
             ToggleRow(SettingsStore.HOME_MAP, "Map panel", "Navigation beside the cluster"),
         )
         Category.Sound -> listOf(

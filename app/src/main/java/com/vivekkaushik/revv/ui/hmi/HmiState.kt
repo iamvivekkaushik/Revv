@@ -138,6 +138,9 @@ interface HmiActions {
     fun playPause()
     fun skipToNext()
     fun skipToPrevious()
+
+    /** Jumps to [positionMs] into the playing track. */
+    fun seekTo(positionMs: Long)
     fun openPlayer()
     fun openMusic()
 

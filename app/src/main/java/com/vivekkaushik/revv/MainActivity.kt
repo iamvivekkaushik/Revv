@@ -198,6 +198,8 @@ class MainActivity : ComponentActivity(), HmiActions {
 
     override fun skipToPrevious() = viewModel.skipToPrevious()
 
+    override fun seekTo(positionMs: Long) = viewModel.seekTo(positionMs)
+
     override fun openPlayer() {
         if (!viewModel.openPlayer()) openMusic()
     }
