@@ -30,6 +30,8 @@ data class EngineSoundSettings(
     val surround: Boolean = true,
     /** 0 to [MAX_SMOOTHING]. */
     val smoothing: Int = DEFAULT_SMOOTHING,
+    /** The starter and the engine catching when the car starts. */
+    val startUp: Boolean = true,
 ) {
     /**
      * The volume as a gain, on a curve so each step sounds about as big as the last. The top
@@ -62,6 +64,17 @@ data class EngineSoundSettings(
 class EngineSound(private val context: Context) {
 
     private val follower = EngineFollower()
+
+    /**
+     * The start-up recording, when this build has one (see .private/assets): played as the car
+     * starts in place of the synthesised starter and flare, handing over to the engine at its end.
+     */
+    private val startClip: FloatArray? by lazy {
+        runCatching { context.assets.open(START_CLIP).use { ClipWav.read(it.readBytes()) } }.getOrNull()
+    }
+
+    /** How many starts the car's follower had when last looked at. Only the audio thread. */
+    private var heardStarts = 0
 
     /** Each exhaust's recording, read once, from whichever thread gets there first. */
     private val impulses = ConcurrentHashMap<ExhaustNote, FloatArray>()
@@ -98,7 +111,7 @@ class EngineSound(private val context: Context) {
         wake()
     }
 
-    /** Revs the chosen engine for a few seconds, so it can be heard parked. */
+    /** Starts, if start-up is on, and revs the chosen engine for a few seconds, so it can be heard parked. */
     fun preview() {
         previewFrom = SystemClock.elapsedRealtimeNanos()
         wake()
@@ -109,7 +122,7 @@ class EngineSound(private val context: Context) {
         synchronized(lock) { thread?.interrupt() }
     }
 
-    private fun previewing(now: Long) = previewFrom != 0L && now - previewFrom < PreviewRev.NANOS
+    private fun previewing(now: Long) = previewFrom != 0L && now - previewFrom < PreviewRev.nanos(settings.startUp)
 
     private fun wanted() = !released && (settings.enabled || previewing(SystemClock.elapsedRealtimeNanos()))
 
@@ -161,6 +174,8 @@ class EngineSound(private val context: Context) {
         val output = Output(track)
         // The preview is read like a car, a few times a second, so rev smoothing can be heard parked.
         var previewFollower = EngineFollower()
+        var previewStarts = 0
+        var clipAt = -1
         var previewStarted = 0L
         var previewReadAt = 0L
         var recording = prepare(settings.layout, settings.note)
@@ -191,14 +206,19 @@ class EngineSound(private val context: Context) {
                 applied = settings
             }
         }
-        // Ready before the track starts, so it doesn't start by running dry.
+        // Ready before the track starts, so it doesn't start by running dry; the start-up
+        // recording too, which takes longer to read than the buffer lasts.
         configure(settings)
+        startClip
         output.start()
         while (!released) {
             val settings = settings
             configure(settings)
             synth.surround = settings.surround
             follower.smoothing = settings.smoothingFraction
+            follower.startUp = settings.startUp
+            val clip = if (settings.startUp) startClip else null
+            follower.scripted = clip == null
             // Headphones, Bluetooth and the car come and go: check every half second or so.
             if (blocks++ % ROUTE_CHECK_BLOCKS == 0) synth.smallSpeaker = playsOnPhoneSpeaker(track)
             val now = SystemClock.elapsedRealtimeNanos()
@@ -209,28 +229,50 @@ class EngineSound(private val context: Context) {
                 if (previewFrom != previewStarted) {
                     previewStarted = previewFrom
                     previewFollower = EngineFollower()
+                    previewStarts = 0
                     previewReadAt = 0L
                 }
                 if (now - previewReadAt >= PREVIEW_READ_NANOS) {
                     previewReadAt = now
-                    previewFollower.report(PreviewRev.reading(now - previewStarted, now))
+                    previewFollower.report(PreviewRev.reading(now - previewStarted, now, settings.startUp))
                 }
                 previewFollower.smoothing = settings.smoothingFraction
-                previewFollower.advance(now + output.latencyNanos)
+                previewFollower.startUp = settings.startUp
+                previewFollower.scripted = clip == null
+                previewFollower.advance(now + output.latencyNanos).also {
+                    if (previewFollower.starts != previewStarts) {
+                        previewStarts = previewFollower.starts
+                        if (clip != null) clipAt = 0
+                    }
+                }
             } else if (settings.enabled) {
                 live
             } else {
                 EngineState.Off
             }
+            if (follower.starts != heardStarts) {
+                heardStarts = follower.starts
+                if (clip != null && settings.enabled) clipAt = 0
+            }
+            if (muted) clipAt = -1
             val volume = if (muted || !state.running) 0.0 else settings.gain
             level += (volume - level) * FADE_STEP
+            // The starter's clunk is the first thing heard, rather than faded in under.
+            if (state.starter > 0 && volume > level) level = volume
             if (volume == 0.0 && level < SILENT) level = 0.0
-            synth.render(block, state, level)
+            // The recording plays the start; the engine comes in under it as it fades out.
+            val handover = if (clip != null && clipAt >= 0) {
+                ((CLIP_HANDOVER_FRAMES - (clip.size / 2 - clipAt)).toDouble() / CLIP_HANDOVER_FRAMES).coerceIn(0.0, 1.0)
+            } else {
+                1.0
+            }
+            synth.render(block, state, level * handover)
+            if (clip != null && clipAt >= 0) clipAt = mix(clip, clipAt, block, settings.gain / DEFAULT_GAIN)
             val written = track.write(block, 0, block.size, AudioTrack.WRITE_BLOCKING)
             check(written >= 0) { "AudioTrack write failed: $written" }
             output.wrote(written / EngineSynth.CHANNELS)
 
-            if (level > 0 || synth.peak > SILENT) quietSince = now
+            if (level > 0 || synth.peak > SILENT || clipAt >= 0) quietSince = now
             if (now - quietSince > QUIET_NANOS) {
                 if (!wanted()) return
                 // Nothing to play: stop writing silence until the engine starts or a preview does.
@@ -252,7 +294,26 @@ class EngineSound(private val context: Context) {
         val now = SystemClock.elapsedRealtimeNanos()
         if (muted) return false
         if (previewing(now)) return true
-        return settings.enabled && follower.advance(now).running
+        follower.startUp = settings.startUp
+        follower.scripted = !(settings.startUp && startClip != null)
+        if (!settings.enabled) return false
+        // The recording starts playing as the starter engages, before the engine runs.
+        return follower.advance(now).running || !follower.scripted && follower.starts != heardStarts
+    }
+
+    /** Adds [clip] from frame [from] onto [block], at [gain]; where it got to, or -1 once it's over. */
+    private fun mix(clip: FloatArray, from: Int, block: FloatArray, gain: Double): Int {
+        val frames = clip.size / 2
+        var at = from
+        for (n in 0 until EngineSynth.BLOCK) {
+            if (at >= frames) return -1
+            for (side in 0 until EngineSynth.CHANNELS) {
+                val i = EngineSynth.CHANNELS * n + side
+                block[i] = SoftClip.process(block[i] + clip[2 * at + side] * gain).toFloat()
+            }
+            at++
+        }
+        return if (at >= frames) -1 else at
     }
 
     private fun playsOnPhoneSpeaker(track: AudioTrack): Boolean {
@@ -344,6 +405,13 @@ class EngineSound(private val context: Context) {
 
     private companion object {
         const val TAG = "EngineSound"
+
+        /** The start-up recording's asset, and how long its fade-out is, which the engine comes in under. */
+        const val START_CLIP = "engine/start.wav"
+        const val CLIP_HANDOVER_FRAMES = EngineSynth.SAMPLE_RATE * 2 / 5
+
+        /** The volume the recording plays at as it is; others turn it up and down by as much as the engine. */
+        val DEFAULT_GAIN = EngineSoundSettings().gain
         const val SILENT = 1e-4
         const val QUIET_NANOS = 2_000_000_000L
         const val IDLE_POLL_MILLIS = 100L
@@ -390,9 +458,30 @@ internal object PreviewRev {
         doubleArrayOf(6.5, 850.0, 0.1),
     )
 
-    val NANOS = (keys.last()[0] * 1e9).toLong()
+    /**
+     * Before the revving, with start-up on, as an adapter reads a start: the ignition on, the
+     * starter turning the engine over, then the engine catching, flaring and settling.
+     */
+    private val start = arrayOf(
+        doubleArrayOf(0.0, 0.0, 0.0),
+        doubleArrayOf(0.2, 0.0, 0.0),
+        doubleArrayOf(0.22, 230.0, 0.0),
+        doubleArrayOf(0.95, 230.0, 0.0),
+        doubleArrayOf(0.97, 1100.0, 0.6),
+        doubleArrayOf(1.3, 1500.0, 0.3),
+        doubleArrayOf(2.5, 900.0, 0.1),
+        doubleArrayOf(3.0, 850.0, 0.1),
+    )
 
-    fun at(elapsedNanos: Long): EngineState {
+    val NANOS = (keys.last()[0] * 1e9).toLong()
+    private val START_NANOS = (start.last()[0] * 1e9).toLong()
+
+    /** How long the preview lasts, with the start or without. */
+    fun nanos(withStart: Boolean) = NANOS + if (withStart) START_NANOS else 0L
+
+    fun at(elapsedNanos: Long): EngineState = at(keys, elapsedNanos)
+
+    private fun at(keys: Array<DoubleArray>, elapsedNanos: Long): EngineState {
         val seconds = elapsedNanos / 1e9
         val next = keys.indexOfFirst { it[0] > seconds }
         if (next <= 0) return if (next == 0) state(keys[0]) else EngineState.Off
@@ -407,11 +496,12 @@ internal object PreviewRev {
     private fun state(key: DoubleArray) = EngineState(key[1], key[2], overrun = false, running = true)
 
     /**
-     * The preview as an adapter would read it at [atNanos]: air flow and throttle from the load,
-     * the throttle resting where a real one does.
+     * The preview as an adapter would read it at [atNanos], [withStart] first: air flow and
+     * throttle from the load, the throttle resting where a real one does.
      */
-    fun reading(elapsedNanos: Long, atNanos: Long): EngineReading {
-        val state = at(elapsedNanos)
+    fun reading(elapsedNanos: Long, atNanos: Long, withStart: Boolean = false): EngineReading {
+        val startNanos = if (withStart) START_NANOS else 0L
+        val state = if (elapsedNanos < startNanos) at(start, elapsedNanos) else at(keys, elapsedNanos - startNanos)
         return EngineReading(
             rpm = state.rpm.toInt(),
             speedKmh = 0,

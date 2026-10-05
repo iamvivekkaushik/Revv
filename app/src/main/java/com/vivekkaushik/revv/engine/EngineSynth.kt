@@ -6,6 +6,7 @@ import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -18,6 +19,8 @@ data class EngineState(
     val overrun: Boolean,
     /** False once the engine has stopped or its data has. */
     val running: Boolean,
+    /** The starter motor turning the engine over: 1 engaged, falling to 0 as it lets go. */
+    val starter: Double = 0.0,
 ) {
     companion object {
         val Off = EngineState(rpm = 0.0, load = 0.0, overrun = false, running = false)
@@ -38,9 +41,11 @@ data class EngineState(
  * - all of it is convolved with a recorded exhaust impulse response.
  *
  * Then, unlike engine-sim, it plays in stereo, each bank's pipe on its own side; it adds the firing
- * note underneath, which the derivative thins out, and the tailpipe's hiss on top, so it sounds as
- * full as music through the same speakers; on a phone's speaker it plays the low end's overtones
- * instead; and it is compressed and rounded off under full scale so it can play as loud as music.
+ * note underneath, which the derivative thins out, as the heart of the sound, and puts the rest
+ * behind a muffler that opens with the throttle, so it idles deep and barks when blipped, as a
+ * recorded V8 does; it adds the tailpipe's hiss on top; on a phone's speaker it plays the low end's
+ * overtones instead; and it is compressed and rounded off under full scale so it can play as loud
+ * as music. Turned over by the starter, it plays the starter too.
  */
 class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
 
@@ -90,6 +95,15 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
     private val sideCut1 = Biquad.highPass(CENTRE_BELOW, sampleRate.toDouble())
     private val sideCut2 = Biquad.highPass(CENTRE_BELOW, sampleRate.toDouble())
     private val body = ButterworthLowPass(BODY_HZ, sampleRate.toDouble())
+
+    /**
+     * The muffler: what the exhaust recording adds over the firing note is held down to a low
+     * rumble at idle and opens up as the engine works, the way a big engine sounds deep and
+     * soft idling and only turns hard and bright on the throttle.
+     */
+    private val muffleMid = Muffler(sampleRate.toDouble())
+    private val muffleSide = Muffler(sampleRate.toDouble())
+    private var muffleHz = MUFFLED_HZ
     private val raspMid = Rasp(sampleRate.toDouble())
     private val raspSide = Rasp(sampleRate.toDouble())
     private val listenLeft = Biquad.highPass(SIDECHAIN_HZ, sampleRate.toDouble())
@@ -112,6 +126,27 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
     private var load = 0.0
     private var gain = 0.0
     private var overrunSeconds = 0.0
+
+    /**
+     * The starter motor: its pinion's teeth striking the flywheel's, each strike ringing its
+     * housing, its armature humming, its brushes hissing, all slowing and straining into each
+     * compression. [clunk] and [clack] are the solenoid throwing the pinion in.
+     */
+    private var starter = 0.0
+    private var meshTurns = 0.0
+    private var motorTurns = 0.0
+    private val mesh = Resonator(MESH_HZ, MESH_SECONDS, sampleRate.toDouble())
+    private val housingLow = Resonator(HOUSING_LOW_HZ, HOUSING_LOW_SECONDS, sampleRate.toDouble())
+    private val housingHigh = Resonator(HOUSING_HIGH_HZ, HOUSING_HIGH_SECONDS, sampleRate.toDouble())
+    private val strike = Biquad.highPass(STRIKE_FROM, sampleRate.toDouble())
+    private val brushesLow = Biquad.highPass(BRUSHES_FROM, sampleRate.toDouble())
+    private val brushesHigh = Biquad.lowPass(BRUSHES_TO, sampleRate.toDouble())
+    private val clunk = Resonator(CLUNK_HZ, CLUNK_SECONDS, sampleRate.toDouble())
+    private val clack = Resonator(CLACK_HZ, CLACK_SECONDS, sampleRate.toDouble())
+    private var engaged = 0.0
+    private var firstFires = 0.0
+    private var crankWobble = 0.0
+    private val mixedStarter = DoubleArray(BLOCK)
     private val mixedMid = DoubleArray(BLOCK)
     private val mixedSide = DoubleArray(BLOCK)
     private val mixedBody = DoubleArray(BLOCK)
@@ -162,6 +197,9 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
             exhaustInput = DoubleArray(exhausts.size)
             kicks = DoubleArray(exhausts.size)
             hissEnvelopes = Array(exhausts.size) { OnePoleLowPass(HISS_ENVELOPE_HZ, sampleRate.toDouble()) }
+            firstFires = layout.cylinders.first().firesAt
+            // Four cylinders snatch at the starter; twelve overlap into an even churn.
+            crankWobble = CRANK_WOBBLE / sqrt(layout.cylinders.size / 4.0)
             thumps = Array(exhausts.size) { Resonator(pipeNote(layout, it), THUMP_SECONDS, sampleRate.toDouble()) }
             bangs = Array(exhausts.size) { Resonator(pipeNote(layout, it) * BANG_NOTE, BANG_SECONDS, sampleRate.toDouble()) }
             // A pipe per bank: each comes out on its own side, with some of it on the other.
@@ -207,15 +245,24 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         // The blowdown dies away over a crank angle, so faster the higher the revs.
         val decaySeconds = max(BLOWDOWN_DEGREES / max(toRpm * 6.0, 1.0), BLOWDOWN_SECONDS)
         decayStep = exp(-1.0 / (sampleRate * decaySeconds))
+        val fromStarter = starter
+        val toStarter = state.starter.coerceIn(0.0, 1.0)
+        // The solenoid throws the pinion into the flywheel with a clunk before anything turns.
+        if (fromStarter == 0.0 && toStarter > 0) engaged = 1.0
+        // The starter letting go as the revs climb: the engine has caught, its first firings bang out of the pipes.
+        if (fromStarter >= 1.0 && toStarter < 1.0 && state.rpm > rpm) {
+            for (i in kicks.indices) kicks[i] += CATCH_BANG
+        }
 
         for (n in 0 until BLOCK) {
             val t = (n + 1).toDouble() / BLOCK
             val rpm = fromRpm + (toRpm - fromRpm) * t
             val load = fromLoad + (toLoad - fromLoad) * t
-            sample(n, rpm, load, popChance)
+            sample(n, rpm, load, popChance, fromStarter + (toStarter - fromStarter) * t)
         }
         rpm = toRpm
         load = toLoad
+        starter = toStarter
 
         convolverMid.process(mixedMid, convolvedMid)
         val crackConvolver = convolverCrack ?: error("Not configured")
@@ -249,9 +296,16 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         val bodyGain = OUTPUT_GAIN * BODY * (0.5 + bassDb / MAX_BASS_DB)
         // Jet noise grows steeply with how fast the gas leaves: a whisper at idle, a rasp flat out.
         val flow = sqrt(toLoad * toRpm / CRUISE_FLOW).coerceIn(MIN_HISS, MAX_HISS)
+        // Mostly the throttle: a big engine flaring as it catches still sounds deep, blipped it barks.
+        val effort = (toLoad * toLoad * sqrt(toRpm / OPEN_RPM)).coerceIn(0.0, 1.0)
+        muffleHz += (MUFFLED_HZ * (OPEN_HZ / MUFFLED_HZ).pow(effort) - muffleHz) * MUFFLE_STEP
+        muffleMid.open(muffleHz)
+        muffleSide.open(muffleHz)
         val raspGain = OUTPUT_GAIN * RASP * note.rasp * flow
         val thumpGain = OUTPUT_GAIN * THUMP
         val crackGain = loudness * CRACK
+        // Under the bonnet rather than out of the tailpipe: none of it goes through the exhaust.
+        val starterGain = OUTPUT_GAIN * STARTER
         // Lifting off, the engine drops back, as it does with the throttle shut, and leaves room for the pops.
         val fromDuck = duck
         val toDuck = if (state.overrun) OVERRUN_LEVEL else 1.0
@@ -267,9 +321,14 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
             val boomRight = thumpGain * (mixedThumpMid[n] - boomSide) + crack
             thumpLeft[n] = if (small) thumpCutLeft.process(boomLeft) else boomLeft
             thumpRight[n] = if (small) thumpCutRight.process(boomRight) else boomRight
-            val mid = loudness * convolvedMid[n] + bodyGain * body.process(mixedBody[n]) + raspGain * raspMid.process(mixedRaspMid[n])
+            val mid = loudness * muffleMid.process(convolvedMid[n]) + bodyGain * body.process(mixedBody[n]) + raspGain * raspMid.process(mixedRaspMid[n]) +
+                starterGain * mixedStarter[n]
             val sideRasp = raspGain * raspSide.process(mixedRaspSide[n])
-            val side = if (spread > 0) spread * (loudness * sideCut2.process(sideCut1.process(convolvedSide[n] + convolvedWidth[n])) + sideRasp) else 0.0
+            val side = if (spread > 0) {
+                spread * (loudness * sideCut2.process(sideCut1.process(muffleSide.process(convolvedSide[n] + convolvedWidth[n]))) + sideRasp)
+            } else {
+                0.0
+            }
             var x = mid + side
             var y = mid - side
             if (small) {
@@ -305,11 +364,17 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         peak = loudest
     }
 
-    /** Sample [n] of the exhausts, panned, before the impulse response. */
-    private fun sample(n: Int, rpm: Double, load: Double, popChance: Double) {
+    /** Sample [n] of the exhausts, panned, before the impulse response, and of the [starter] motor. */
+    private fun sample(n: Int, engineRpm: Double, load: Double, popChance: Double, starter: Double) {
         exhaustInput.fill(0.0)
         var crack = 0.0
         val roughness = grit.process(2 * noise.next() - 1)
+        // Turned over by the starter, the engine slows into each compression and is flung out of it.
+        val compression = if (starter > 0) cos(2 * PI * (crank - firstFires) * layout.cylinders.size / CYCLE) else 0.0
+        val rpm = engineRpm * (1 - crankWobble * starter * compression)
+        mixedStarter[n] = starterSample(rpm, starter, compression)
+        // Nothing burns yet: the cylinders only breathe out what they took in.
+        val fired = 1 - UNFIRED * starter
         if (rpm > MIN_RPM) {
             val degreesPerSecond = rpm * 6.0
             crank += degreesPerSecond / sampleRate
@@ -340,7 +405,7 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
                     voice.popDecay *= popDecayStep
                     voice.popLeft--
                 }
-                exhaustInput[voice.exhaust] += pressure * voice.weight * spinUp
+                exhaustInput[voice.exhaust] += pressure * voice.weight * spinUp * fired
             }
         }
         var l = 0.0
@@ -374,6 +439,36 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         mixedCrack[n] = crackEdge.process(crack)
         mixedThumpMid[n] = (boomLeft + boomRight) / 2
         mixedThumpSide[n] = (boomLeft - boomRight) / 2
+    }
+
+    /**
+     * The starter motor turning the engine at [rpm], [level] engaged, straining as much as
+     * [compression] says: a grind of tooth strikes, each a little different, ringing the housing.
+     */
+    private fun starterSample(rpm: Double, level: Double, compression: Double): Double {
+        val kick = engaged
+        engaged = 0.0
+        val thrown = CLUNK * clunk.process(kick) + CLACK * clack.process(kick)
+        // Pushing a piston up against its compression, the motor draws more current and grinds harder.
+        val drive = level * (1 + STRAIN * compression)
+        var tooth = 0.0
+        if (level > 0) {
+            val teeth = rpm / 60 * RING_TEETH / sampleRate
+            meshTurns += teeth
+            if (meshTurns >= 1) {
+                meshTurns -= 1
+                tooth = drive * (1 + TOOTH_SPREAD * (2 * noise.next() - 1))
+            }
+            motorTurns = turn(motorTurns + teeth * MOTOR_PER_TOOTH)
+        }
+        // The housing keeps ringing after the starter lets go, so it always runs.
+        val grind = MESH * mesh.process(tooth) + housingLow.process(tooth) + HOUSING_HIGH * housingHigh.process(tooth) +
+            STRIKE * strike.process(tooth)
+        if (level <= 0) return thrown + GRIND * grind
+        val armature = 2 * PI * motorTurns
+        val hum = sin(armature) + sin(3 * armature) / 3
+        val brushes = brushesHigh.process(brushesLow.process(2 * noise.next() - 1))
+        return thrown + GRIND * grind + drive * (HUM * hum + BRUSHES * brushes)
     }
 
     /**
@@ -451,7 +546,8 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
     /** One side's filters after the convolution, for the car's speakers or a phone's. */
     private class Channel(private val sampleRate: Double) {
         private val shelf = Biquad.lowShelf(BASS_CORNER, 0.0, sampleRate)
-        private val rumble = Biquad.highPass(RUMBLE_CORNER, sampleRate)
+        private val rumble1 = Biquad.highPass(RUMBLE_CORNER, sampleRate)
+        private val rumble2 = Biquad.highPass(RUMBLE_CORNER, sampleRate)
         private val speaker1 = Biquad.highPass(SMALL_SPEAKER_CORNER, sampleRate)
         private val speaker2 = Biquad.highPass(SMALL_SPEAKER_CORNER, sampleRate)
 
@@ -459,7 +555,7 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
             shelf.lowShelf(BASS_CORNER, db, sampleRate)
         }
 
-        fun full(x: Double) = rumble.process(shelf.process(x))
+        fun full(x: Double) = rumble2.process(rumble1.process(shelf.process(x)))
 
         /** Without what a phone's speaker can't play, so it doesn't use up the headroom. */
         fun small(x: Double) = speaker2.process(speaker1.process(x))
@@ -476,6 +572,19 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
             previous = sample
             return slope * CRACK_EDGE + sample * (1 - CRACK_EDGE)
         }
+    }
+
+    /** Two low-passes in a row, steep enough that what's above the corner falls well away; moved a block at a time. */
+    private class Muffler(private val sampleRate: Double) {
+        private val first = Biquad.lowPass(MUFFLED_HZ, sampleRate)
+        private val second = Biquad.lowPass(MUFFLED_HZ, sampleRate)
+
+        fun open(hz: Double) {
+            first.lowPass(hz, sampleRate)
+            second.lowPass(hz, sampleRate)
+        }
+
+        fun process(x: Double) = second.process(first.process(x))
     }
 
     /** The tailpipe's hiss: noise as loud as the pulses pushing it, in the band where it's heard. */
@@ -597,8 +706,21 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         /** Where Bass lifts the low end, below the boom of the exhaust's resonances. */
         private const val BASS_CORNER = 100.0
 
-        /** Below what car speakers play, and where a boost would only eat headroom. */
-        private const val RUMBLE_CORNER = 35.0
+        /** Below what car speakers play, and where a boost would only eat headroom or muddy the note. */
+        private const val RUMBLE_CORNER = 45.0
+
+        /**
+         * The muffler's corner idling, and wide open at [OPEN_RPM] and above; between, it opens
+         * with the load squared and the square root of the revs. A V8 starting and revving,
+         * recorded, has its idle and the flare as it catches almost all below 180 Hz, the rest
+         * 20-30 dB down, and comes up 6-10 dB above 180 Hz when blipped.
+         */
+        private const val MUFFLED_HZ = 200.0
+        private const val OPEN_HZ = 4000.0
+        private const val OPEN_RPM = 4000.0
+
+        /** Per block: opens and closes over about a tenth of a second. */
+        private const val MUFFLE_STEP = 0.06
 
         /** Below what a phone's speaker plays. */
         private const val SMALL_SPEAKER_CORNER = 300.0
@@ -634,10 +756,10 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
          * half this to one and a half times.
          */
         private const val BODY = 50.0
-        private const val BODY_HZ = 120.0
+        private const val BODY_HZ = 150.0
 
         /** How loud the tailpipe's hiss plays cruising, between [RASP_FROM] and [RASP_TO]. */
-        private const val RASP = 68.0
+        private const val RASP = 50.0
 
         /** Load times rpm cruising, where the hiss is [RASP]; it follows the square root, within these. */
         private const val CRUISE_FLOW = 600.0
@@ -647,7 +769,51 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
         private const val HISS_ENVELOPE_HZ = 300.0
         private const val MAX_HISS = 2.0
         private const val RASP_FROM = 1000.0
-        private const val RASP_TO = 7000.0
+        private const val RASP_TO = 5000.0
+
+        /**
+         * How loud the starter plays, its parts, and how much it slows and strains into each
+         * compression of a four-cylinder. Its pinion strikes a flywheel of [RING_TEETH], each
+         * strike ringing the housing at [HOUSING_LOW_HZ] and [HOUSING_HIGH_HZ], and its armature
+         * turns at [MOTOR_PER_TOOTH] of the strikes. A V8 recorded starting ground mostly between
+         * 0.7 and 5.6 kHz, peaking near 1 and 2.4 kHz, 10-14 dB(A) over its idle and pulsing with
+         * every compression.
+         */
+        private const val STARTER = 1.3
+        private const val GRIND = 1.0
+        private const val MESH = 0.6
+        private const val MESH_HZ = 600.0
+        private const val MESH_SECONDS = 0.003
+        private const val HOUSING_LOW_HZ = 1000.0
+        private const val HOUSING_LOW_SECONDS = 0.006
+        private const val HOUSING_HIGH_HZ = 2400.0
+        private const val HOUSING_HIGH_SECONDS = 0.004
+        private const val HOUSING_HIGH = 1.2
+        private const val STRIKE = 0.8
+        private const val STRIKE_FROM = 3000.0
+        private const val TOOTH_SPREAD = 0.4
+        private const val HUM = 0.1
+        private const val BRUSHES = 2.0
+        private const val STRAIN = 0.9
+        private const val CRANK_WOBBLE = 0.4
+
+        /** How much quieter the pulses are turned over by the starter, before anything fires. */
+        private const val UNFIRED = 0.7
+        private const val RING_TEETH = 130.0
+        private const val MOTOR_PER_TOOTH = 0.4
+        private const val BRUSHES_FROM = 1000.0
+        private const val BRUSHES_TO = 8000.0
+
+        /** How hard the first firings bang through the pipes as the engine catches, as a pop does. */
+        private const val CATCH_BANG = 2.5
+
+        /** The solenoid throwing the pinion in: a thud, and the metal's clack on top. */
+        private const val CLUNK = 1.5
+        private const val CLUNK_HZ = 95.0
+        private const val CLUNK_SECONDS = 0.06
+        private const val CLACK = 0.6
+        private const val CLACK_HZ = 2300.0
+        private const val CLACK_SECONDS = 0.012
 
         /** The compressor listens above this, so the low end doesn't turn the rest down. */
         private const val SIDECHAIN_HZ = 120.0
@@ -668,6 +834,9 @@ class EngineSynth(private val sampleRate: Int = SAMPLE_RATE, seed: Int = 1) {
                 crack = Convolver(impulse, BLOCK),
             )
         }
+
+        /** A fraction of a turn moved on by less than one, kept under one. */
+        private fun turn(turns: Double) = if (turns >= 1) turns - 1 else turns
 
         /** Into 0 until 720°; no floor(), which is a slow native call in debug builds. */
         private fun wrap(degrees: Double): Double {

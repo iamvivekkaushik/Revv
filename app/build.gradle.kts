@@ -52,6 +52,9 @@ android {
     buildFeatures {
         compose = true
     }
+    // Licensed recordings, such as the engine's start-up, are kept out of the public repo in
+    // .private/assets and built in when they're there.
+    sourceSets.getByName("main").assets.directories.add(rootProject.file(".private/assets").path)
 }
 
 dependencies {

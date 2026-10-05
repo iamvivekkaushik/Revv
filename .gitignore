@@ -24,3 +24,6 @@ local.properties
 # /brag launch-video renders
 brag-output/
 brag-output-*/
+
+# Licensed media kept out of the public repo
+/.private/

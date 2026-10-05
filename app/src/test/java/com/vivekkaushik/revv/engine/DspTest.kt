@@ -169,4 +169,33 @@ class DspTest {
             write(data.array())
         }.toByteArray()
     }
+    @Test
+    fun aClipIsReadAsStereoAtTheEnginesRate() {
+        // Half a second of mono at 22,050 Hz, rising from silence to half scale.
+        val frames = 11_025
+        val samples = ShortArray(frames) { (it * 16_384L / frames).toInt().toShort() }
+        val clip = ClipWav.read(wav(samples, channels = 1, rate = 22_050))
+        assertEquals(2 * frames * 2, clip.size)
+        // Both sides play the one channel, and the rise survives the resampling.
+        assertEquals(clip[2000], clip[2001], 0f)
+        assertEquals(0.25f, clip[clip.size / 2], 0.01f)
+    }
+
+    @Test
+    fun aStereoClipKeepsItsSides() {
+        val samples = ShortArray(200) { if (it % 2 == 0) 8_192 else -8_192 }
+        val clip = ClipWav.read(wav(samples, channels = 2, rate = EngineSynth.SAMPLE_RATE))
+        assertEquals(200, clip.size)
+        assertEquals(0.25f, clip[10], 0.001f)
+        assertEquals(-0.25f, clip[11], 0.001f)
+    }
+
+    private fun wav(samples: ShortArray, channels: Int, rate: Int): ByteArray {
+        val out = java.nio.ByteBuffer.allocate(44 + samples.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        out.put("RIFF".toByteArray()).putInt(36 + samples.size * 2).put("WAVEfmt ".toByteArray())
+        out.putInt(16).putShort(1).putShort(channels.toShort()).putInt(rate).putInt(rate * 2 * channels)
+        out.putShort((2 * channels).toShort()).putShort(16).put("data".toByteArray()).putInt(samples.size * 2)
+        samples.forEach { out.putShort(it) }
+        return out.array()
+    }
 }

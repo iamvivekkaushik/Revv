@@ -112,6 +112,173 @@ class EngineFollowerTest {
         assertTrue("still climbing: ${before.rpm} to ${after.rpm}", after.rpm > before.rpm)
     }
 
+    @Test
+    fun startingIsHeard() {
+        // Ignition on, the starter for 0.8 s, then the engine caught and idling fast.
+        val stopped = drive(seconds = 1.0) { reading(rpm = 0, at = it) }
+        assertFalse(stopped.running)
+        val cranking = drive(seconds = 0.8, start = 1.0) { reading(rpm = 230, at = it) }
+        assertTrue(cranking.running)
+        assertEquals(1.0, cranking.starter, 0.0)
+        assertEquals(230.0, cranking.rpm, 20.0)
+        var highest = 0.0
+        var starterAfter = 1.0
+        val caught = drive(seconds = 3.0, start = 1.8, each = { t, state ->
+            if (t < 2.4) highest = maxOf(highest, state.rpm)
+            if (t > 2.1) starterAfter = minOf(starterAfter, state.starter)
+        }) { reading(rpm = 1100, at = it) }
+        assertTrue("flares to $highest", highest > 1500)
+        assertEquals("lets go of the starter", 0.0, starterAfter, 0.0)
+        assertTrue(caught.running)
+        assertEquals("settles where the car idles", 1100.0, caught.rpm, 30.0)
+    }
+
+    @Test
+    fun aStartBetweenTwoReadingsStillHasTheStarter() {
+        drive(seconds = 1.0) { reading(rpm = 0, at = it) }
+        var starter = 0.0
+        var highest = 0.0
+        drive(seconds = 2.0, start = 1.0, each = { _, state ->
+            starter = maxOf(starter, state.starter)
+            highest = maxOf(highest, state.rpm)
+        }) { reading(rpm = 900, at = it) }
+        assertEquals(1.0, starter, 0.0)
+        assertTrue("flares to $highest", highest > 1400)
+    }
+
+    @Test
+    fun anEngineAlreadyRunningIsNotStarted() {
+        var starter = 0.0
+        var highest = 0.0
+        drive(seconds = 3.0, each = { _, state ->
+            starter = maxOf(starter, state.starter)
+            highest = maxOf(highest, state.rpm)
+        }) { reading(rpm = 900, at = it) }
+        assertEquals(0.0, starter, 0.0)
+        assertTrue("no flare: $highest", highest < 1000)
+    }
+
+    @Test
+    fun startStopRestartingAtTheLightsIsNotAStart() {
+        drive(seconds = 2.0) { reading(rpm = 900, at = it) }
+        drive(seconds = 20.0, start = 2.0) { reading(rpm = 0, at = it) }
+        var starter = 0.0
+        drive(seconds = 2.0, start = 22.0, each = { _, state -> starter = maxOf(starter, state.starter) }) {
+            reading(rpm = if (it < 22.4) 230 else 900, at = it)
+        }
+        assertEquals(0.0, starter, 0.0)
+    }
+
+    @Test
+    fun startingAgainAfterALongStopIsAStart() {
+        drive(seconds = 2.0) { reading(rpm = 900, at = it) }
+        drive(seconds = 130.0, start = 2.0) { reading(rpm = 0, at = it) }
+        var starter = 0.0
+        drive(seconds = 2.0, start = 132.0, each = { _, state -> starter = maxOf(starter, state.starter) }) {
+            reading(rpm = if (it < 132.6) 230 else 900, at = it)
+        }
+        assertEquals(1.0, starter, 0.0)
+    }
+
+    @Test
+    fun aStallIsNotAStart() {
+        drive(seconds = 2.0) { reading(rpm = 900, at = it) }
+        var starter = 0.0
+        val stalled = drive(seconds = 2.0, start = 2.0, each = { _, state -> starter = maxOf(starter, state.starter) }) {
+            reading(rpm = if (it < 2.3) 300 else 0, at = it)
+        }
+        assertEquals(0.0, starter, 0.0)
+        assertFalse(stalled.running)
+    }
+
+    @Test
+    fun aHybridsEngineStartingOnTheMoveIsNotAStart() {
+        drive(seconds = 1.0) { reading(rpm = 0, speed = 40, at = it) }
+        var starter = 0.0
+        drive(seconds = 2.0, start = 1.0, each = { _, state -> starter = maxOf(starter, state.starter) }) {
+            reading(rpm = if (it < 1.4) 300 else 1400, speed = 40, at = it)
+        }
+        assertEquals(0.0, starter, 0.0)
+    }
+
+    @Test
+    fun aStartThatDoesNotCatchLetsGo() {
+        drive(seconds = 1.0) { reading(rpm = 0, at = it) }
+        drive(seconds = 1.0, start = 1.0) { reading(rpm = 230, at = it) }
+        val gaveUp = drive(seconds = 1.0, start = 2.0) { reading(rpm = 0, at = it) }
+        assertEquals(0.0, gaveUp.starter, 0.0)
+        assertFalse(gaveUp.running)
+    }
+
+    @Test
+    fun withStartUpOffTheStarterIsNeverHeard() {
+        follower.startUp = false
+        drive(seconds = 1.0) { reading(rpm = 0, at = it) }
+        var starter = 0.0
+        var highest = 0.0
+        drive(seconds = 3.0, start = 1.0, each = { _, state ->
+            starter = maxOf(starter, state.starter)
+            highest = maxOf(highest, state.rpm)
+        }) { reading(rpm = if (it < 1.8) 230 else 900, at = it) }
+        assertEquals(0.0, starter, 0.0)
+        // Only the jump between readings carried on a little, as without start-up.
+        assertTrue("no flare: $highest", highest < 1200)
+    }
+
+    @Test
+    fun eachStartIsCountedOnce() {
+        drive(seconds = 1.0) { reading(rpm = 0, at = it) }
+        drive(seconds = 0.8, start = 1.0) { reading(rpm = 230, at = it) }
+        assertEquals(1, follower.starts)
+        drive(seconds = 2.0, start = 1.8) { reading(rpm = 900, at = it) }
+        assertEquals(1, follower.starts)
+    }
+
+    @Test
+    fun withARecordingPlayingTheStartTheEngineIsOnlyFollowedOnceItRuns() {
+        follower.scripted = false
+        drive(seconds = 1.0) { reading(rpm = 0, at = it) }
+        var starter = 0.0
+        var heardTurning = false
+        drive(seconds = 0.8, start = 1.0, each = { _, state ->
+            starter = maxOf(starter, state.starter)
+            heardTurning = heardTurning || state.running
+        }) { reading(rpm = 230, at = it) }
+        assertEquals("the recording's start", 1, follower.starts)
+        assertEquals(0.0, starter, 0.0)
+        assertFalse("silent while it turns over", heardTurning)
+        var highest = 0.0
+        val running = drive(seconds = 2.0, start = 1.8, each = { _, state -> highest = maxOf(highest, state.rpm) }) { reading(rpm = 900, at = it) }
+        assertTrue(running.running)
+        assertTrue("no flare of its own: $highest", highest < 1200)
+    }
+
+    @Test
+    fun aStartBetweenTwoReadingsIsCountedToo() {
+        follower.scripted = false
+        drive(seconds = 1.0) { reading(rpm = 0, at = it) }
+        drive(seconds = 1.0, start = 1.0) { reading(rpm = 900, at = it) }
+        assertEquals(1, follower.starts)
+    }
+
+    @Test
+    fun thePreviewStartsTheEngine() {
+        var starter = 0.0
+        var highest = 0.0
+        val preview = EngineFollower()
+        val step = 1_000_000_000L / STEPS_PER_SECOND
+        var t = 0L
+        while (t < 3_000_000_000L) {
+            if (t % 250_000_000L < step) preview.report(PreviewRev.reading(t, nanos(t / 1e9), withStart = true))
+            val state = preview.advance(nanos(t / 1e9))
+            starter = maxOf(starter, state.starter)
+            if (t > 1_000_000_000L) highest = maxOf(highest, state.rpm)
+            t += step
+        }
+        assertEquals(1.0, starter, 0.0)
+        assertTrue("flares to $highest", highest > 1400)
+    }
+
     /**
      * Advances the follower for [seconds] from [start], reporting a new reading five times a
      * second, and returns the last state.

@@ -55,6 +55,7 @@ data class HmiSettings(
             crackle = isOn(SettingsStore.ENGINE_CRACKLE),
             surround = isOn(SettingsStore.ENGINE_SURROUND),
             smoothing = level(SettingsStore.ENGINE_SMOOTHING),
+            startUp = isOn(SettingsStore.ENGINE_START),
         )
 
     val showFuelWidget: Boolean get() = isOn(SettingsStore.HOME_FUEL)
@@ -211,6 +212,8 @@ class SettingsStore(context: Context) {
         const val ENGINE_SURROUND = "engineSurround"
         /** How the revs glide between the car's readings. */
         const val ENGINE_SMOOTHING = "engineSmoothing"
+        /** The starter and the engine catching when the car starts. */
+        const val ENGINE_START = "engineStart"
         const val CAMERA_ROTATION = "cameraRotation"
         const val HOME_PHONE = "homePhone"
         const val HOME_MEDIA = "homeMedia"
@@ -280,6 +283,7 @@ class SettingsStore(context: Context) {
             ENGINE_SOUND to false,
             ENGINE_CRACKLE to true,
             ENGINE_SURROUND to true,
+            ENGINE_START to true,
             HOME_PHONE to true,
             HOME_MEDIA to true,
             HOME_MEDIA_SWIPE to false,

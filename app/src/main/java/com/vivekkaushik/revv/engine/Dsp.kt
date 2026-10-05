@@ -420,6 +420,48 @@ internal class Convolver(impulse: FloatArray, private val block: Int) {
     }
 }
 
+/** Reading a recording to play as it is, such as the start-up: a 16-bit PCM WAV file, mono or stereo. */
+internal object ClipWav {
+    /** Left and right interleaved, from -1 to 1, at [EngineSynth.SAMPLE_RATE]. */
+    fun read(wav: ByteArray): FloatArray {
+        val buffer = ByteBuffer.wrap(wav).order(ByteOrder.LITTLE_ENDIAN)
+        require(wav.size >= 12 && String(wav, 0, 4, Charsets.US_ASCII) == "RIFF") { "Not a WAV file" }
+        var channels = 1
+        var rate = EngineSynth.SAMPLE_RATE
+        var bits = 16
+        var position = 12
+        while (position + 8 <= wav.size) {
+            val id = String(wav, position, 4, Charsets.US_ASCII)
+            val length = buffer.getInt(position + 4)
+            val body = position + 8
+            when (id) {
+                "fmt " -> {
+                    channels = buffer.getShort(body + 2).toInt()
+                    rate = buffer.getInt(body + 4)
+                    bits = buffer.getShort(body + 14).toInt()
+                }
+                "data" -> {
+                    require(bits == 16) { "Only 16-bit WAV files are supported" }
+                    require(channels in 1..2) { "Only mono or stereo WAV files are supported" }
+                    val frames = min(length, wav.size - body) / (2 * channels)
+                    fun at(frame: Int, side: Int) = buffer.getShort(body + 2 * (frame * channels + min(side, channels - 1))) / 32_768f
+                    // Resampled to the engine's rate, linearly: it's only ever a couple of seconds of noise.
+                    val out = max((frames.toLong() * EngineSynth.SAMPLE_RATE / rate).toInt(), 1)
+                    return FloatArray(out * 2) { i ->
+                        val t = (i / 2).toDouble() * rate / EngineSynth.SAMPLE_RATE
+                        val f = min(t.toInt(), frames - 1)
+                        val a = at(f, i % 2)
+                        val b = at(min(f + 1, frames - 1), i % 2)
+                        (a + (b - a) * (t - f)).toFloat()
+                    }
+                }
+            }
+            position = body + length + (length and 1)
+        }
+        throw IllegalArgumentException("No audio in the WAV file")
+    }
+}
+
 /** Reading engine-sim's impulse responses: 16-bit PCM WAV files. */
 internal object ImpulseResponse {
     /** engine-sim's limit: anything later than about 0.23 s is room reverb rather than exhaust. */

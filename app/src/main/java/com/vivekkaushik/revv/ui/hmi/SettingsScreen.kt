@@ -1362,7 +1362,17 @@ private fun engineSoundRows(settings: HmiSettings, actions: HmiActions): List<Se
         ),
         ToggleRow(SettingsStore.ENGINE_SURROUND, "Surround", "Each bank's exhaust from its own side and the echoes around you; off plays the same from every speaker"),
         ToggleRow(SettingsStore.ENGINE_CRACKLE, "Pops on lift-off", "Crackles from the exhaust when you lift off at high revs"),
-        ActionRow("Preview", "Hear the chosen engine rev, parked", "REV", actions::previewEngineSound),
+        ToggleRow(
+            SettingsStore.ENGINE_START,
+            "Start-up",
+            "The starter and the engine catching as the car starts; needs the adapter reading the car with the ignition on before you start",
+        ),
+        ActionRow(
+            "Preview",
+            if (engine.startUp) "Hear the chosen engine start and rev, parked" else "Hear the chosen engine rev, parked",
+            "REV",
+            actions::previewEngineSound,
+        ),
     )
 }
 

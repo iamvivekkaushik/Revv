@@ -53,7 +53,7 @@ class EngineSynthTest {
         val idle = EngineState(850.0, 0.1, overrun = false, running = true)
         val flat = render(EngineLayout.V8_CROSS_PLANE, ExhaustNote.SPORT, idle, seconds = 1.5, bass = 0.0)
         val boosted = render(EngineLayout.V8_CROSS_PLANE, ExhaustNote.SPORT, idle, seconds = 1.5, bass = 12.0)
-        val gain = 20 * log10(lowShare(mono(boosted)) / lowShare(mono(flat)))
+        val gain = 20 * log10(rms(lowPassed(mono(boosted), 100.0)) / rms(lowPassed(mono(flat), 100.0)))
         assertTrue("low end up $gain dB", gain > 6)
     }
 
@@ -79,9 +79,10 @@ class EngineSynthTest {
         val cruise = EngineState(2500.0, 0.5, overrun = false, running = true)
         for (layout in listOf(EngineLayout.V8_CROSS_PLANE, EngineLayout.INLINE_4)) {
             val stereo = render(layout, ExhaustNote.SPORT, cruise, seconds = 1.5)
-            val apart = correlation(channel(stereo, 0), channel(stereo, 1))
+            // Above where the low end is kept in the middle: a V8's banks are their own pipes; even
+            // one pipe's echoes part a little.
+            val apart = correlation(highPassed(channel(stereo, 0), 300.0), highPassed(channel(stereo, 1), 300.0))
             val low = correlation(lowPassed(channel(stereo, 0), 80.0), lowPassed(channel(stereo, 1), 80.0))
-            // A V8's banks are their own pipes; even one pipe's echoes part a little.
             assertTrue("$layout sides apart: $apart", apart < if (layout == EngineLayout.V8_CROSS_PLANE) 0.8 else 0.97)
             assertTrue("$layout low end together: $low", low > 0.95)
         }
@@ -109,7 +110,7 @@ class EngineSynthTest {
             if (it >= 200) block.forEach { sample -> out += sample }
         }
         val stereo = out.toFloatArray()
-        val apart = correlation(channel(stereo, 0), channel(stereo, 1))
+        val apart = correlation(highPassed(channel(stereo, 0), 300.0), highPassed(channel(stereo, 1), 300.0))
         assertTrue("banks on their own sides: $apart", apart < 0.8)
     }
 
@@ -146,7 +147,8 @@ class EngineSynthTest {
 
     /**
      * Writes WAVs to listen to, with REVV_ENGINE_RENDER set to a folder: a rev for every engine and
-     * exhaust, at the default volume or REVV_ENGINE_VOLUME's (0 to 30).
+     * exhaust, and the preview's start read as the car would be, at the default volume or
+     * REVV_ENGINE_VOLUME's (0 to 30).
      */
     @Test
     fun renderRevs() {
@@ -164,7 +166,82 @@ class EngineSynthTest {
                 elapsed += EngineSynth.BLOCK * 1_000_000_000L / EngineSynth.SAMPLE_RATE
             }
             File(folder, "${layout.name.lowercase()}-${note.name.lowercase()}.wav").writeBytes(wav(samples))
+            File(folder, "start-${layout.name.lowercase()}-${note.name.lowercase()}.wav").writeBytes(wav(start(layout, note, volume.gain)))
         }
+    }
+
+    /** The preview's start and first seconds of idle, through the follower as the car's readings would go. */
+    private fun start(layout: EngineLayout, note: ExhaustNote, gain: Double): List<Float> {
+        val synth = synth(layout, note)
+        val follower = EngineFollower()
+        val block = FloatArray(EngineSynth.BLOCK * EngineSynth.CHANNELS)
+        val samples = ArrayList<Float>()
+        val blockNanos = EngineSynth.BLOCK * 1_000_000_000L / EngineSynth.SAMPLE_RATE
+        var elapsed = 0L
+        var readAt = -1L
+        var level = 0.0
+        while (elapsed < 4_000_000_000L) {
+            if (readAt < 0 || elapsed - readAt >= 250_000_000L) {
+                readAt = elapsed
+                follower.report(PreviewRev.reading(elapsed, 1_000_000_000L + elapsed, withStart = true))
+            }
+            val state = follower.advance(1_000_000_000L + elapsed)
+            // As EngineSound fades it in and out.
+            val volume = if (state.running) gain else 0.0
+            level += (volume - level) * 0.04
+            if (state.starter > 0 && volume > level) level = volume
+            synth.render(block, state, level)
+            block.forEach { samples += it }
+            elapsed += blockNanos
+        }
+        return samples
+    }
+
+    @Test
+    fun theStarterIsHeardTurningTheEngineOver() {
+        val turning = EngineState(220.0, 0.0, overrun = false, running = true)
+        for (layout in EngineLayout.entries) {
+            val starter = render(layout, ExhaustNote.SPORT, turning.copy(starter = 1.0), seconds = 1.5)
+            val without = render(layout, ExhaustNote.SPORT, turning, seconds = 1.5)
+            assertTrue("$layout finite and in range", starter.all { it.isFinite() } && peak(starter) < 1f)
+            // Over the idle it's about to become: a recorded V8's starter ground 10-14 dB(A) over its idle.
+            val idle = render(layout, ExhaustNote.SPORT, EngineState(850.0, 0.1, overrun = false, running = true), seconds = 1.5)
+            val level = aWeightedDb(mono(starter)) - aWeightedDb(mono(idle))
+            assertTrue("$layout turning over $level dB(A) against idle", level in 6.0..18.0)
+            // Its gears whine and its brushes hiss above the engine's chuffing.
+            val whine = rms(band(mono(starter), 1000.0, 4000.0))
+            val chuffing = rms(band(mono(without), 1000.0, 4000.0))
+            assertTrue("$layout whines: $whine against $chuffing", whine > 3 * chuffing)
+        }
+    }
+
+    @Test
+    fun theStarterSnatchesAtEachCompression() {
+        // Four cylinders turned at 220 rpm come up against a compression 7 times a second.
+        val turning = mono(render(EngineLayout.INLINE_4, ExhaustNote.STOCK, EngineState(220.0, 0.0, overrun = false, running = true, starter = 1.0), seconds = 2.0))
+        val whine = band(turning, 300.0, 5000.0)
+        val frame = EngineSynth.SAMPLE_RATE / 50
+        val levels = (0 until whine.size / frame).map { i -> rms(whine.copyOfRange(i * frame, (i + 1) * frame)) }
+        val mean = levels.average()
+        val spread = sqrt(levels.sumOf { (it - mean) * (it - mean) } / levels.size)
+        assertTrue("rises and falls with compressions: ${spread / mean}", spread / mean > 0.15)
+    }
+
+    @Test
+    fun theSolenoidClunksAsTheStarterEngages() {
+        fun firstMoments(starter: Double): FloatArray {
+            val synth = synth(EngineLayout.INLINE_4, ExhaustNote.STOCK)
+            val block = FloatArray(EngineSynth.BLOCK * EngineSynth.CHANNELS)
+            val out = ArrayList<Float>()
+            synth.render(block, EngineState.Off, 1.0)
+            repeat(8) {
+                synth.render(block, EngineState(20.0, 0.0, overrun = false, running = true, starter = starter), 1.0)
+                block.forEach { out += it }
+            }
+            return out.toFloatArray()
+        }
+        val clunk = peak(firstMoments(1.0))
+        assertTrue("a clunk: $clunk against ${peak(firstMoments(0.0))}", clunk > 0.05 && clunk > 10 * peak(firstMoments(0.0)))
     }
 
     private fun strongestPeriod(layout: EngineLayout, rpm: Double): Double {
@@ -237,7 +314,29 @@ class EngineSynthTest {
         return FloatArray(samples.size) { lowPass.process(highPass[1].process(highPass[0].process(samples[it].toDouble()))).toFloat() }
     }
 
-    private fun lowShare(samples: FloatArray) = rms(lowPassed(samples, 100.0)) / rms(samples)
+    /** How loud [samples] are to the ear, A-weighted, in decibels. */
+    private fun aWeightedDb(samples: FloatArray): Double {
+        var n = 1
+        while (n * 2 <= samples.size) n *= 2
+        val re = DoubleArray(n) { samples[it].toDouble() }
+        val im = DoubleArray(n)
+        Fft(n).transform(re, im, inverse = false)
+        val hz = EngineSynth.SAMPLE_RATE.toDouble() / n
+        var power = 0.0
+        for (k in 1 until n / 2) {
+            val f2 = (k * hz) * (k * hz)
+            val a = 12194.0 * 12194.0 * f2 * f2 /
+                ((f2 + 20.6 * 20.6) * sqrt((f2 + 107.7 * 107.7) * (f2 + 737.9 * 737.9)) * (f2 + 12194.0 * 12194.0))
+            power += (re[k] * re[k] + im[k] * im[k]) * a * a
+        }
+        return 10 * log10(power / n + 1e-30)
+    }
+
+    private fun highPassed(samples: FloatArray, hz: Double): FloatArray {
+        val first = Biquad.highPass(hz, EngineSynth.SAMPLE_RATE.toDouble())
+        val second = Biquad.highPass(hz, EngineSynth.SAMPLE_RATE.toDouble())
+        return FloatArray(samples.size) { second.process(first.process(samples[it].toDouble())).toFloat() }
+    }
 
     /** Without the deep bass, which the ear hardly counts in how loud something is, as the compressor listens. */
     private fun heard(samples: FloatArray): FloatArray {
