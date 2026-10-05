@@ -1,0 +1,3 @@
+• Engine sound: more bass, with a Bass setting to suit your speakers, and loud enough to hold its own against music. The top of Engine volume pushes it harder still.
+• Surround: on engines with a pipe per bank, each bank's exhaust plays from its own side, with the echoes around you. Turn it off in Settings › Sound.
+• On a phone's own speaker the engine plays louder, its rumble turned into overtones the speaker can play.
