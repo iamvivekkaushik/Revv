@@ -33,6 +33,8 @@ Revv ships no Apple accessory identity and the repository contains none. Drivers
 
 ## BYD HUD maneuver icons
 
-Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
-
-The maneuver PNGs under `carplay/shared/src/main/assets/byd-hud-icons` were imported from BYDMate. Its PolyForm Noncommercial 1.0.0 terms and required notice are included alongside the assets. These files are separate from the project code license; upstream describes them as donor assets and their original provenance is not independently established. The validated DiLink5.1 windshield path uses factory turn codes rather than these images.
+DiPlay ships maneuver PNGs for BYD windshield head-up displays imported from BYDMate (Copyright AndyShaman,
+https://github.com/AndyShaman/BYDMate), under the PolyForm Noncommercial 1.0.0 license. Revv does not carry
+them: they were the one non-free piece of the stack, and the validated DiLink 5.1 windshield path uses the
+car's own turn codes rather than these images. Without them the HUD bridge sends no picture for the
+manoeuvres that have no arrow (roundabouts, the destination); everything else is unchanged.

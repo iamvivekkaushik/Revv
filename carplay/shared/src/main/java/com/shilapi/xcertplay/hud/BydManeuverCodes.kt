@@ -1,8 +1,8 @@
 package com.shilapi.xcertplay.hud
 
 /**
- * Apple iAP2 RouteGuidanceManeuverType -> Gaode maneuver code, the vocabulary of the BYD HUD
- * icon set (assets/byd-hud-icons/0x<code>.png) and of the native HUD arrow.
+ * Apple iAP2 RouteGuidanceManeuverType -> Gaode maneuver code, the vocabulary of the native HUD
+ * arrow (and of BYDMate's icon set, which Revv does not ship).
  */
 internal object BydManeuverCodes {
     const val NONE = 0

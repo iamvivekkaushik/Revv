@@ -25,6 +25,8 @@ internal object BydHudBridge {
     private const val TX_REGISTER_CALLBACK = 1
     private const val TX_START_SERVICE = 4
     private const val TX_FIRE_EVENT = 6
+    // Revv ships no icons here (BYDMate's are noncommercial-only): the folder is empty, and
+    // manoeuvres without an arrow go to the HUD without a picture.
     private const val ICON_ASSET_DIR = "byd-hud-icons"
 
     private val callbacks = Executors.newSingleThreadExecutor { task ->
