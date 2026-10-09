@@ -1,0 +1,5 @@
+• Android Auto, built in: wired or wireless, in the Auto screen's panel or full screen, with touch, the assistant and its turns on Revv's map.
+• Revv wakes your Android phone over Bluetooth as you get in, and reconnects a session that stalls.
+• Exit in Android Auto brings you back to Revv, like Revv's icon in CarPlay.
+• Switch between CarPlay and Android Auto from the Auto screen's PHONE card.
+• Settings › Android Auto: link, phone, display, audio and location.
