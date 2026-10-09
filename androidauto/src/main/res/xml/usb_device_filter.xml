@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phones Revv is opened for when they are plugged in: Google's vendor id covers Pixels and
+     every phone once it has switched to Android Open Accessory mode (products 0x2D00 and 0x2D01).
+     Other phones in normal mode get Android's one-time USB permission dialog instead. -->
+<resources>
+    <usb-device vendor-id="6353" />
+    <usb-device vendor-id="6353" product-id="11520" />
+    <usb-device vendor-id="6353" product-id="11521" />
+</resources>

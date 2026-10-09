@@ -77,7 +77,9 @@ import com.vivekkaushik.revv.settings.SettingsStore
 import com.vivekkaushik.revv.system.NightMode
 import com.vivekkaushik.revv.system.NightSchedule
 import com.vivekkaushik.revv.vehicle.CarColour
+import com.andrerinas.openheadunit.embed.EmbedSettings as AndroidAutoEmbedSettings
 import com.shilapi.xcertplay.embed.EmbedSettings
+import com.vivekkaushik.revv.androidauto.AndroidAuto
 import com.vivekkaushik.revv.carplay.CarPlay
 import com.vivekkaushik.revv.vehicle.CarSetup
 import com.vivekkaushik.revv.vehicle.GearSource
@@ -92,6 +94,7 @@ private enum class Category(val title: String, val icon: String) {
     Sound("SOUND", HmiIcons.SOUND),
     Connectivity("CONNECTIVITY", HmiIcons.BLUETOOTH),
     CarPlay("CARPLAY", HmiIcons.AUTO),
+    AndroidAuto("ANDROID AUTO", HmiIcons.AUTO),
     Vehicle("VEHICLE", HmiIcons.VEHICLE),
     Navigation("NAVIGATION", HmiIcons.MAPS),
     System("SYSTEM", HmiIcons.SETTINGS),
@@ -192,13 +195,21 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
             actions.carPlaySettingsShown()
         }
     }
-    // A page of CarPlay's own (car hotspot, iPhone) is open.
+    // The Auto screen sends a driver here to finish Android Auto's setup too.
+    LaunchedEffect(state.screen.androidAutoSettingsRequested) {
+        if (state.screen.androidAutoSettingsRequested) {
+            category = Category.AndroidAuto
+            actions.androidAutoSettingsShown()
+        }
+    }
+    // A page of CarPlay's or Android Auto's own (car hotspot, the phone) is open.
     var carPlayPage by remember { mutableStateOf(false) }
+    var androidAutoPage by remember { mutableStateOf(false) }
     // Compact (display sizes above 130%): a narrower category list, hidden while a page such as an
     // editor is open, so the page gets the whole width; back closes it as before.
     val compact = LocalCompact.current
     val pageOpen = choosingAdapter || viewingLog || editingCar || settingUpGears || viewingLicenses || choosingFuelApp || editingGoogleKey ||
-        (category == Category.CarPlay && carPlayPage)
+        (category == Category.CarPlay && carPlayPage) || (category == Category.AndroidAuto && androidAutoPage)
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(if (compact) 24.dp else 28.dp)) {
         if (!compact || !pageOpen) {
             Column(
@@ -248,6 +259,8 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                 )
                 category == Category.CarPlay ->
                     CarPlaySettings(state, actions, Modifier.weight(1f), title = category.title, onPageChange = { carPlayPage = it })
+                category == Category.AndroidAuto ->
+                    AndroidAutoSettings(state, actions, Modifier.weight(1f), title = category.title, onPageChange = { androidAutoPage = it })
                 else -> {
                     HText(category.title, Modifier.padding(bottom = 16.dp), size = 26.sp, family = Hmi.Display)
                     val rows = rowsFor(
@@ -798,8 +811,8 @@ private fun rowsFor(
             ActionRow("Wi-Fi", "Networks and hotspots", "OPEN", actions::openWifiSettings),
             pairedDevicesRow(system, actions),
         )
-        // Shown by CarPlaySettings, which keeps its own pages.
-        Category.CarPlay -> emptyList()
+        // Shown by CarPlaySettings and AndroidAutoSettings, which keep their own pages.
+        Category.CarPlay, Category.AndroidAuto -> emptyList()
         Category.Vehicle -> listOfNotNull(
             adapterRow(state, actions, chooseAdapter),
             settings.obdAdapter?.let { ActionRow("Adapter log", "What the adapter said, for when a car won't connect", "VIEW", showLog) },
@@ -892,9 +905,11 @@ fun CarPlaySettings(
                         editingHotspot = false
                     },
                 )
-                choosingIPhone -> IPhonePicker(
+                choosingIPhone -> PhonePicker(
                     state,
                     actions,
+                    title = "IPHONE",
+                    hint = "The paired iPhone wireless CarPlay connects to. Pair it in Bluetooth settings first.",
                     chosen = settings.phoneAddress,
                     onChoose = { address, name -> carPlay.choosePhone(address, name) },
                     onDone = { choosingIPhone = false },
@@ -1073,6 +1088,191 @@ private val CARPLAY_SIZES = listOf(CarPlay.SIZE_LARGE, CarPlay.SIZE_MEDIUM, CarP
 private val RESOLUTIONS = listOf(10, 8, 6)
 private val MUSIC_BUFFERS = listOf(300, 500, 1000)
 
+/**
+ * Settings › Android Auto, with its own pages (car hotspot details, the phone): shown in Settings,
+ * and beside Android Auto on the Auto screen when the driver wants it there ([besideAndroidAuto]).
+ * [title] heads the list; [onPageChange] hears whether one of the pages is open.
+ */
+@Composable
+fun AndroidAutoSettings(
+    state: HmiUiState,
+    actions: HmiActions,
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    besideAndroidAuto: Boolean = false,
+    onPageChange: (Boolean) -> Unit = {},
+) {
+    val androidAuto = state.androidAuto
+    var editingHotspot by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = editingHotspot) { editingHotspot = false }
+    var choosingPhone by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = choosingPhone) { choosingPhone = false }
+    val session by androidAuto.state.collectAsState()
+    val settings by androidAuto.settings.collectAsState()
+    // Permissions may have changed on Android's pages while Revv was away: look again on return.
+    LifecycleResumeEffect(androidAuto) {
+        androidAuto.setupChanged()
+        onPauseOrDispose { }
+    }
+    val missingPermissions = remember(session, settings) { androidAuto.missingPermissions() }
+    val page = editingHotspot || choosingPhone
+    val currentOnPageChange by rememberUpdatedState(onPageChange)
+    LaunchedEffect(page) { currentOnPageChange(page) }
+    DisposableEffect(Unit) { onDispose { currentOnPageChange(false) } }
+    BoxWithConstraints(modifier) {
+        // Beside Android Auto the column can be too small for the hotspot editor; it opens in Settings then.
+        val roomForEditor = maxWidth >= HOTSPOT_EDITOR_MIN_WIDTH || maxHeight >= STACKED_EDITOR_HEIGHT
+        Column(Modifier.fillMaxSize()) {
+            when {
+                editingHotspot -> HotspotEditor(
+                    initialName = settings.hotspotSsid,
+                    onCancel = { editingHotspot = false },
+                    onSave = { name, password ->
+                        androidAuto.saveHotspot(name, password)
+                        editingHotspot = false
+                    },
+                )
+                choosingPhone -> PhonePicker(
+                    state,
+                    actions,
+                    title = "PHONE",
+                    hint = "The paired Android phone wireless Android Auto wakes over Bluetooth. Pair it in Bluetooth settings first.",
+                    chosen = settings.phoneAddress,
+                    onChoose = { address, name -> androidAuto.choosePhone(address, name) },
+                    onDone = { choosingPhone = false },
+                )
+                else -> {
+                    title?.let { HText(it, Modifier.padding(bottom = 16.dp), size = 26.sp, family = Hmi.Display) }
+                    val rows = androidAutoRows(
+                        state, actions, session, settings, missingPermissions,
+                        editHotspot = { if (besideAndroidAuto && !roomForEditor) actions.openAndroidAutoSettings() else editingHotspot = true },
+                        choosePhone = { choosingPhone = true },
+                    )
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                        items(rows) { row -> SettingRowView(row, state, actions) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Settings › Android Auto: the session, then Android Auto's own settings. Display and audio
+ * changes reconnect a running session, a moment after the last one.
+ */
+private fun androidAutoRows(
+    state: HmiUiState,
+    actions: HmiActions,
+    session: AndroidAuto.State,
+    settings: AndroidAutoEmbedSettings.Snapshot,
+    missingPermissions: List<String>,
+    editHotspot: () -> Unit,
+    choosePhone: () -> Unit,
+): List<SettingRow> {
+    val androidAuto = state.androidAuto
+    val canWake = session.wireless && settings.phoneAddress != null
+    val top = listOf(
+        ValueRow("Status", session.explanation(canWake), session.headline()),
+        when (session.phase) {
+            AndroidAuto.PHASE_IDLE, AndroidAuto.PHASE_FAILED ->
+                ActionRow("Session", "Start Android Auto again; the Auto screen shows it", "CONNECT", onClick = androidAuto::retry)
+            AndroidAuto.PHASE_WAITING -> when {
+                session.phoneExited -> ActionRow("Session", "Ask the phone for Android Auto again", "CONNECT", onClick = androidAuto::retry)
+                session.wireless && settings.phoneAddress != null -> ActionRow(
+                    "Session",
+                    "Wake ${settings.phoneName} over Bluetooth so it joins over Wi-Fi",
+                    "CONNECT",
+                    onClick = androidAuto::retry,
+                    secondary = "TURN OFF" to androidAuto::stop,
+                )
+                else -> ActionRow("Session", "Stop waiting for a phone", "TURN OFF", onClick = androidAuto::stop)
+            }
+            else -> ActionRow("Session", "End the Android Auto connection", "DISCONNECT", onClick = androidAuto::stop)
+        },
+        OptionRow("Phone", "Which phone the Auto screen shows", listOf("CarPlay", "Android Auto"), state.settings.level(SettingsStore.AUTO_SOURCE)) {
+            actions.setAutoSource(it)
+        },
+        ToggleRow(SettingsStore.ANDROID_AUTO_WIDE, "Wide screen", "Android Auto fills the Auto screen; its status and link controls stay here"),
+        ToggleRow(SettingsStore.ANDROID_AUTO_SETTINGS_BESIDE, "Settings beside Android Auto", "Without wide screen, the Auto screen's side column shows these settings"),
+        ToggleRow(SettingsStore.ANDROID_AUTO_ON_RIGHT, "Android Auto on the right", "Without wide screen, Android Auto sits right of its side column instead of left"),
+        ToggleRow(
+            SettingsStore.ANDROID_AUTO_SHOW_TURNS,
+            "Show Android Auto's turns",
+            "Revv's map shows the next turn and ETA of the route the phone guides; Android Auto never says where to, so Revv can't route there itself",
+            badge = "EXPERIMENTAL",
+        ),
+    )
+    fun set(name: String, value: Int) = androidAuto.setSetting(name, value)
+    fun set(name: String, value: Boolean) = androidAuto.setSetting(name, value)
+    val permissionsDetail = "Bluetooth and nearby devices for wireless Android Auto, the microphone for the assistant and calls, and notifications for the connection"
+    return top + listOfNotNull(
+        HeaderRow("SETUP"),
+        if (missingPermissions.isEmpty()) {
+            ValueRow("Permissions", permissionsDetail, "Granted")
+        } else {
+            ActionRow("Permissions", permissionsDetail, "ALLOW", actions::requestAndroidAutoPermissions)
+        },
+        HeaderRow("CONNECTION"),
+        OptionRow(
+            "Wireless link",
+            "Besides USB: Revv wakes the paired phone over Bluetooth and it joins over Wi-Fi Direct or the car's hotspot",
+            listOf("Off", "Wi-Fi Direct", "Car hotspot"),
+            settings.wireless,
+        ) { androidAuto.configure(it) },
+        ActionRow(
+            "Car hotspot",
+            if (settings.hotspotReady) "${settings.hotspotSsid} · for the Car hotspot link" else "Name and password not saved yet",
+            if (settings.hotspotReady) "EDIT" else "SET UP",
+            editHotspot,
+        ),
+        ActionRow(
+            "Phone",
+            if (settings.phoneAddress != null) "${settings.phoneName} · woken over Bluetooth when it connects, when the Auto screen opens, and by Connect" else "None chosen · wireless Android Auto needs one",
+            "CHOOSE",
+            choosePhone,
+        ),
+        HeaderRow("DISPLAY", "CHANGES RECONNECT ANDROID AUTO"),
+        OptionRow("Android Auto size", "Size of Android Auto's icons and text", listOf("Large", "Medium", "Small"), ANDROID_AUTO_SIZES.indexOf(settings.sizePercent).coerceAtLeast(0)) {
+            set(AndroidAuto.SETTING_SIZE, ANDROID_AUTO_SIZES[it])
+        },
+        OptionRow("Resolution", "Fit draws the phone's picture at the panel's own size; a fixed one is scaled to it", listOf("Fit", "480p", "720p", "1080p"), AndroidAuto.RESOLUTIONS.indexOf(settings.resolution).coerceAtLeast(0)) {
+            set(AndroidAuto.SETTING_RESOLUTION, AndroidAuto.RESOLUTIONS[it])
+        },
+        OptionRow("Frame rate", "60 fps moves smoother, 30 fps is lighter", listOf("30 fps", "60 fps"), if (settings.frameRate == 60) 1 else 0) {
+            set(AndroidAuto.SETTING_FRAME_RATE, if (it == 1) 60 else 30)
+        },
+        OptionRow("Video codec", "H.265 is lighter on head units that decode it; Auto lets the phone pick", listOf("Auto", "H.264", "H.265"), settings.codec) {
+            set(AndroidAuto.SETTING_CODEC, it)
+        },
+        OptionRow("Night mode", "Android Auto's dark theme: by the sun where the car is, always day, always night, or the light sensor", listOf("Auto", "Day", "Night", "Sensor"), settings.nightMode) {
+            set(AndroidAuto.SETTING_NIGHT_MODE, it)
+        },
+        SwitchRow("Right-hand drive", "Android Auto's controls closer to the driver", settings.rightHandDrive) { set(AndroidAuto.SETTING_RIGHT_HAND_DRIVE, it) },
+        HeaderRow("AUDIO", "CHANGES RECONNECT ANDROID AUTO"),
+        SwitchRow("Music over Bluetooth", "Music stays on the car's Bluetooth audio; Android Auto carries only the assistant and prompts", settings.musicViaBluetooth) {
+            set(AndroidAuto.SETTING_MUSIC_VIA_BLUETOOTH, it)
+        },
+        OptionRow("Audio focus", "Whether Android Auto's sound takes Android's audio focus; Auto checks that it won't silence the phone", listOf("Auto", "Always", "Never"), settings.focusMode) {
+            set(AndroidAuto.SETTING_FOCUS_MODE, it)
+        },
+        SwitchRow("Echo cancelling", "The microphone's echo canceller for the assistant and calls", settings.echoCancel) { set(AndroidAuto.SETTING_ECHO_CANCEL, it) },
+        SwitchRow("Noise suppression", "The microphone's noise suppressor", settings.noiseSuppression) { set(AndroidAuto.SETTING_NOISE_SUPPRESSION, it) },
+        HeaderRow("LOCATION"),
+        SwitchRow("Location to phone", "This head unit's GPS for the phone's maps", settings.gpsToPhone) { set(AndroidAuto.SETTING_GPS_TO_PHONE, it) },
+        if (settings.gpsToPhone && !settings.locationPermitted) {
+            ActionRow("Location permission", "Revv may not read the location yet; allow precise location", "ALLOW", actions::requestLocationPermission)
+        } else {
+            null
+        },
+        HeaderRow("SUPPORT"),
+        ActionRow("Diagnostic report", "Saved to Downloads/Revv/Android Auto on this head unit; nothing is sent", "SAVE", onClick = androidAuto::saveReport),
+    )
+}
+
+/** Android Auto's sizes, in percent of the display's density: more means bigger icons and text. */
+private val ANDROID_AUTO_SIZES = listOf(120, 100, 80)
+
 /** The car hotspot's name and password, typed exactly: Wi-Fi details have lower case and symbols. */
 @Composable
 private fun HotspotEditor(initialName: String, onCancel: () -> Unit, onSave: (String, String) -> Unit) {
@@ -1176,15 +1376,23 @@ private fun hotspotError(name: String, password: String): String? = when {
     else -> null
 }
 
-/** The paired devices to pick the iPhone for wireless CarPlay from. */
+/** The paired devices to pick the phone for wireless CarPlay or Android Auto from. */
 @Composable
-private fun IPhonePicker(state: HmiUiState, actions: HmiActions, chosen: String?, onChoose: (String, String) -> Unit, onDone: () -> Unit) {
+private fun PhonePicker(
+    state: HmiUiState,
+    actions: HmiActions,
+    title: String,
+    hint: String,
+    chosen: String?,
+    onChoose: (String, String) -> Unit,
+    onDone: () -> Unit,
+) {
     val context = LocalContext.current
     val system = state.system
     val devices = remember(system.bluetoothOn, system.hasBluetoothPermission, system.pairedDevices) { pairedDevices(context) }
     Column(Modifier.fillMaxSize()) {
-        HText("IPHONE", size = 26.sp, family = Hmi.Display)
-        HText("The paired iPhone wireless CarPlay connects to. Pair it in Bluetooth settings first.", Modifier.padding(top = 8.dp), size = 16.sp, color = Hmi.Muted)
+        HText(title, size = 26.sp, family = Hmi.Display)
+        HText(hint, Modifier.padding(top = 8.dp), size = 16.sp, color = Hmi.Muted)
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             when {
                 !system.hasBluetoothPermission -> item(key = "permission") {

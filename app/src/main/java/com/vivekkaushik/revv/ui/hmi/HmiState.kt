@@ -1,6 +1,7 @@
 package com.vivekkaushik.revv.ui.hmi
 
 import androidx.compose.ui.geometry.Rect
+import com.vivekkaushik.revv.androidauto.AndroidAuto
 import com.vivekkaushik.revv.apps.LauncherApp
 import com.vivekkaushik.revv.carplay.CarPlay
 import com.vivekkaushik.revv.media.NowPlaying
@@ -17,7 +18,8 @@ import com.vivekkaushik.revv.vehicle.CarSetup
 /** The HMI's own full-screen apps, opened from the dock or the Apps screen. */
 enum class HmiApp(val title: String) {
     Phone("Phone"),
-    Auto("Android Auto"),
+    /** The phone's projection: CarPlay or Android Auto, whichever Settings › Auto source says. */
+    Auto("Auto"),
     Maps("Navigation"),
     Vehicle("Vehicle"),
     Camera("Rear camera"),
@@ -38,23 +40,25 @@ data class ScreenState(
     val searchRequested: Boolean = false,
     /** Set when Settings was opened for CarPlay's settings; Settings clears it once that page is up. */
     val carPlaySettingsRequested: Boolean = false,
-    /** CarPlay covers all of Revv, header and dock included; only while the Auto screen is open. */
-    val carPlayFullScreen: Boolean = false,
+    /** Set when Settings was opened for Android Auto's settings; Settings clears it once that page is up. */
+    val androidAutoSettingsRequested: Boolean = false,
+    /** The projection (CarPlay or Android Auto) covers all of Revv, header and dock included; only while the Auto screen is open. */
+    val autoFullScreen: Boolean = false,
 ) {
     /** [app] opened over this screen. An app already in the stack moves to the top rather than repeating. */
     fun open(app: HmiApp): ScreenState =
-        if (app == this.app) this else copy(app = app, previous = (previous + listOfNotNull(this.app)) - app, carPlayFullScreen = false)
+        if (app == this.app) this else copy(app = app, previous = (previous + listOfNotNull(this.app)) - app, autoFullScreen = false)
 
-    /** One step back: out of full-screen CarPlay, else the app this one was opened from, or home. */
+    /** One step back: out of the full-screen projection, else the app this one was opened from, or home. */
     fun back(): ScreenState = when {
-        carPlayFullScreen -> copy(carPlayFullScreen = false)
+        autoFullScreen -> copy(autoFullScreen = false)
         else -> previous.lastOrNull()?.let { copy(app = it, previous = previous.dropLast(1)) } ?: copy(app = null)
     }
 
     /** Home, forgetting the stack. [animate] false makes the open app vanish at once. */
     fun home(animate: Boolean): ScreenState = when {
         app == null -> this
-        animate -> copy(app = null, previous = emptyList(), carPlayFullScreen = false)
+        animate -> copy(app = null, previous = emptyList(), autoFullScreen = false)
         else -> ScreenState(resetCount = resetCount + 1)
     }
 }
@@ -110,6 +114,8 @@ data class HmiUiState(
     val call: ActiveCall? = null,
     /** CarPlay, which the Auto screen hosts; alive for as long as Revv runs. */
     val carPlay: CarPlay,
+    /** Android Auto, which the Auto screen hosts too; alive for as long as Revv runs. */
+    val androidAuto: AndroidAuto,
 )
 
 /** Everything the HMI can ask for. Implemented by MainActivity. */
@@ -128,11 +134,20 @@ interface HmiActions {
     /** Opens Settings on its CarPlay page. */
     fun openCarPlaySettings()
 
-    /** CarPlay over all of Revv, or back into the Auto screen. */
-    fun setCarPlayFullScreen(on: Boolean)
+    /** Opens Settings on its Android Auto page. */
+    fun openAndroidAutoSettings()
+
+    /** The projection (CarPlay or Android Auto) over all of Revv, or back into the Auto screen. */
+    fun setAutoFullScreen(on: Boolean)
 
     /** Settings has put its CarPlay page up for a [ScreenState.carPlaySettingsRequested]. */
     fun carPlaySettingsShown()
+
+    /** Settings has put its Android Auto page up for a [ScreenState.androidAutoSettingsRequested]. */
+    fun androidAutoSettingsShown()
+
+    /** Which phone the Auto screen shows: [com.vivekkaushik.revv.settings.SettingsStore.AUTO_CARPLAY] or AUTO_ANDROID_AUTO. */
+    fun setAutoSource(source: Int)
     fun goHome()
 
     /** Returns to the app the open one was opened from, or home. */
@@ -162,7 +177,6 @@ interface HmiActions {
 
     fun requestMediaAccess()
 
-    /** Opens Android's page for letting Revv modify system settings, which the brightness is. */
     /** Android's "Modify system settings" page for Revv: screen brightness, and the hotspot switch for CarPlay. */
     fun requestWriteSettingsAccess()
 
@@ -188,7 +202,6 @@ interface HmiActions {
     /** Forgets the learnt gears so the gear indicator learns them afresh. */
     fun relearnGears()
 
-    /** Makes the home screen's fuel widget open [app], or show the fuel range again when null. */
     /** Chooses which camera the Rear Cam screen shows; null goes back to picking one automatically. */
     fun setRearCameraId(id: String?)
 
@@ -204,9 +217,16 @@ interface HmiActions {
     /** Asks for the runtime permissions CarPlay still lacks, or opens Revv's app info page when Android no longer asks. */
     fun requestCarPlayPermissions()
 
+    /** Asks for the runtime permissions Android Auto still lacks: the wireless link's, the assistant's, its notification's. */
+    fun finishAndroidAutoSetup()
+
+    /** Asks for the runtime permissions Android Auto still lacks, or opens Revv's app info page when Android no longer asks. */
+    fun requestAndroidAutoPermissions()
+
     /** Makes Start projection open [app], or the usual projection app again when null. */
     fun setProjectionApp(app: LauncherApp?)
 
+    /** Makes the home screen's fuel widget open [app], or show the fuel range again when null. */
     fun setFuelWidgetApp(app: LauncherApp?)
 
     /** Ends the call in progress. */

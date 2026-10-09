@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?><!--
    Android's backup and device-to-device transfer of Revv's settings (Android 12+). CarPlay's
-   pairing keys and records stay out of both: they belong to this head unit alone.
+   pairing keys and records, and Android Auto's link details (the car hotspot's password, the phone
+   to wake, this head unit's Wi-Fi Direct group), stay out of both: they belong to this head unit alone.
 -->
 <data-extraction-rules>
     <cloud-backup>
@@ -8,11 +9,15 @@
         <exclude domain="sharedpref" path="diplay.xml" />
         <exclude domain="sharedpref" path="carplay_wifi_p2p.xml" />
         <exclude domain="sharedpref" path="carplay_wifi_p2p_success.xml" />
+        <exclude domain="sharedpref" path="android_auto.xml" />
+        <exclude domain="sharedpref" path="p2p_ownership.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="xcertplay_airplay.xml" />
         <exclude domain="sharedpref" path="diplay.xml" />
         <exclude domain="sharedpref" path="carplay_wifi_p2p.xml" />
         <exclude domain="sharedpref" path="carplay_wifi_p2p_success.xml" />
+        <exclude domain="sharedpref" path="android_auto.xml" />
+        <exclude domain="sharedpref" path="p2p_ownership.xml" />
     </device-transfer>
 </data-extraction-rules>

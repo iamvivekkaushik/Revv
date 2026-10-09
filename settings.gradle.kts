@@ -28,3 +28,6 @@ include(":app")
 // in :carplay:shared, the session engine and DiPlay's own screens in :carplay:common.
 include(":carplay:shared")
 include(":carplay:common")
+// The Android Auto stack (a fork of DiAuto / Open Headunit / headunit, AGPL-3.0): the protocol,
+// transports, decoders and session service, and the embed/ package Revv hosts it through.
+include(":androidauto")

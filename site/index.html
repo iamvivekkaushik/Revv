@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Revv · Car launcher for Android head units</title>
-  <meta name="description" content="Revv turns an Android head unit into a driver's dashboard: live OBD-II gauges and fault codes, maps and directions, your phone's calls and contacts over Bluetooth, the rear camera and your apps.">
+  <meta name="description" content="Revv turns an Android head unit into a driver's dashboard: CarPlay and Android Auto built in, live OBD-II gauges and fault codes, maps and directions, your phone's calls and contacts over Bluetooth, the rear camera and your apps.">
   <meta name="theme-color" content="#05070a">
   <meta property="og:title" content="Revv · Car launcher for Android head units">
-  <meta property="og:description" content="Live OBD-II gauges, maps, calls from your phone and your apps, on one home screen built for driving.">
+  <meta property="og:description" content="CarPlay and Android Auto built in, live OBD-II gauges, maps, calls from your phone and your apps, on one home screen built for driving.">
   <meta property="og:type" content="website">
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/style.css">
@@ -21,7 +21,6 @@
       </a>
       <nav class="site-nav" aria-label="Main">
         <a class="hide-small" href="#features">Features</a>
-        <a class="hide-small" href="#carplay">CarPlay</a>
         <a class="hide-small" href="#requirements">Requirements</a>
         <a href="privacy.html">Privacy</a>
         <a class="store-badge small" href="https://play.google.com/store/apps/details?id=com.vivekkaushik.revv"><img src="assets/google-play-badge.png" width="564" height="168" alt="Get it on Google Play"></a>
@@ -34,7 +33,7 @@
       <div class="wrap">
         <p class="caption">Car launcher · Android head units</p>
         <h1>The home screen your head unit should have shipped with.</h1>
-        <p class="lede">Revv replaces your Android head unit's launcher with a dashboard built for driving: live gauges from the engine, maps and directions, calls from your phone, the rear camera and your apps, each one tap away and sized for a glance.</p>
+        <p class="lede">Revv replaces your Android head unit's launcher with a dashboard built for driving: live gauges from the engine, maps and directions, CarPlay or Android Auto from your phone, its calls, the rear camera and your apps, each one tap away and sized for a glance.</p>
         <div class="actions">
           <a class="store-badge" href="https://play.google.com/store/apps/details?id=com.vivekkaushik.revv"><img src="assets/google-play-badge.png" width="564" height="168" alt="Get it on Google Play"></a>
           <a class="button" href="https://github.com/iamvivekkaushik/Revv/releases/latest">
@@ -140,6 +139,20 @@
           <p>Big targets, high contrast and nothing that needs a second look. Tap a card to go deeper; the dock is always there to come back.</p>
         </div>
         <div class="features">
+          <article class="feature wide">
+            <div>
+              <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v9H2zM15 9h5a2 2 0 0 1 2 2v10h-7zM6 20h6"/></svg></div>
+              <h3>CARPLAY AND ANDROID AUTO, BUILT IN</h3>
+              <p>Plug your phone in over USB, or pair it and let it join the head unit's Wi-Fi, and its CarPlay or Android Auto runs in a panel on Revv's Auto screen, touch included, or over the whole screen. It keeps playing while you use the rest of Revv, and the Auto screen's PHONE card switches between the two. Nothing else to install on the head unit.</p>
+            </div>
+            <ul>
+              <li>Wired over USB, or wireless over Wi-Fi Direct or the car's hotspot</li>
+              <li>Android Auto wakes your phone over Bluetooth as you get in, and reconnects by itself</li>
+              <li>The phone's next turn shows on Revv's map; its music shows on the home screen</li>
+              <li>CarPlay needs your own Apple accessory identity, which Revv does not ship</li>
+              <li>Free software in Revv's source: <a href="https://github.com/iamvivekkaushik/Revv/tree/master/carplay" target="_blank" rel="noopener">DiPlay's CarPlay stack</a> (GPL-3.0) and <a href="https://github.com/iamvivekkaushik/Revv/tree/master/androidauto" target="_blank" rel="noopener">DiAuto's Android Auto stack</a> (AGPL-3.0)</li>
+            </ul>
+          </article>
           <article class="feature">
             <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17a9 9 0 1 1 17 0M12 15l4.5-5M13.6 16a1.6 1.6 0 1 1-3.2 0 1.6 1.6 0 0 1 3.2 0"/></svg></div>
             <h3>LIVE OBD-II GAUGES</h3>
@@ -184,12 +197,12 @@
           </article>
           <article class="feature">
             <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></div>
-            <h3>APPS AND PROJECTION</h3>
-            <p>Every installed app is a tap away, and phone projection starts from its own screen.</p>
+            <h3>APPS AND NOW PLAYING</h3>
+            <p>Every installed app is a tap away, and what's playing is on the home screen.</p>
             <ul>
-              <li>Start Android Auto, or the projection app you choose</li>
-              <li>Now playing from your music app on the home screen</li>
+              <li>Now playing from your music app, with seeking by drag or swipe</li>
               <li>Turn the fuel card into a shortcut to any app</li>
+              <li>A projection app of your own, if the head unit came with one</li>
             </ul>
           </article>
           <article class="feature">
@@ -221,26 +234,6 @@
       </div>
     </section>
 
-    <section id="carplay">
-      <div class="wrap">
-        <div class="companion">
-          <div>
-            <p class="caption">Built in</p>
-            <h2>CarPlay, inside Revv.</h2>
-            <p>Wired over USB or wireless, your iPhone's CarPlay runs in a panel on Revv's Auto screen, touch included, or over the whole screen, and keeps playing while you use the rest of Revv. Set up from Revv's own settings; nothing else to install.</p>
-            <ul>
-              <li>Android 9 or newer, like the rest of Revv</li>
-              <li>Your own Apple accessory identity: Revv ships none</li>
-              <li>Free software: DiPlay's CarPlay stack, GPL-3.0, in Revv's source</li>
-            </ul>
-          </div>
-          <div class="actions">
-            <a class="button" href="https://github.com/iamvivekkaushik/Revv/tree/master/carplay">Source · GPL-3.0</a>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <section id="requirements">
       <div class="wrap">
         <div class="section-head">
@@ -262,7 +255,7 @@
           <div class="fact">
             <p class="caption">Phone</p>
             <div class="value">Bluetooth</div>
-            <p>Pair your phone with the head unit and allow it to share contacts and call history.</p>
+            <p>Pair your phone with the head unit and allow it to share contacts and call history. For CarPlay or Android Auto, plug it in over USB or let it join the head unit's Wi-Fi.</p>
           </div>
           <div class="fact">
             <p class="caption">Internet</p>
@@ -299,7 +292,7 @@
         <a href="https://github.com/iamvivekkaushik/Revv/issues">Report a problem</a>
         <a href="https://github.com/iamvivekkaushik/Revv">GitHub</a>
       </nav>
-      <p class="legal">Google Play and the Google Play logo are trademarks of Google LLC. CarPlay is a trademark of Apple Inc.; Revv is not an Apple-certified product and is not affiliated with or endorsed by Apple or Google.</p>
+      <p class="legal">Google Play and the Google Play logo are trademarks of Google LLC. CarPlay is a trademark of Apple Inc. and Android Auto a trademark of Google LLC; Revv is not an Apple-certified or Google-certified product and is not affiliated with or endorsed by Apple or Google.</p>
     </div>
   </footer>
 </body>

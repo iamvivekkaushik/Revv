@@ -15,3 +15,18 @@
 
 # JmDNS (Bonjour for wireless CarPlay) logs through SLF4J, whose optional bindings are absent.
 -dontwarn org.slf4j.**
+
+# The Android Auto stack (androidauto/): its protocol messages are protobuf classes built by
+# reflection, it reads hidden Android classes by name (hotspot tethering, Wi-Fi Direct addresses)
+# and settings by enum name. Shrink it, but keep every surviving name as it is.
+-keepnames class com.andrerinas.openheadunit.** { *; }
+-keepclasseswithmembers class com.andrerinas.openheadunit.** { native <methods>; }
+-keep class com.andrerinas.openheadunit.aap.protocol.proto.** { *; }
+-keep class com.google.protobuf.** { *; }
+-dontwarn com.google.protobuf.**
+-keepattributes Signature, InnerClasses, EnclosingMethod, *Annotation*
+-keep class android.net.Network { *; }
+-keep class android.net.wifi.WifiInfo { *; }
+# DexMaker generates the tethering callback at run time.
+-keep class com.android.dx.** { *; }
+-dontwarn com.android.dx.**

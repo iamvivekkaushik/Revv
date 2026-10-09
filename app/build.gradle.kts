@@ -78,6 +78,8 @@ dependencies {
     implementation(libs.maplibre.android)
     // CarPlay: the session engine the Auto screen hosts, and DiPlay's own screens behind it.
     implementation(project(":carplay:common"))
+    // Android Auto: the session the Auto screen hosts, from DiAuto's stack.
+    implementation(project(":androidauto"))
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.org.json)

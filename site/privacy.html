@@ -63,12 +63,17 @@
       <p>If you allow media access (Android's notification access), Revv sees what your music or media app is playing so it can show it and control playback. It does not read, keep or send other notifications.</p>
 
       <h3>Screen brightness and system settings</h3>
-      <p>If you allow it, Revv changes the screen's brightness and adaptive-brightness setting from its Display settings and for night dimming. With the car-hotspot link for wireless CarPlay, the same permission lets Revv turn the head unit's Wi-Fi hotspot on.</p>
+      <p>If you allow it, Revv changes the screen's brightness and adaptive-brightness setting from its Display settings and for night dimming. With the car-hotspot link for wireless CarPlay or Android Auto, the same permission lets Revv turn the head unit's Wi-Fi hotspot on.</p>
 
       <h3>CarPlay</h3>
       <p>CarPlay is a direct link between the head unit and your iPhone, over USB or the head unit's own Wi-Fi (a Wi-Fi Direct group, or the car's hotspot). The iPhone sends its screen and sound; Revv sends back your touches, the microphone while you use Siri or take a call through CarPlay, and, if you turn <strong>Location to iPhone</strong> on, the head unit's position for the iPhone's maps. Over USB, Android's VPN interface carries the iPhone's link on the head unit itself; no traffic goes to the internet through it.</p>
       <p>CarPlay needs an Apple accessory identity (a private key and its certificate) that you import yourself. Revv keeps it, and the pairing records the iPhone and head unit agree on, in its private storage on the head unit, out of Android's backups, and never sends them anywhere. CarPlay's route guidance (the destination's name and the next turn) is used to show the turn on Revv's map and, if you ask, to route Revv's own map there with the place search described below.</p>
       <p>If you save a <strong>diagnostic report</strong> from Settings › CarPlay, it is written to the head unit's Downloads folder for you to read or share; Revv does not send it.</p>
+
+      <h3>Android Auto</h3>
+      <p>Android Auto is a direct link between the head unit and your Android phone, over USB or the head unit's own Wi-Fi (a Wi-Fi Direct group, or the car's hotspot, which the phone joins after Revv wakes it over Bluetooth). The phone sends its screen and sound; Revv sends back your touches, the microphone while you use the assistant or take a call through Android Auto, and, if you turn <strong>Location to phone</strong> on, the head unit's position for the phone's maps. Nothing goes to the internet through this link; the phone's apps use the phone's own connection.</p>
+      <p>Android Auto asks the head unit to identify itself with a key pair. Revv ships the public Android Auto head-unit development pair that every open-source head unit uses; it is not yours and holds nothing about you. The link itself is encrypted with keys agreed for each session. Android Auto's turn-by-turn directions (the next turn, distance and time to go; never the destination) are used to show the turn on Revv's map if you turn <strong>Show Android Auto's turns</strong> on.</p>
+      <p>If you save a <strong>diagnostic report</strong> from Settings › Android Auto, it is written to the head unit's Downloads folder for you to read or share; Revv does not send it.</p>
 
       <h2>What leaves the head unit</h2>
       <p>Revv sends nothing to its developer. To show maps, it uses these public services over the internet, which, like any website, also see the head unit's IP address:</p>
@@ -85,7 +90,7 @@
         </table>
       </div>
       <p>These services are run by others under their own privacy policies. Revv does not send them your name, phone contacts, call history, vehicle data or camera picture.</p>
-      <p>Bluetooth and Wi-Fi connections to your phone and OBD-II adapter, and CarPlay's USB or Wi-Fi link to your iPhone, are direct, local links; they do not go through the internet.</p>
+      <p>Bluetooth and Wi-Fi connections to your phone and OBD-II adapter, and CarPlay's and Android Auto's USB or Wi-Fi links to your phone, are direct, local links; they do not go through the internet.</p>
 
       <h2>What is kept on the head unit</h2>
       <ul>
@@ -96,7 +101,8 @@
         <li>An approximate position for sunset times, rounded to about 10 km</li>
         <li>Adapter logs for up to 14 days, if "Save adapter logs" is on</li>
         <li>Your CarPlay identity, the iPhone pairing records, and CarPlay's settings, including the car hotspot's name and password if you save them</li>
-        <li>A CarPlay diagnostic report in Downloads, only when you save one</li>
+        <li>Android Auto's settings, including the Bluetooth address of the phone it wakes and the car hotspot's name and password if you save them</li>
+        <li>A CarPlay or Android Auto diagnostic report in Downloads, only when you save one</li>
       </ul>
       <p>All of it stays in Revv's own storage on the head unit. If the head unit's Android backup is turned on, Android may include Revv's settings and recent places in that backup, under the terms of the backup service you use.</p>
 
@@ -111,10 +117,11 @@
             <tr><td data-label="Permission">Internet and network state</td><td data-label="Why Revv asks">Map tiles, routes and place search; Wi-Fi OBD-II adapters</td></tr>
             <tr><td data-label="Permission">Modify system settings</td><td data-label="Why Revv asks">Screen brightness and night dimming</td></tr>
             <tr><td data-label="Permission">Notification access</td><td data-label="Why Revv asks">What is playing in your media app</td></tr>
-            <tr><td data-label="Permission">Microphone</td><td data-label="Why Revv asks">Siri and calls through CarPlay</td></tr>
-            <tr><td data-label="Permission">Nearby Wi-Fi devices, Wi-Fi control</td><td data-label="Why Revv asks">Wireless CarPlay: the head unit's Wi-Fi Direct group or hotspot the iPhone joins</td></tr>
+            <tr><td data-label="Permission">Microphone</td><td data-label="Why Revv asks">Siri and calls through CarPlay; the assistant and calls through Android Auto</td></tr>
+            <tr><td data-label="Permission">Nearby Wi-Fi devices, Wi-Fi control</td><td data-label="Why Revv asks">Wireless CarPlay and Android Auto: the head unit's Wi-Fi Direct group or hotspot the phone joins</td></tr>
+            <tr><td data-label="Permission">USB</td><td data-label="Why Revv asks">Android Auto over a cable: Android asks once whether Revv may use the phone you plugged in</td></tr>
             <tr><td data-label="Permission">VPN</td><td data-label="Why Revv asks">USB CarPlay: Android's VPN interface carries the iPhone's link on the head unit; nothing goes to the internet through it</td></tr>
-            <tr><td data-label="Permission">Notifications</td><td data-label="Why Revv asks">The CarPlay connection's notification, with its Disconnect button</td></tr>
+            <tr><td data-label="Permission">Notifications</td><td data-label="Why Revv asks">The CarPlay and Android Auto connections' notifications, with their Disconnect buttons, and Android Auto's turn-by-turn notification</td></tr>
           </tbody>
         </table>
       </div>

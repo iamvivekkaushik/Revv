@@ -43,7 +43,7 @@ private class CarApp(val name: String, val icon: String, val app: HmiApp)
 
 private val CAR_APPS = listOf(
     CarApp("Phone", HmiIcons.PHONE, HmiApp.Phone),
-    CarApp("Android Auto", HmiIcons.AUTO, HmiApp.Auto),
+    CarApp("Auto", HmiIcons.AUTO, HmiApp.Auto),
     CarApp("Vehicle", HmiIcons.VEHICLE, HmiApp.Vehicle),
     CarApp("Maps", HmiIcons.MAPS, HmiApp.Maps),
     CarApp("Rear cam", HmiIcons.CAMERA, HmiApp.Camera),

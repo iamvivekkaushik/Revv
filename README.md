@@ -29,12 +29,13 @@ The screenshots use the demo drive and the simulated OBD-II adapter.
 - **Maps and directions** on OpenStreetMap: place search, turn-by-turn routes with the next turn on the home screen, avoiding tolls, north-up or heading-up.
 - **Your phone over Bluetooth**, the way a car kit reads it: recent calls, favourites, contacts with A–Z quick scroll, a T9 dialer, and calls with a call bar and end-call button.
 - **Rear camera**, live from the head unit, with parking guides, rotation and camera switching.
-- **Apps and projection**: every installed app, Android Auto or a projection app of your choice, and now playing from your music app, seeking by dragging its progress bar or, if you like, swiping the card.
+- **Apps and projection**: every installed app, a projection app of your choice, and now playing from your music app, seeking by dragging its progress bar or, if you like, swiping the card.
 - **CarPlay**, built in: wired over USB or wireless, the iPhone's screen runs in the Auto screen's panel, touch included, or over the whole screen, and keeps playing while you use the rest of Revv. Its settings (identity, link, iPhone, display, audio, location) are in **Settings › CarPlay**. Revv ships no Apple accessory identity; you import your own there. The CarPlay stack is [DiPlay](https://github.com/shihabal3amri/DiPlay)'s, a fork of [xcertplay](https://github.com/shilapi/xcertplay) (GPL-3.0), in `carplay/`.
+- **Android Auto**, built in the same way: plug an Android phone in over USB, or pair it and let it join over Wi-Fi Direct or the car's hotspot, and its Android Auto runs in the Auto screen's panel or over the whole screen, touch, assistant and turn-by-turn included, and keeps playing while you use the rest of Revv. Its settings (link, phone, display, audio, location) are in **Settings › Android Auto**; the Auto screen's **PHONE** card switches between CarPlay and Android Auto. The Android Auto stack is [DiAuto](https://github.com/shihabal3amri/DiAuto)'s, a fork of [Open Headunit](https://github.com/andreknieriem/open-headunit) and [headunit](https://github.com/mikereidis/headunit) (AGPL-3.0), in `androidauto/`.
 - **Make it yours**: choose the home screen's cards and panels, turn the fuel card into an app shortcut, set display size (80–160%, with compact layouts above 130%), date and time formats, sunset or light-sensor dimming, and tap sounds.
 - **Demo drive**: simulated car data while no adapter is set up, so every gauge can be tried at a desk.
 
-No account, ads or analytics. Calls, contacts, car data, the camera picture and CarPlay (a direct link between the head unit and the iPhone) stay on the head unit; maps, routes and place search use public OpenStreetMap services ([OpenFreeMap](https://openfreemap.org), [Valhalla](https://valhalla1.openstreetmap.de), [Photon](https://photon.komoot.io)). The [privacy policy](https://iamvivekkaushik.github.io/Revv/privacy.html) has the details.
+No account, ads or analytics. Calls, contacts, car data, the camera picture, CarPlay and Android Auto (direct links between the head unit and the phone) stay on the head unit; maps, routes and place search use public OpenStreetMap services ([OpenFreeMap](https://openfreemap.org), [Valhalla](https://valhalla1.openstreetmap.de), [Photon](https://photon.komoot.io)). The [privacy policy](https://iamvivekkaushik.github.io/Revv/privacy.html) has the details.
 
 ## Install
 
@@ -42,12 +43,13 @@ No account, ads or analytics. Calls, contacts, car data, the camera picture and 
 2. Open Revv and tap **Set as home**, or pick Revv when Android asks which app should be the home app.
 3. Optional: pair your phone in Android's Bluetooth settings and allow it to share contacts and call history; set up an OBD-II adapter in **Settings › Vehicle**.
 4. Optional, for CarPlay: in **Settings › CarPlay**, import your identity files (`identity.pk8` and `certificate.p7b`), pick the link and, for wireless, your iPhone. Then open **AUTO** and tap **FINISH SETUP** once to allow the permissions and, for USB, the VPN connection CarPlay runs over.
+5. Optional, for Android Auto: open **AUTO**, tap **ANDROID AUTO** on its PHONE card and plug the phone in; allow Revv to use it when Android asks. For wireless, in **Settings › Android Auto** allow the permissions, pick **Wi-Fi Direct** or save the car hotspot's name and password, and choose the paired phone; Revv then wakes it over Bluetooth when it connects to the head unit, when Revv starts, when the Auto screen opens, and on **CONNECT**. A session the phone stops answering is reconnected by itself. Revv listens for the phone the PHONE card shows: switching it stands the other down, unless that one is mid-session, since the head unit's Wi-Fi Direct radio hosts one group at a time.
 
 Revv needs Android 9 or newer and a landscape screen. It lays out a 1920×1080 artboard that scales to the screen, and stretches to fill wide ones such as 1920×720.
 
 ## Build from source
 
-You need Android Studio (or the Android SDK with API 37 and NDK 28.2, which the CarPlay stack's two native files build with) and a JDK to start Gradle; Android Studio's bundled JBR works. Gradle provisions the JDK 25 its daemon runs on.
+You need Android Studio (or the Android SDK with API 37 and NDK 28.2, which the CarPlay and Android Auto stacks' three native files build with) and a JDK to start Gradle; Android Studio's bundled JBR works. Gradle provisions the JDK 25 its daemon runs on.
 
 ```bash
 ./gradlew :app:assembleDebug
@@ -60,7 +62,7 @@ Debug builds bundle your own CarPlay identity when `.private/auth/offline-mfi/id
 Run the unit tests:
 
 ```bash
-./gradlew :app:testDebugUnitTest :carplay:shared:testDebugUnitTest :carplay:common:testDebugUnitTest
+./gradlew :app:testDebugUnitTest :carplay:shared:testDebugUnitTest :carplay:common:testDebugUnitTest :androidauto:testDebugUnitTest
 ```
 
 ### Project layout
@@ -69,6 +71,7 @@ Run the unit tests:
 | --- | --- |
 | `app/src/main/java/com/vivekkaushik/revv/ui/hmi` | The Compose UI: home screen, the apps over it, the dock and settings |
 | `…/carplay` | CarPlay as the Auto screen and Settings › CarPlay see it: the session's state, its settings and route guidance |
+| `…/androidauto` | Android Auto the same way, for the Auto screen and Settings › Android Auto |
 | `…/obd` | ELM327 transports (Bluetooth, BLE, Wi-Fi, simulated), PIDs, fault codes and the polling session |
 | `…/phone` | PBAP (calls and contacts) and HFP (dialling) over Bluetooth |
 | `…/nav` | Location, routing, place search and guidance |
@@ -78,6 +81,8 @@ Run the unit tests:
 | `carplay/shared` | The CarPlay stack from DiPlay / xcertplay: iAP2, AirPlay, MFi authentication, the USB and wireless links, video and audio, BYD cluster outputs |
 | `carplay/common` | The CarPlay session engine Revv hosts (`embed/`): its settings, media session, connection service and diagnostics |
 | `docs/carplay/` | DiPlay's documentation, notices and changelog |
+| `androidauto/` | The Android Auto stack from DiAuto / Open Headunit / headunit: the Android Auto protocol, the USB, Wi-Fi Direct and car hotspot links, video and audio, navigation and BYD cluster outputs, and the session engine Revv hosts (`embed/`) |
+| `docs/androidauto/` | DiAuto's documentation, notices and changelog |
 | `site/` | The website: landing page and privacy policy |
 | `fastlane/` | Lanes, Play Store listing and store graphics |
 
@@ -141,10 +146,10 @@ The store icon and feature graphic are rendered from `fastlane/store-graphics` w
 
 ## License
 
-Revv is free software under the [GNU GPL 3.0](LICENSE): the CarPlay stack in `carplay/` is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay) and [xcertplay](https://github.com/shilapi/xcertplay) (GPL-3.0). Keep these notices when distributing modifications. Credits for everything in the CarPlay stack are in [docs/carplay/THIRD_PARTY_NOTICES.md](docs/carplay/THIRD_PARTY_NOTICES.md).
+Revv is free software under the [GNU GPL 3.0](LICENSE): the CarPlay stack in `carplay/` is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay) and [xcertplay](https://github.com/shilapi/xcertplay) (GPL-3.0), and the Android Auto stack in `androidauto/` is a fork of [DiAuto](https://github.com/shihabal3amri/DiAuto), [Open Headunit](https://github.com/andreknieriem/open-headunit) and Michael Reid's [headunit](https://github.com/mikereidis/headunit), which stays under the [GNU AGPL 3.0](docs/androidauto/licenses/AGPL-3.0.txt). Keep these notices when distributing modifications. Credits for everything in the CarPlay stack are in [docs/carplay/THIRD_PARTY_NOTICES.md](docs/carplay/THIRD_PARTY_NOTICES.md), and for the Android Auto stack in [docs/androidauto/THIRD_PARTY_NOTICES.md](docs/androidauto/THIRD_PARTY_NOTICES.md).
 
-CarPlay is a trademark of Apple Inc.; Revv is not an Apple-certified product and is not affiliated with Apple. Revv ships no Apple accessory identity; where you get yours is your own responsibility.
+CarPlay is a trademark of Apple Inc. and Android Auto a trademark of Google LLC; Revv is not an Apple-certified or Google-certified product and is not affiliated with Apple or Google. Revv ships no Apple accessory identity; where you get yours is your own responsibility. The Android Auto head-unit key it ships is the public development pair every open-source head unit uses (see [SECURITY.md](SECURITY.md)).
 
 ## Credits
 
-Maps © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, tiles from [OpenFreeMap](https://openfreemap.org) on the [OpenMapTiles](https://openmaptiles.org) schema, routing by [Valhalla](https://github.com/valhalla/valhalla) and place search by [Photon](https://github.com/komoot/photon). The engine sound follows [engine-sim](https://github.com/ange-yaghi/engine-sim) by Ange Yaghi and plays its exhaust impulse responses (MIT). CarPlay is [DiPlay](https://github.com/shihabal3amri/DiPlay)'s stack, from [xcertplay](https://github.com/shilapi/xcertplay) by shilapi, with [Bouncy Castle](https://www.bouncycastle.org), [JmDNS](https://github.com/jmdns/jmdns) and [AndroidHiddenApiBypass](https://github.com/LSPosed/AndroidHiddenApiBypass). Built with Jetpack Compose and [MapLibre Native](https://github.com/maplibre/maplibre-native), set in [Michroma](https://github.com/googlefonts/Michroma-font) and [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono). The app's **Settings › System › Open source licenses** lists every library and its license.
+Maps © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, tiles from [OpenFreeMap](https://openfreemap.org) on the [OpenMapTiles](https://openmaptiles.org) schema, routing by [Valhalla](https://github.com/valhalla/valhalla) and place search by [Photon](https://github.com/komoot/photon). The engine sound follows [engine-sim](https://github.com/ange-yaghi/engine-sim) by Ange Yaghi and plays its exhaust impulse responses (MIT). CarPlay is [DiPlay](https://github.com/shihabal3amri/DiPlay)'s stack, from [xcertplay](https://github.com/shilapi/xcertplay) by shilapi, with [Bouncy Castle](https://www.bouncycastle.org), [JmDNS](https://github.com/jmdns/jmdns) and [AndroidHiddenApiBypass](https://github.com/LSPosed/AndroidHiddenApiBypass). Android Auto is [DiAuto](https://github.com/shihabal3amri/DiAuto)'s stack, from [Open Headunit](https://github.com/andreknieriem/open-headunit) by Andre Rinas and [headunit](https://github.com/mikereidis/headunit) by Michael A. Reid, with [Protocol Buffers](https://github.com/protocolbuffers/protobuf) and [DexMaker](https://github.com/linkedin/dexmaker). Built with Jetpack Compose and [MapLibre Native](https://github.com/maplibre/maplibre-native), set in [Michroma](https://github.com/googlefonts/Michroma-font) and [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono). The app's **Settings › System › Open source licenses** lists every library and its license.

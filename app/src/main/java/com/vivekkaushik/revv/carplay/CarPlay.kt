@@ -7,6 +7,7 @@ import android.widget.Toast
 import com.shilapi.xcertplay.embed.CarPlayHost
 import com.shilapi.xcertplay.embed.EmbedSettings
 import com.shilapi.xcertplay.embed.EmbeddedCarPlay
+import com.vivekkaushik.revv.nav.ProjectionGuidance
 import com.vivekkaushik.revv.nav.Turn
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -88,6 +89,19 @@ class CarPlay(context: Context) : AutoCloseable {
         val roundaboutExit: Int?
             get() = maneuverType?.takeIf { it in ROUNDABOUT_EXITS }?.let { it - ROUNDABOUT_EXITS.first + 1 }
 
+        /** As Revv's map shows any projection's route. */
+        fun toProjection() = ProjectionGuidance(
+            source = "CARPLAY",
+            destination = destination,
+            turn = turn,
+            roundaboutExit = roundaboutExit,
+            maneuverMeters = maneuverMeters,
+            road = road,
+            routeMeters = routeMeters,
+            remainingSeconds = remainingSeconds,
+            arrivalEpochSeconds = arrivalEpochSeconds,
+        )
+
         private companion object {
             /** Apple's RoundaboutExit1 to RoundaboutExit19. */
             val ROUNDABOUT_EXITS = 28..46
@@ -118,7 +132,15 @@ class CarPlay(context: Context) : AutoCloseable {
         // How an import, a hotspot save or a report went.
         override fun onNotice(text: String, ok: Boolean) { Toast.makeText(app, text, Toast.LENGTH_LONG).show() }
         override fun onHostUiRequested() { _hostUiRequests.tryEmit(Unit) }
+        override fun releasesWifiDirectGroup(networkName: String) = this@CarPlay.releasesWifiDirectGroup?.invoke(networkName) == true
     })
+
+    /**
+     * Whether a Wi-Fi Direct group CarPlay did not make may go for CarPlay's own: Revv answers
+     * yes for a group its Android Auto stack left behind while that session is off. Any thread.
+     */
+    @Volatile
+    var releasesWifiDirectGroup: ((networkName: String) -> Boolean)? = null
     private var hostFocused = true
     private var viewSize: Size? = null
 
@@ -156,6 +178,13 @@ class CarPlay(context: Context) : AutoCloseable {
     }
 
     fun stop() = host.stop()
+
+    /** No session is running or wanted: off, failed, or waiting on setup. */
+    val isOff: Boolean
+        get() = state.value.phase.let { it == PHASE_IDLE || it == PHASE_FAILED || it == PHASE_SETUP_REQUIRED }
+
+    /** Whether [networkName] is a Wi-Fi Direct group CarPlay made on this head unit. */
+    fun ownsWifiDirectGroup(networkName: String): Boolean = host.ownsWifiDirectGroup(networkName)
 
     fun siri() = host.siri()
 

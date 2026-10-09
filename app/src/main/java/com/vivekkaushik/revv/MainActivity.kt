@@ -26,6 +26,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vivekkaushik.revv.androidauto.AndroidAuto
 import com.vivekkaushik.revv.apps.LauncherApp
 import com.vivekkaushik.revv.carplay.CarPlay
 import com.vivekkaushik.revv.media.MediaListenerService
@@ -101,6 +102,14 @@ class MainActivity : ComponentActivity(), HmiActions {
         viewModel.carPlay.setupChanged()
     }
 
+    private val androidAutoPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        val denied = results.filterValues { !it }.keys
+        if (denied.isNotEmpty()) openAppSettingsIfDeniedForGood(denied)
+        // Bluetooth or location may have come with them, for the rest of Revv too.
+        viewModel.onBluetoothPermissionResult()
+        viewModel.androidAuto.setupChanged()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
@@ -111,8 +120,13 @@ class MainActivity : ComponentActivity(), HmiActions {
         // Pressing home while Revv is the home app returns to the home screen. Its icon in another
         // launcher (on a phone, say, coming back from Bluetooth settings) resumes where it was.
         addOnNewIntentListener { intent ->
-            if (intent.hasCategory(Intent.CATEGORY_HOME)) viewModel.goHome(animate = !offScreen)
+            when {
+                // Android Auto's notification, or a phone that connected: the Auto screen with it up.
+                intent.getBooleanExtra(AndroidAuto.EXTRA_OPEN_AUTO, false) -> viewModel.openAndroidAuto()
+                intent.hasCategory(Intent.CATEGORY_HOME) -> viewModel.goHome(animate = !offScreen)
+            }
         }
+        if (savedInstanceState == null && intent?.getBooleanExtra(AndroidAuto.EXTRA_OPEN_AUTO, false) == true) viewModel.openAndroidAuto()
         setContent {
             val apps by viewModel.apps.collectAsStateWithLifecycle()
             val nowPlaying by viewModel.nowPlaying.collectAsStateWithLifecycle()
@@ -131,7 +145,7 @@ class MainActivity : ComponentActivity(), HmiActions {
                 HmiRoot(
                     state = HmiUiState(
                         apps, nowPlaying, system, settings, screen, obdStatus, adapterChoices, bleScanning, recentPlaces, obdLog, phone,
-                        learntGears, activeCall, carPlay = viewModel.carPlay,
+                        learntGears, activeCall, carPlay = viewModel.carPlay, androidAuto = viewModel.androidAuto,
                     ),
                     obdReadings = viewModel.obdReadings,
                     navigation = viewModel.navigation,
@@ -180,9 +194,12 @@ class MainActivity : ComponentActivity(), HmiActions {
     override fun openMapsSearch() = viewModel.openMapsSearch()
     override fun mapsSearchShown() = viewModel.mapsSearchShown()
     override fun openCarPlaySettings() = viewModel.openCarPlaySettings()
+    override fun openAndroidAutoSettings() = viewModel.openAndroidAutoSettings()
 
-    override fun setCarPlayFullScreen(on: Boolean) = viewModel.setCarPlayFullScreen(on)
+    override fun setAutoFullScreen(on: Boolean) = viewModel.setAutoFullScreen(on)
     override fun carPlaySettingsShown() = viewModel.carPlaySettingsShown()
+    override fun androidAutoSettingsShown() = viewModel.androidAutoSettingsShown()
+    override fun setAutoSource(source: Int) = viewModel.setAutoSource(source)
 
     override fun goHome() = viewModel.goHome()
 
@@ -334,6 +351,21 @@ class MainActivity : ComponentActivity(), HmiActions {
         }
         runCatching { carPlayVpnConsent.launch(consent) }.onFailure { toast(R.string.no_vpn_consent) }
     }
+
+    override fun finishAndroidAutoSetup() {
+        val permissions = viewModel.androidAuto.missingPermissions()
+        if (permissions.isNotEmpty()) androidAutoPermissions.launch(permissions.toTypedArray()) else viewModel.androidAuto.setupChanged()
+    }
+
+    override fun requestAndroidAutoPermissions() {
+        val permissions = viewModel.androidAuto.missingPermissions()
+        if (permissions.isNotEmpty()) {
+            androidAutoPermissions.launch(permissions.toTypedArray())
+        } else {
+            startFirstAvailable(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()))
+        }
+    }
+
     override fun setProjectionApp(app: LauncherApp?) = viewModel.setProjectionApp(app)
     override fun setFuelWidgetApp(app: LauncherApp?) = viewModel.setFuelWidgetApp(app)
     override fun hangUp() = viewModel.hangUp()

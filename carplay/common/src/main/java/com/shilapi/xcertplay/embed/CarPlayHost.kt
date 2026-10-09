@@ -19,6 +19,7 @@ import com.shilapi.xcertplay.glance.CarPlayGlance
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.network.CarPlayVpnService
 import com.shilapi.xcertplay.network.HotspotSwitch
+import com.shilapi.xcertplay.network.WifiP2pGroupManager
 
 /**
  * CarPlay for the app's own screen: the one place Revv's Auto screen and Settings › CarPlay talk
@@ -39,6 +40,13 @@ class CarPlayHost(context: Context, private val listener: Listener) : AutoClosea
         fun onNotice(text: String, ok: Boolean)
         /** The driver tapped the car's icon in CarPlay, asking for the app's own screen. */
         fun onHostUiRequested()
+
+        /**
+         * Whether the Wi-Fi Direct group [networkName], which this stack did not make, may be
+         * removed for its own: true when another part of the app made it and is done with it.
+         * False leaves it alone, as another app's, and the session asks for a reset instead.
+         */
+        fun releasesWifiDirectGroup(networkName: String): Boolean = false
     }
 
     /**
@@ -99,6 +107,7 @@ class CarPlayHost(context: Context, private val listener: Listener) : AutoClosea
 
     init {
         EmbeddedCarPlay.onHostUiRequested = { listener.onHostUiRequested() }
+        WifiP2pGroupManager.releasesForeignGroup = { listener.releasesWifiDirectGroup(it) }
         EmbeddedCarPlay.addListener(statusListener)
         CarPlayGlance.addListener(glanceListener)
         main.postDelayed(refreshGuidance, GUIDANCE_REFRESH_MILLIS)
@@ -110,6 +119,7 @@ class CarPlayHost(context: Context, private val listener: Listener) : AutoClosea
         closed = true
         detach()
         EmbeddedCarPlay.onHostUiRequested = null
+        WifiP2pGroupManager.releasesForeignGroup = null
         EmbeddedCarPlay.removeListener(statusListener)
         CarPlayGlance.removeListener(glanceListener)
         main.removeCallbacks(refreshGuidance)
@@ -288,6 +298,9 @@ class CarPlayHost(context: Context, private val listener: Listener) : AutoClosea
      * Ends the device's Wi-Fi Direct connection, whichever app made it (screen mirroring to a TV,
      * say), then connects CarPlay. Only when the driver asks, after a status with resetWifiDirect.
      */
+    /** Whether [networkName] is a Wi-Fi Direct group this stack made on this head unit. */
+    fun ownsWifiDirectGroup(networkName: String): Boolean = WifiP2pGroupManager.ownsGroup(app, networkName)
+
     fun resetWifiDirect() = EmbeddedCarPlay.resetWifiDirect(app) { cleared ->
         if (!cleared) listener.onNotice(app.getString(R.string.embed_wifi_direct_reset_failed), ok = false)
     }

@@ -75,6 +75,9 @@ data class HmiSettings(
     /** Navigation's place search and routes: [SettingsStore.SEARCH_OSM] or [SettingsStore.SEARCH_GOOGLE]. */
     val placeSearch: Int get() = level(SettingsStore.PLACE_SEARCH)
 
+    /** The Auto screen shows Android Auto rather than CarPlay. */
+    val androidAutoChosen: Boolean get() = level(SettingsStore.AUTO_SOURCE) == SettingsStore.AUTO_ANDROID_AUTO
+
     /** The key searches and routes go to Google with; null uses OpenStreetMap, as without a key. */
     val googleSearchKey: String? get() = googleApiKey?.takeIf { placeSearch == SettingsStore.SEARCH_GOOGLE }
 
@@ -245,6 +248,18 @@ class SettingsStore(context: Context) {
         const val CARPLAY_FOLLOW_ROUTE = "carplayFollowRoute"
         /** Experimental: with [CARPLAY_FOLLOW_ROUTE] off, Revv's map still shows CarPlay's turns and ETA. */
         const val CARPLAY_SHOW_TURNS = "carplayShowTurns"
+        /** Which phone the Auto screen shows: [AUTO_CARPLAY] or [AUTO_ANDROID_AUTO]. */
+        const val AUTO_SOURCE = "autoSource"
+        const val AUTO_CARPLAY = 0
+        const val AUTO_ANDROID_AUTO = 1
+        /** Android Auto fills the Auto screen instead of sharing it with its status column. */
+        const val ANDROID_AUTO_WIDE = "androidAutoWide"
+        /** Without wide screen, the Auto screen's side column shows Android Auto's settings instead of its status and controls. */
+        const val ANDROID_AUTO_SETTINGS_BESIDE = "androidAutoSettingsBeside"
+        /** Without wide screen, Android Auto sits right of its side column instead of left. */
+        const val ANDROID_AUTO_ON_RIGHT = "androidAutoOnRight"
+        /** Experimental: Revv's map shows the next turn and ETA of the route Android Auto guides. */
+        const val ANDROID_AUTO_SHOW_TURNS = "androidAutoShowTurns"
         /** Which services Navigation's place search and routes use. */
         const val PLACE_SEARCH = "placeSearch"
         const val SEARCH_OSM = 0
@@ -275,6 +290,10 @@ class SettingsStore(context: Context) {
             CARPLAY_ON_RIGHT to false,
             CARPLAY_FOLLOW_ROUTE to false,
             CARPLAY_SHOW_TURNS to false,
+            ANDROID_AUTO_WIDE to false,
+            ANDROID_AUTO_SETTINGS_BESIDE to false,
+            ANDROID_AUTO_ON_RIGHT to false,
+            ANDROID_AUTO_SHOW_TURNS to false,
             DEMO_DRIVE to true,
             HOME_FUEL to true,
             MENU_SOUND to true,
@@ -302,6 +321,7 @@ class SettingsStore(context: Context) {
             DATE_FORMAT to 0,
             CAMERA_ROTATION to 0,
             PLACE_SEARCH to SEARCH_OSM,
+            AUTO_SOURCE to AUTO_CARPLAY,
             ENGINE_LAYOUT to EngineLayout.DEFAULT.ordinal,
             ENGINE_EXHAUST to ExhaustNote.DEFAULT.ordinal,
             ENGINE_VOLUME to EngineSoundSettings.DEFAULT_VOLUME,

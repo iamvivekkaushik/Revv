@@ -41,7 +41,7 @@ import com.vivekkaushik.revv.nav.Trip
 import com.vivekkaushik.revv.nav.TripStatus
 import com.vivekkaushik.revv.nav.Turn
 import com.vivekkaushik.revv.settings.SettingsStore
-import com.vivekkaushik.revv.carplay.CarPlay
+import com.vivekkaushik.revv.nav.ProjectionGuidance
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -55,7 +55,7 @@ private const val HEADING_UP_TILT = 45.0
 
 /**
  * The map panel on the right of the home screen: the car, the route and the next turn. Without a
- * route of its own, it shows the one CarPlay is guiding, if any ([carPlay]).
+ * route of its own, it shows the one the phone's projection is guiding, if any ([projection]).
  */
 @Composable
 fun NavPanel(
@@ -64,14 +64,14 @@ fun NavPanel(
     timeFormat: DateTimeFormatter,
     actions: HmiActions,
     modifier: Modifier = Modifier,
-    carPlay: CarPlay.Guidance? = null,
+    projection: ProjectionGuidance? = null,
 ) {
     val nav by navigation.collectAsStateWithLifecycle()
     val trip = nav.trip
     // Compact (display sizes above 130%): a smaller panel inside the page's margins, clear of the dock,
     // and with no trip just the map: no "Where to?" over it, though a tap still opens search.
     val compact = LocalCompact.current
-    val header = !compact || trip != null || carPlay != null
+    val header = !compact || trip != null || projection != null
     Box(modifier.background(Hmi.MapBg).clipToBounds()) {
         RevvMap(
             fix = nav.fix,
@@ -102,7 +102,7 @@ fun NavPanel(
         if (header) {
             TripHeader(
                 nav,
-                carPlay,
+                projection,
                 distanceSize = if (compact) 48.sp else 64.sp,
                 controls = false,
                 actions = actions,
@@ -111,7 +111,7 @@ fun NavPanel(
                 turnIconSize = if (compact) 84.dp else 110.dp,
             )
         }
-        tripLeft(trip, carPlay, timeFormat)?.let { left ->
+        tripLeft(trip, projection, timeFormat)?.let { left ->
             TripSummary(
                 left,
                 withUnits = true,
@@ -127,7 +127,7 @@ fun NavPanel(
         MapAttribution(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp))
         // Anywhere on the panel opens the full Navigation screen; with no trip, "Where to?" goes straight to search.
         Pressable(
-            onClick = { if (trip == null && carPlay == null) actions.openMapsSearch() else actions.open(HmiApp.Maps) },
+            onClick = { if (trip == null && projection == null) actions.openMapsSearch() else actions.open(HmiApp.Maps) },
             modifier = Modifier.fillMaxSize(),
             pressedBackground = Hmi.Cyan.copy(alpha = 0.04f),
             border = null,
@@ -146,7 +146,7 @@ fun MapsScreen(
 ) {
     val nav by navigation.collectAsStateWithLifecycle()
     val trip = nav.trip
-    val carPlay = rememberCarPlayGuidance(state)
+    val projection = rememberProjectionGuidance(state)
     var followMode by rememberSaveable { mutableStateOf(MapCamera.NorthUp) }
     var panned by rememberSaveable { mutableStateOf(false) }
     var zoom by rememberSaveable { mutableDoubleStateOf(SCREEN_ZOOM) }
@@ -188,7 +188,7 @@ fun MapsScreen(
         )
         TripHeader(
             nav,
-            carPlay,
+            projection,
             distanceSize = 56.sp,
             controls = true,
             actions = actions,
@@ -200,7 +200,7 @@ fun MapsScreen(
                 .background(Hmi.MapBg.copy(alpha = 0.9f))
                 .padding(28.dp),
         )
-        tripLeft(trip, carPlay, timeFormat)?.let { left ->
+        tripLeft(trip, projection, timeFormat)?.let { left ->
             TripSummary(
                 left,
                 withUnits = false,
@@ -274,14 +274,14 @@ fun MapsScreen(
 }
 
 /**
- * The top card: the next turn while guiding, or the trip's state, or CarPlay's next turn while it
- * guides a route Revv has none of its own for, or an invitation to search. [controls] adds the
- * card's own buttons; on the home screen the whole panel is one button instead.
+ * The top card: the next turn while guiding, or the trip's state, or the phone's next turn while
+ * its projection guides a route Revv has none of its own for, or an invitation to search.
+ * [controls] adds the card's own buttons; on the home screen the whole panel is one button instead.
  */
 @Composable
 private fun TripHeader(
     nav: NavState,
-    carPlay: CarPlay.Guidance?,
+    projection: ProjectionGuidance?,
     distanceSize: TextUnit,
     controls: Boolean,
     actions: HmiActions,
@@ -291,7 +291,7 @@ private fun TripHeader(
 ) {
     val trip = nav.trip
     when {
-        trip == null && carPlay != null -> CarPlayTurn(carPlay, distanceSize, turnIconSize, modifier)
+        trip == null && projection != null -> ProjectionTurn(projection, distanceSize, turnIconSize, modifier)
         trip == null -> WhereTo(nav, controls, onSearch, modifier)
         trip.status == TripStatus.Guiding && trip.guidance != null -> NextTurn(trip, trip.guidance, distanceSize, turnIconSize, modifier)
         else -> TripStatusCard(trip, waitingForFix = nav.fix == null, controls, actions, modifier)
@@ -341,21 +341,22 @@ private fun NextTurn(trip: Trip, guidance: Guidance, distanceSize: TextUnit, ico
 }
 
 /**
- * The next turn CarPlay gives, while the iPhone guides a route Revv isn't following itself (the
- * place wasn't found, or following is off). Before CarPlay names a turn, just where it goes.
+ * The next turn the phone's projection (CarPlay or Android Auto) gives, while it guides a route
+ * Revv isn't following itself (the place wasn't found, or following is off). Before the phone
+ * names a turn, just where it goes.
  */
 @Composable
-private fun CarPlayTurn(guidance: CarPlay.Guidance, distanceSize: TextUnit, iconSize: Dp, modifier: Modifier) {
+private fun ProjectionTurn(guidance: ProjectionGuidance, distanceSize: TextUnit, iconSize: Dp, modifier: Modifier) {
     val turn = guidance.turn
     if (turn == null) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Caption("CARPLAY · ROUTE TO", maxLines = 1)
+            Caption(guidance.source + " · ROUTE TO", maxLines = 1)
             HText(guidance.destination.ifEmpty { "Your destination" }, size = 28.sp, family = Hmi.Display, maxLines = 1)
         }
         return
     }
     TurnCard(
-        caption = "CARPLAY · " + NavFormat.caption(turn, guidance.roundaboutExit).removePrefix("NEXT TURN · ").removePrefix("NEXT · "),
+        caption = guidance.source + " · " + NavFormat.caption(turn, guidance.roundaboutExit).removePrefix("NEXT TURN · ").removePrefix("NEXT · "),
         turn = turn,
         metres = guidance.maneuverMeters.toDouble(),
         road = guidance.road.ifEmpty { guidance.destination.takeIf { turn == Turn.Arrive }.orEmpty() },
@@ -419,16 +420,16 @@ private fun TripStatusCard(trip: Trip, waitingForFix: Boolean, controls: Boolean
 /** What's left of the trip being guided: the arrival time, already formatted, and time and distance to go. */
 private class TripLeft(val eta: String, val seconds: Double, val metres: Double)
 
-/** What's left of Revv's own route while guiding, else of CarPlay's; null when neither says. */
-private fun tripLeft(trip: Trip?, carPlay: CarPlay.Guidance?, timeFormat: DateTimeFormatter): TripLeft? {
+/** What's left of Revv's own route while guiding, else of the phone's; null when neither says. */
+private fun tripLeft(trip: Trip?, projection: ProjectionGuidance?, timeFormat: DateTimeFormatter): TripLeft? {
     if (trip != null) {
         val guidance = trip.guidance?.takeIf { trip.status == TripStatus.Guiding } ?: return null
         val eta = LocalDateTime.now().plusSeconds(guidance.remainingSeconds.toLong())
         return TripLeft(eta.format(timeFormat), guidance.remainingSeconds, guidance.remainingMetres)
     }
-    val seconds = carPlay?.remainingSeconds ?: return null
-    val metres = carPlay.routeMeters ?: return null
-    val eta = carPlay.arrivalEpochSeconds?.let { LocalDateTime.ofInstant(Instant.ofEpochSecond(it), ZoneId.systemDefault()) }
+    val seconds = projection?.remainingSeconds ?: return null
+    val metres = projection.routeMeters ?: return null
+    val eta = projection.arrivalEpochSeconds?.let { LocalDateTime.ofInstant(Instant.ofEpochSecond(it), ZoneId.systemDefault()) }
         ?: LocalDateTime.now().plusSeconds(seconds)
     return TripLeft(eta.format(timeFormat), seconds.toDouble(), metres.toDouble())
 }
@@ -444,16 +445,21 @@ private fun TripSummary(left: TripLeft, withUnits: Boolean, modifier: Modifier =
 }
 
 /**
- * CarPlay's route guidance, for Revv's map to show; null without a route, or while both Follow
- * CarPlay's route and Show CarPlay's turns (Settings › CarPlay) are off.
+ * The phone's route guidance, for Revv's map to show: CarPlay's while Follow CarPlay's route or
+ * Show CarPlay's turns (Settings › CarPlay) is on, else Android Auto's while Show Android Auto's
+ * turns (Settings › Android Auto) is on; null without a route, or with both off.
  */
 @Composable
-fun rememberCarPlayGuidance(state: HmiUiState): CarPlay.Guidance? {
-    val shown = state.settings.isOn(SettingsStore.CARPLAY_FOLLOW_ROUTE) || state.settings.isOn(SettingsStore.CARPLAY_SHOW_TURNS)
-    return (if (shown) state.carPlay.guidance else NO_CARPLAY_GUIDANCE).collectAsStateWithLifecycle().value
+fun rememberProjectionGuidance(state: HmiUiState): ProjectionGuidance? {
+    val carPlayShown = state.settings.isOn(SettingsStore.CARPLAY_FOLLOW_ROUTE) || state.settings.isOn(SettingsStore.CARPLAY_SHOW_TURNS)
+    val androidAutoShown = state.settings.isOn(SettingsStore.ANDROID_AUTO_SHOW_TURNS)
+    val carPlay = (if (carPlayShown) state.carPlay.guidance else NO_CARPLAY_GUIDANCE).collectAsStateWithLifecycle().value
+    val androidAuto = (if (androidAutoShown) state.androidAuto.guidance else NO_ANDROID_AUTO_GUIDANCE).collectAsStateWithLifecycle().value
+    return carPlay?.toProjection() ?: androidAuto?.toProjection()
 }
 
-private val NO_CARPLAY_GUIDANCE = MutableStateFlow<CarPlay.Guidance?>(null)
+private val NO_CARPLAY_GUIDANCE = MutableStateFlow<com.vivekkaushik.revv.carplay.CarPlay.Guidance?>(null)
+private val NO_ANDROID_AUTO_GUIDANCE = MutableStateFlow<com.vivekkaushik.revv.androidauto.AndroidAuto.Guidance?>(null)
 
 @Composable
 private fun TripStat(label: String, value: String, unit: String, modifier: Modifier, color: Color = Hmi.Text) {

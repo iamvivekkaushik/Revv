@@ -128,7 +128,7 @@ fun HomeScreen(
                     timeFormat = timeFormat,
                     actions = actions,
                     modifier = Modifier.weight(770f).fillMaxHeight().reveal(ready, 1000, 400),
-                    carPlay = rememberCarPlayGuidance(state),
+                    projection = rememberProjectionGuidance(state),
                 )
             }
         }
@@ -178,7 +178,7 @@ private fun CompactHome(
                         timeFormat = timeFormat,
                         actions = actions,
                         modifier = Modifier.weight(1f).fillMaxWidth().border(1.dp, Hmi.Line).reveal(ready, 1000, 400),
-                        carPlay = rememberCarPlayGuidance(state),
+                        projection = rememberProjectionGuidance(state),
                     )
                     if (settings.showMediaCard) {
                         MediaCard(

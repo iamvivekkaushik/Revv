@@ -261,6 +261,39 @@ class WifiP2pGroupManagerTest {
         assertEquals(0, radio.removals)
     }
 
+    @Test fun groupTheHostReleasesIsRemovedAndReplacedLikeOurOwn() {
+        // The host app's other projection stack (Revv's Android Auto) left its group behind.
+        radio.group = radio.makeGroup(null)
+        val asked = mutableListOf<String>()
+        WifiP2pGroupManager.releasesForeignGroup = { name -> asked += name; name == "DIRECT-system-test" }
+        try {
+            WifiP2pGroupManager(context).use { manager ->
+                val info = background { manager.start(5000) }
+                assertNotEquals("DIRECT-system-test", info.ssid)
+            }
+        } finally {
+            WifiP2pGroupManager.releasesForeignGroup = null
+        }
+        assertEquals(listOf("DIRECT-system-test"), asked)
+        assertEquals(1, radio.requests.size)
+        // Removed once to make room, and once more on close for the group of its own.
+        assertEquals(2, radio.removals)
+    }
+
+    @Test fun groupTheHostKeepsStillNeedsAReset() {
+        radio.group = radio.makeGroup(null)
+        WifiP2pGroupManager.releasesForeignGroup = { false }
+        try {
+            WifiP2pGroupManager(context).use { manager ->
+                assertTrue(failure { manager.start(3000) } is P2pResetRequiredException)
+            }
+        } finally {
+            WifiP2pGroupManager.releasesForeignGroup = null
+        }
+        assertTrue(radio.requests.isEmpty())
+        assertEquals(0, radio.removals)
+    }
+
     @Test fun closeLeavesAnotherAppsReplacementGroupRunning() {
         val logs = mutableListOf<String>()
         val manager = WifiP2pGroupManager(context, logs::add)

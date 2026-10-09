@@ -120,11 +120,15 @@ class WifiP2pGroupManager(
             val existing = requestGroupInfo(attempt, p2pChannel, REQUEST_POLL_NANOS, requireResponse = true)
             diagnostic("Wi-Fi P2P existingGroup=${existing != null}")
             if (existing != null) {
-                if (!P2pOwnership.canReclaim(existing.isGroupOwner, existing.networkName,
+                if (P2pOwnership.canReclaim(existing.isGroupOwner, existing.networkName,
                         ownership.getString("owned_ssid", null), ssidPrefix)) {
+                    diagnostic("Wi-Fi P2P reclaiming retained owned group")
+                } else if (existing.networkName.isNullOrBlank() || releasesForeignGroup?.invoke(existing.networkName) != true) {
                     throw P2pResetRequiredException(holderOf(existing))
+                } else {
+                    // Another part of the host app made it and is done with it (Revv's Android Auto stack).
+                    diagnostic("Wi-Fi P2P removing the host app's own group ${existing.networkName}")
                 }
-                diagnostic("Wi-Fi P2P reclaiming retained owned group")
                 removeGroupBlocking(p2pChannel, existing.networkName)
                 val removalDeadline = minOf(deadlineNanos, deadlineAfter(REMOVE_GROUP_TIMEOUT_MILLIS))
                 while (requestGroupInfo(attempt, p2pChannel, REQUEST_POLL_NANOS, requireResponse = true) != null) {
@@ -721,12 +725,32 @@ class WifiP2pGroupManager(
         val passphrase: String,
     )
 
-    private companion object {
-        const val TAG = "xcertplay-usb"
-        const val NANOS_PER_MILLISECOND = 1_000_000L
-        const val REMOVE_GROUP_TIMEOUT_MILLIS = 2_000L
-        val REQUEST_POLL_NANOS: Long = TimeUnit.MILLISECONDS.toNanos(500)
-        const val TOKEN_ALPHABET =
+    companion object {
+        private const val TAG = "xcertplay-usb"
+        private const val NANOS_PER_MILLISECOND = 1_000_000L
+        private const val REMOVE_GROUP_TIMEOUT_MILLIS = 2_000L
+        private val REQUEST_POLL_NANOS: Long = TimeUnit.MILLISECONDS.toNanos(500)
+        private const val TOKEN_ALPHABET =
             "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+
+        /**
+         * Whether a Wi-Fi Direct group this stack did not make may be removed for its own: true
+         * when another part of the host app made it and is done with it (Revv's Android Auto
+         * stack, say). Null or false leaves it alone, as another app's, and asks for a reset.
+         */
+        @Volatile
+        var releasesForeignGroup: ((networkName: String) -> Boolean)? = null
+
+        /** Whether [networkName] is a group this stack made on this head unit: its recorded name, or one in its namespace. */
+        fun ownsGroup(context: Context, networkName: String?): Boolean {
+            val app = context.applicationContext
+            val ownership = app.getSharedPreferences("carplay_wifi_p2p", Context.MODE_PRIVATE)
+            val recorded = ownership.getString("owned_ssid", null)
+            val id = runCatching { Settings.Secure.getString(app.contentResolver, Settings.Secure.ANDROID_ID) }
+                .getOrNull()?.takeIf { it.isNotBlank() }
+                ?: ownership.getString("fallback_id", null)
+                ?: return !networkName.isNullOrBlank() && networkName == recorded
+            return P2pOwnership.canReclaim(true, networkName, recorded, P2pOwnership.prefix(app.packageName, id))
+        }
     }
 }

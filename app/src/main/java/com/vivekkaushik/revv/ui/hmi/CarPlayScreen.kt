@@ -33,11 +33,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.shilapi.xcertplay.embed.EmbeddedCarPlayView
 import com.vivekkaushik.revv.carplay.CarPlay
 import com.vivekkaushik.revv.carplay.CarPlay.State
+import com.vivekkaushik.revv.settings.SettingsStore
 
 /**
- * The Auto screen. CarPlay itself fills the left panel, inside Revv's chrome, and the side column
- * beside it holds its status, controls and the Android Auto shortcut; [carPlayRight] swaps the
- * two. With [wide] on, CarPlay takes the whole screen and the controls move to Settings › CarPlay.
+ * The Auto screen with CarPlay chosen (Settings › CarPlay › Phone, or the PHONE card here). CarPlay
+ * itself fills the left panel, inside Revv's chrome, and the side column beside it holds its
+ * status, controls, the link and the phone switcher; [carPlayRight] swaps the two. With [wide]
+ * on, CarPlay takes the whole screen and the controls move to Settings › CarPlay.
  * With [settings], the side column shows CarPlay's settings (Settings › CarPlay) instead; CarPlay
  * keeps its size either way, so switching never reconnects it. The compact layout (display sizes
  * above 130%) leaves the link choice to Settings › CarPlay. The gear to CarPlay's settings sits in
@@ -65,7 +67,7 @@ fun CarPlayAutoScreen(
         val side = Modifier.weight(1f).fillMaxHeight()
         when {
             settings != null -> settings(side.border(1.dp, Hmi.Line).padding(horizontal = if (compact) 20.dp else 28.dp, vertical = 24.dp))
-            compact -> CompactControls(state, carPlay, actions, onChooseApp, side)
+            compact -> CompactControls(state, carPlay, actions, projectionLabel, onChooseApp, side)
             else -> Controls(state, carPlay, actions, projectionLabel, onChooseApp, side)
         }
         if (carPlayRight) CarPlayView(carPlay, Modifier.weight(1.7f).fillMaxHeight())
@@ -104,7 +106,7 @@ private fun CarPlayView(carPlay: CarPlay, modifier: Modifier) {
     }
 }
 
-/** The side column: CarPlay's status and session actions, the link, and the Android Auto shortcut. */
+/** The side column: CarPlay's status and session actions, the link, and the phone switcher. */
 @Composable
 private fun Controls(
     state: State,
@@ -136,24 +138,13 @@ private fun Controls(
                 LinkChooser(state, carPlay, Modifier.weight(1f))
             }
         }
-        Row(
-            Modifier.fillMaxWidth().border(1.dp, Hmi.Line).padding(horizontal = 32.dp, vertical = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Caption("ANDROID AUTO", size = 14.sp)
-                HText("OPENS · " + (projectionLabel?.uppercase() ?: "AUTOMATIC"), Modifier.padding(top = 8.dp), size = 14.sp, color = Hmi.Muted, spacing = 2.sp, maxLines = 1)
-            }
-            GhostButton("START", actions::startProjection, Modifier.height(56.dp))
-            GhostButton("CHOOSE", onChooseApp, Modifier.height(56.dp))
-        }
+        ProjectionSourceCard(SettingsStore.AUTO_CARPLAY, actions, projectionLabel, onChooseApp, compact = false)
     }
 }
 
 /**
  * The side column in the compact layout (display sizes above 130%), where it is too narrow for the
- * link buttons: the status with its actions stacked, then Android Auto. The link is chosen in
+ * link buttons: the status with its actions stacked, then the phone switcher. The link is chosen in
  * Settings › CarPlay instead. It scrolls if a long explanation needs more room.
  */
 @Composable
@@ -161,6 +152,7 @@ private fun CompactControls(
     state: State,
     carPlay: CarPlay,
     actions: HmiActions,
+    projectionLabel: String?,
     onChooseApp: () -> Unit,
     modifier: Modifier,
 ) {
@@ -174,13 +166,7 @@ private fun CompactControls(
                 GhostButton("SIRI", carPlay::siri, Modifier.fillMaxWidth().height(60.dp))
             }
         }
-        Column(Modifier.fillMaxWidth().border(1.dp, Hmi.Line).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Caption("ANDROID AUTO", size = 14.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                GhostButton("START", actions::startProjection, Modifier.weight(1f).height(56.dp))
-                GhostButton("CHOOSE", onChooseApp, Modifier.weight(1f).height(56.dp))
-            }
-        }
+        ProjectionSourceCard(SettingsStore.AUTO_CARPLAY, actions, projectionLabel, onChooseApp, compact = true)
     }
 }
 

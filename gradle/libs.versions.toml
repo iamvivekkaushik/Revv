@@ -18,6 +18,11 @@ jmdns = "3.6.3"
 media3 = "1.11.1"
 robolectric = "4.17"
 annotation = "1.10.0"
+# The Android Auto stack's own dependencies.
+androidxMedia = "1.7.0"
+protobuf = "3.25.1"
+coroutines = "1.10.2"
+dexmaker = "2.28.3"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -50,6 +55,14 @@ androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplaye
 androidx-media3-exoplayer-hls = { group = "androidx.media3", name = "media3-exoplayer-hls", version.ref = "media3" }
 androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+# Android Auto: the media session the phone's playback shows through, and its media-button receiver.
+androidx-media = { group = "androidx.media", name = "media", version.ref = "androidxMedia" }
+# Android Auto: the protocol's messages.
+protobuf-java = { group = "com.google.protobuf", name = "protobuf-java", version.ref = "protobuf" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+# Android Auto: subclasses the hidden tethering callback that turns the head unit's hotspot on before Android 11.
+dexmaker = { group = "com.linkedin.dexmaker", name = "dexmaker", version.ref = "dexmaker" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

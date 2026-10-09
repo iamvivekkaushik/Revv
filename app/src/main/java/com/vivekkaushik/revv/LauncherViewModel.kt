@@ -18,6 +18,7 @@ import androidx.lifecycle.viewModelScope
 import com.vivekkaushik.revv.apps.AppRepository
 import com.vivekkaushik.revv.apps.IconProvider
 import com.vivekkaushik.revv.apps.LauncherApp
+import com.vivekkaushik.revv.androidauto.AndroidAuto
 import com.vivekkaushik.revv.carplay.CarPlay
 import com.vivekkaushik.revv.engine.EngineReading
 import com.vivekkaushik.revv.engine.EngineSound
@@ -90,6 +91,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
      * so the session and the music carry on while Revv shows another screen.
      */
     val carPlay = CarPlay(application)
+
+    /** Android Auto, the same way: the Auto screen shows one or the other (Settings › Auto source). */
+    val androidAuto = AndroidAuto(application)
     private val isDebugBuild = application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     val icons: IconProvider = appRepository
@@ -168,11 +172,31 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             settings.map { it.isOn(SettingsStore.CARPLAY_FOLLOW_ROUTE) }.distinctUntilChanged().collect { carPlayRoute.enabled = it }
         }
         viewModelScope.launch {
-            carPlay.hostUiRequests.collect { carPlayAskedForRevv() }
+            carPlay.hostUiRequests.collect { phoneAskedForRevv() }
         }
         viewModelScope.launch {
             carPlay.guidance.collect { carPlayRoute.update(it?.destination, it?.routeMeters) }
         }
+        // An Android phone connected (plugged in, or woken over Wi-Fi) while no view showed it:
+        // the Auto screen opens on Android Auto, as a car's own screen would.
+        viewModelScope.launch {
+            androidAuto.projectionRequests.collect { openAndroidAuto() }
+        }
+        // Exit in Android Auto on the phone asks for the car's own screen, as Revv's icon in
+        // CarPlay does: full-screen Android Auto shrinks back into the Auto screen, otherwise home.
+        viewModelScope.launch {
+            androidAuto.exitRequests.collect { phoneAskedForRevv() }
+        }
+        // The head unit runs one Wi-Fi Direct group. A group the other phone's stack left behind
+        // (Revv restarted, or the driver switched phones) goes to the one connecting now, as long
+        // as that other session is off; a running one keeps its radio and the driver is told.
+        carPlay.releasesWifiDirectGroup = { name -> androidAuto.isOff && androidAuto.ownsWifiDirectGroup(name) }
+        androidAuto.releasesWifiDirectGroup = { name -> carPlay.isOff && carPlay.ownsWifiDirectGroup(name) }
+        // The Android phone connecting over Bluetooth starts its session only while Android Auto is
+        // the phone the Auto screen shows; and with a wireless link set up, Revv listens for it from
+        // the start, as a car's own head unit does, so the Auto screen opens when it connects.
+        androidAuto.allowsBluetoothAutoStart = { settings.value.androidAutoChosen }
+        if (settings.value.androidAutoChosen) androidAuto.listenForPhone()
         // The engine sound follows the car whenever it's switched on, Revv on screen or not.
         viewModelScope.launch {
             settings.map { it.engineSound }.distinctUntilChanged().collect(engineSound::apply)
@@ -215,6 +239,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         carPlay.close()
+        androidAuto.close()
         bleScanner.stop()
         obd.stop()
         navigator.stop()
@@ -365,17 +390,43 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun openCarPlaySettings() = _screen.update { it.open(HmiApp.Settings).copy(carPlaySettingsRequested = true) }
 
-    fun setCarPlayFullScreen(on: Boolean) = _screen.update { if (on && it.app != HmiApp.Auto) it else it.copy(carPlayFullScreen = on) }
+    fun openAndroidAutoSettings() = _screen.update { it.open(HmiApp.Settings).copy(androidAutoSettingsRequested = true) }
+
+    fun setAutoFullScreen(on: Boolean) = _screen.update { if (on && it.app != HmiApp.Auto) it else it.copy(autoFullScreen = on) }
 
     /**
-     * The driver tapped Revv's icon in CarPlay, asking for the car's own screen: full-screen
-     * CarPlay shrinks back into the Auto screen, otherwise Revv goes home.
+     * The driver asked the phone for the car's own screen (Revv's icon in CarPlay, Exit in Android
+     * Auto): the full-screen projection shrinks back into the Auto screen, otherwise Revv goes home.
      */
-    private fun carPlayAskedForRevv() {
-        if (_screen.value.carPlayFullScreen) setCarPlayFullScreen(false) else goHome()
+    private fun phoneAskedForRevv() {
+        if (_screen.value.autoFullScreen) setAutoFullScreen(false) else goHome()
     }
 
     fun carPlaySettingsShown() = _screen.update { it.copy(carPlaySettingsRequested = false) }
+
+    fun androidAutoSettingsShown() = _screen.update { it.copy(androidAutoSettingsRequested = false) }
+
+    /**
+     * Which phone the Auto screen shows (SettingsStore.AUTO_CARPLAY or AUTO_ANDROID_AUTO). The
+     * other phone's session stands down unless it is mid-session: the two cannot both hold the
+     * Wi-Fi Direct radio, and the chosen phone is the one Revv listens for. Its view starting
+     * again brings it back.
+     */
+    fun setAutoSource(source: Int) {
+        val chosen = source.coerceIn(SettingsStore.AUTO_CARPLAY, SettingsStore.AUTO_ANDROID_AUTO)
+        settingsStore.setLevel(SettingsStore.AUTO_SOURCE, chosen)
+        if (chosen == SettingsStore.AUTO_ANDROID_AUTO) {
+            if (!carPlay.isOff && carPlay.state.value.phase != CarPlay.PHASE_CONNECTED) carPlay.stop()
+        } else {
+            if (!androidAuto.isOff && androidAuto.state.value.phase != AndroidAuto.PHASE_CONNECTED) androidAuto.stop()
+        }
+    }
+
+    /** The Auto screen with Android Auto up: a phone connected, or its notification was tapped. */
+    fun openAndroidAuto() {
+        setAutoSource(SettingsStore.AUTO_ANDROID_AUTO)
+        open(HmiApp.Auto)
+    }
 
     fun back() = _screen.update { it.back() }
 
@@ -396,12 +447,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun skipToPrevious() = media.skipToPrevious()
     fun seekTo(positionMs: Long) = media.seekTo(positionMs)
     /**
-     * Opens the player behind the media card. CarPlay's music is the iPhone's, played through
-     * Revv's own media session: that opens CarPlay in the Auto screen.
+     * Opens the player behind the media card. CarPlay's and Android Auto's music is the phone's,
+     * played through Revv's own media session: that opens the Auto screen on whichever is connected.
      */
     fun openPlayer(): Boolean {
         val playing = media.nowPlaying.value?.packageName
         if (playing != null && playing == getApplication<Application>().packageName) {
+            when {
+                androidAuto.state.value.phase == AndroidAuto.PHASE_CONNECTED -> setAutoSource(SettingsStore.AUTO_ANDROID_AUTO)
+                carPlay.state.value.phase == CarPlay.PHASE_CONNECTED -> setAutoSource(SettingsStore.AUTO_CARPLAY)
+            }
             open(HmiApp.Auto)
             return true
         }

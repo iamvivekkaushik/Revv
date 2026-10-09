@@ -77,15 +77,22 @@ fun AppOverlay(
                     HText("HOME", size = 16.sp, spacing = 2.sp)
                 }
             }
-            val carPlay = app == HmiApp.Auto
-            HText(if (carPlay) "CARPLAY" else app.title.uppercase(), size = 18.sp, color = Hmi.Muted, spacing = 4.sp)
+            // The Auto screen is named for the phone it shows.
+            val projection = app == HmiApp.Auto
+            val androidAuto = state.settings.androidAutoChosen
+            val title = when {
+                !projection -> app.title.uppercase()
+                androidAuto -> "ANDROID AUTO"
+                else -> "CARPLAY"
+            }
+            HText(title, size = 18.sp, color = Hmi.Muted, spacing = 4.sp)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                // CarPlay's full screen and settings, kept out of the CarPlay picture.
-                if (carPlay) {
-                    Pressable({ actions.setCarPlayFullScreen(true) }, Modifier.size(44.dp)) {
+                // The projection's full screen and settings, kept out of the phone's picture.
+                if (projection) {
+                    Pressable({ actions.setAutoFullScreen(true) }, Modifier.size(44.dp)) {
                         PathIcon(HmiIcons.FULL_SCREEN, 22.dp, Hmi.Muted, strokeWidth = 2f)
                     }
-                    Pressable(actions::openCarPlaySettings, Modifier.size(44.dp)) {
+                    Pressable(if (androidAuto) actions::openAndroidAutoSettings else actions::openCarPlaySettings, Modifier.size(44.dp)) {
                         PathIcon(HmiIcons.GEAR, 22.dp, Hmi.Muted)
                     }
                 }
@@ -154,9 +161,26 @@ private fun AutoScreen(state: HmiUiState, actions: HmiActions) {
         }
         return
     }
-    // CarPlay runs inside this screen, unless it is full screen over all of Revv (see HmiRoot):
-    // one view at a time.
-    if (state.screen.carPlayFullScreen) return
+    // The projection runs inside this screen, unless it is full screen over all of Revv (see
+    // HmiRoot): one view at a time.
+    if (state.screen.autoFullScreen) return
+    if (state.settings.androidAutoChosen) {
+        AndroidAutoAutoScreen(
+            state.androidAuto,
+            actions,
+            wide = state.settings.isOn(SettingsStore.ANDROID_AUTO_WIDE),
+            projectionLabel = chosen?.label,
+            onChooseApp = { choosingApp = true },
+            // The driver may keep Android Auto's settings beside it instead of its status and controls.
+            settings = if (state.settings.isOn(SettingsStore.ANDROID_AUTO_SETTINGS_BESIDE)) {
+                { modifier -> AndroidAutoSettings(state, actions, modifier, title = "SETTINGS", besideAndroidAuto = true) }
+            } else {
+                null
+            },
+            androidAutoRight = state.settings.isOn(SettingsStore.ANDROID_AUTO_ON_RIGHT),
+        )
+        return
+    }
     CarPlayAutoScreen(
         state.carPlay,
         actions,

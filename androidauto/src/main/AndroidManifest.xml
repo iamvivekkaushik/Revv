@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Wireless Android Auto: the phone is woken over Bluetooth and told which Wi-Fi network
+         (the head unit's Wi-Fi Direct group or hotspot) to join. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- The session keeps the Wi-Fi radio at full power and the CPU awake while a phone projects. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The microphone for the phone's assistant and calls. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- "Modify system settings": lets the car-hotspot link turn the head unit's hotspot on. -->
+    <uses-permission
+        android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.wifi"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+
+    <queries>
+        <intent>
+            <action android:name="android.settings.WIFI_SETTINGS" />
+        </intent>
+        <!-- BYD head units' cluster and head-up display services, for the navigation outputs. -->
+        <package android:name="com.byd.clusterdebug" />
+        <package android:name="com.byd.amapservice" />
+        <package android:name="com.ts.car.someip.service" />
+    </queries>
+
+    <application>
+        <!-- The Android Auto session: USB and wireless links, the phone's audio, the media
+             session, while a phone is connected or being waited for. -->
+        <service
+            android:name="com.andrerinas.openheadunit.aap.AapService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|mediaPlayback|microphone|location"
+            android:stopWithTask="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </service>
+        <!-- The head unit's GPS for the phone, while a session runs. -->
+        <service
+            android:name="com.andrerinas.openheadunit.location.GpsLocationService"
+            android:exported="false" />
+
+        <!-- Routes media-button intents to the session's media session. -->
+        <receiver
+            android:name="androidx.media.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- An Android phone plugged in: switch it to accessory mode and hand it to the session.
+             Listing it here lets Android remember the choice to open Revv for that phone. -->
+        <activity
+            android:name="com.andrerinas.openheadunit.app.UsbAttachedActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter" />
+        </activity>
+
+        <!-- The phone chosen for wireless Android Auto connected over Bluetooth: wake it so it joins
+             the head unit's Wi-Fi. Android's Bluetooth broadcast lets the session start from here. -->
+        <receiver
+            android:name="com.andrerinas.openheadunit.app.BluetoothAutoStartReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

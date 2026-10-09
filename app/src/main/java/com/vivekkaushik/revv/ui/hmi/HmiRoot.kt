@@ -154,8 +154,12 @@ fun HmiRoot(state: HmiUiState, obdReadings: StateFlow<ObdReadings?>, navigation:
                     actions = actions,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = if (LocalCompact.current) 12.dp else 28.dp),
                 )
-                if (state.screen.carPlayFullScreen && state.screen.app == HmiApp.Auto) {
-                    CarPlayFullScreen(state.carPlay, onExit = { actions.setCarPlayFullScreen(false) })
+                if (state.screen.autoFullScreen && state.screen.app == HmiApp.Auto) {
+                    if (state.settings.androidAutoChosen) {
+                        AndroidAutoFullScreen(state.androidAuto, onExit = { actions.setAutoFullScreen(false) })
+                    } else {
+                        CarPlayFullScreen(state.carPlay, onExit = { actions.setAutoFullScreen(false) })
+                    }
                 }
             }
         }

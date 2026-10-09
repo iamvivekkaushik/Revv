@@ -49,19 +49,19 @@ class ScreenStateTest {
     }
 
     @Test
-    fun back_fromFullScreenCarPlay_returnsToTheAutoScreen() {
-        val full = home.open(HmiApp.Phone).open(HmiApp.Auto).copy(carPlayFullScreen = true)
+    fun back_fromFullScreenProjection_returnsToTheAutoScreen() {
+        val full = home.open(HmiApp.Phone).open(HmiApp.Auto).copy(autoFullScreen = true)
         val back = full.back()
         assertEquals(HmiApp.Auto, back.app)
-        assertFalse(back.carPlayFullScreen)
+        assertFalse(back.autoFullScreen)
         assertEquals(HmiApp.Phone, back.back().app)
     }
 
     @Test
-    fun leavingTheAutoScreen_endsFullScreenCarPlay() {
-        val full = home.open(HmiApp.Auto).copy(carPlayFullScreen = true)
-        assertFalse(full.open(HmiApp.Settings).carPlayFullScreen)
-        assertFalse(full.home(animate = true).carPlayFullScreen)
-        assertFalse(full.home(animate = false).carPlayFullScreen)
+    fun leavingTheAutoScreen_endsTheFullScreenProjection() {
+        val full = home.open(HmiApp.Auto).copy(autoFullScreen = true)
+        assertFalse(full.open(HmiApp.Settings).autoFullScreen)
+        assertFalse(full.home(animate = true).autoFullScreen)
+        assertFalse(full.home(animate = false).autoFullScreen)
     }
 }

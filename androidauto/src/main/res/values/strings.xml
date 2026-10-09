@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Android Auto stack's strings. The first group is Revv's own: the session's notification
+     and the lines the Auto screen shows while there is no picture. The rest are DiAuto's that the
+     engine still shows: USB prompts, the media notification's buttons and navigation wording. -->
+<resources>
+    <string name="aa_service_title">Android Auto</string>
+    <string name="aa_notification_waiting">Waiting for a phone</string>
+    <string name="aa_notification_projecting">Android Auto is connected</string>
+    <string name="aa_notification_disconnect">Disconnect</string>
+    <string name="aa_service_channel">Android Auto connection</string>
+    <string name="aa_media_channel">Android Auto playback</string>
+    <string name="aa_embed_setup_required">One-time setup needed</string>
+    <string name="aa_embed_idle">Android Auto is off</string>
+    <string name="aa_embed_starting">Starting Android Auto</string>
+    <string name="aa_embed_waiting_usb">Plug an Android phone in over USB</string>
+    <string name="aa_embed_waiting_wireless">Waiting for a paired Android phone over USB or Wi-Fi</string>
+    <string name="aa_embed_switching_usb">Connecting the phone over USB</string>
+    <string name="aa_embed_connecting">Connecting to the phone</string>
+    <string name="aa_embed_handshake">Setting the session up</string>
+    <string name="aa_embed_connected">Android Auto connected</string>
+    <string name="aa_embed_reconnecting">Reconnecting</string>
+    <string name="aa_embed_stalled">The phone stopped answering; reconnecting</string>
+    <string name="aa_embed_kept_stalling">The phone kept stalling; Connect tries again</string>
+    <string name="aa_embed_phone_exited">Android Auto was closed on the phone</string>
+    <string name="aa_embed_disconnected">The phone disconnected</string>
+    <string name="aa_embed_could_not_start">Android Auto could not start</string>
+    <string name="aa_embed_usb_permission">Allow Revv to use the phone when Android asks</string>
+
+    <string name="video">Android Auto</string>
+    <string name="switching_usb_accessory_mode">Connecting %s over USB…</string>
+    <string name="success">Connected</string>
+    <string name="failed">The phone did not switch to Android Auto</string>
+    <string name="error_usb_permission_failed">System error: Failed to request USB permission dialog.</string>
+    <string name="hotspot_config_unreadable_toast">Can\'t read this head unit\'s hotspot name. Set it in Settings › Android Auto.</string>
+    <string name="media_action_next">Next</string>
+    <string name="media_action_pause">Pause</string>
+    <string name="media_action_play">Play</string>
+    <string name="media_action_previous">Previous</string>
+    <string name="media_session_aa_status_placeholder">Connected</string>
+    <string name="requesting_usb_permission">Requesting USB permission…</string>
+    <string name="usb_permission_denied">USB permission denied. Allow USB access for the phone to connect automatically.</string>
+    <string name="wifi_disabled_info">Wi-Fi is off.</string>
+    <string name="wifi_disconnect_toast">Android Auto disconnected. For wireless Android Auto, turn off \"Switch between networks\" or \"Network acceleration\" in the phone\'s Wi-Fi settings.</string>
+    <string name="perm_mic_title">Microphone</string>
+    <string name="perm_mic_help">The phone\'s assistant and calls</string>
+    <string name="perm_location_title">Location</string>
+    <string name="perm_location_help">The head unit\'s GPS for the phone\'s maps</string>
+    <string name="perm_nearby_title">Nearby devices</string>
+    <string name="perm_nearby_help">The Wi-Fi link the phone joins</string>
+    <string name="perm_notifications_title">Notifications</string>
+    <string name="perm_notifications_help">The connection\'s notification</string>
+    <string name="perm_overlay_title">Display over other apps</string>
+    <string name="perm_overlay_help">Not needed by Revv</string>
+    <string name="perm_write_settings_title">Modify system settings</string>
+    <string name="perm_write_settings_help">Turning the head unit\'s hotspot on</string>
+    <string name="perm_storage_title">Storage</string>
+    <string name="perm_storage_help">Not needed by Revv</string>
+    <string name="perm_optional_format">%1$s (optional)</string>
+    <string name="nav_notification_channel_name">Navigation</string>
+    <string name="nav_notification_channel_description">Turn-by-turn navigation updates from Android Auto</string>
+    <string name="nav_notification_title_format">In %1$d m — %2$s</string>
+    <string name="nav_notification_street_format">Street: %1$s</string>
+    <string name="nav_action_depart">Depart</string>
+    <string name="nav_action_destination">Destination</string>
+    <string name="nav_action_ferry">Ferry</string>
+    <string name="nav_action_ferry_train">Ferry train</string>
+    <string name="nav_action_merge">Merge</string>
+    <string name="nav_action_name_change">Continue</string>
+    <string name="nav_action_off_ramp">Exit ramp</string>
+    <string name="nav_action_on_ramp">On ramp</string>
+    <string name="nav_action_roundabout">Roundabout</string>
+    <string name="nav_action_roundabout_enter">Enter roundabout</string>
+    <string name="nav_action_roundabout_exit">Exit roundabout</string>
+    <string name="nav_action_sharp_turn">Sharp turn</string>
+    <string name="nav_action_slight_turn">Slight turn</string>
+    <string name="nav_action_straight">Straight</string>
+    <string name="nav_action_turn">Turn</string>
+    <string name="nav_action_unknown">Navigation</string>
+    <string name="nav_action_uturn">U-turn</string>
+</resources>
