@@ -7,6 +7,14 @@ plugins {
 // release build is left unsigned, so local builds need no keystore.
 val releaseKeystore = System.getenv("REVV_KEYSTORE_PATH")?.let(::file)?.takeIf { it.exists() }
 
+// The developer's own CarPlay accessory identity in the gitignored .private/auth/offline-mfi/
+// (identity.pk8 and certificate.p7b). Debug builds bundle it when it is there, so personal test
+// installs need no import. Release builds never do: anyone with the APK could extract the key.
+val identityFiles = listOf("identity.pk8", "certificate.p7b")
+val debugIdentityAssets = rootProject.file(".private/auth").canonicalFile.takeIf { dir ->
+    identityFiles.all { name -> dir.resolve("offline-mfi/$name").let { it.isFile && it.length() > 0 } }
+}
+
 android {
     namespace = "com.vivekkaushik.revv"
     compileSdk {
@@ -55,6 +63,7 @@ android {
     // Licensed recordings, such as the engine's start-up, are kept out of the public repo in
     // .private/assets and built in when they're there.
     sourceSets.getByName("main").assets.directories.add(rootProject.file(".private/assets").path)
+    debugIdentityAssets?.let { sourceSets.getByName("debug").assets.directories.add(it.path) }
 }
 
 dependencies {
@@ -67,9 +76,33 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.maplibre.android)
+    // CarPlay: the session engine the Auto screen hosts, and DiPlay's own screens behind it.
+    implementation(project(":carplay:common"))
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
 }
+
+// No credential file reaches an APK's assets but the debug identity above: a CarPlay identity in a
+// published APK would be extractable, and so would a signing key or certificate left in a folder.
+val credentialAssets = files(android.sourceSets.flatMap { source ->
+    source.assets.directories.map { directory ->
+        fileTree(directory) {
+            include("**/offline-mfi/**", "**/*.pk8", "**/*.p7b", "**/*.key", "**/*.pem", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.keystore")
+        }
+    }
+})
+tasks.register("rejectBundledCredentials") {
+    group = "verification"
+    description = "Reject credential files in APK assets, other than the debug build's own CarPlay identity."
+    val filesToCheck = credentialAssets
+    val allowed = debugIdentityAssets?.let { dir -> identityFiles.map { dir.resolve("offline-mfi/$it").canonicalFile } }.orEmpty().toSet()
+    inputs.files(filesToCheck)
+    doLast {
+        val unexpected = filesToCheck.files.filter { it.canonicalFile !in allowed }
+        check(unexpected.isEmpty()) { "Unexpected credential files in APK assets: ${unexpected.joinToString()}" }
+    }
+}
+tasks.named("preBuild") { dependsOn("rejectBundledCredentials") }

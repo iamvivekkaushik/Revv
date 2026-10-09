@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hotspot_details_saved">Данные сохранены · Перед подключением убедитесь, что точка доступа автомобиля включена.</string>
+    <string name="auto_value">авто</string>
+    <string name="status_hotspot_ready">Точка доступа готова: %1$s, %2$s, %3$s, канал %4$s</string>
+    <string name="status_waiting_reenumeration">Ожидание повторной нумерации iPhone</string>
+    <string name="status_attaching_ncm">Подключение сети NCM/AirPlay</string>
+    <string name="status_failed">Ошибка: %1$s</string>
+    <string name="carplay_control_running">Управление CarPlay работает</string>
+    <string name="carplay_control_window_ended">Окно управления CarPlay завершено</string>
+    <string name="connecting_bluetooth">Подключение Bluetooth</string>
+    <string name="connecting_iap2_control">Подключение канала управления iAP2</string>
+    <string name="could_not_save_the_report">Не удалось сохранить отчёт</string>
+    <string name="diagnostic_report_saved">Диагностический отчёт сохранён</string>
+    <string name="discovering_iphone">Поиск iPhone</string>
+    <string name="mfi_authentication_ready">Аутентификация MFi готова</string>
+    <string name="opening_usb_data_paths">Открытие каналов данных USB</string>
+    <string name="pairing_with_iphone">Связывание с iPhone</string>
+    <string name="preparing_mfi_authentication">Подготовка аутентификации MFi</string>
+    <string name="requesting_iphone_usb_permission">Запрос разрешения USB для iPhone</string>
+    <string name="requesting_mfi_usb_permission">Запрос разрешения USB для MFi</string>
+    <string name="selecting_carplay_configuration">Выбор конфигурации CarPlay</string>
+    <string name="starting_airplay_service">Запуск службы AirPlay</string>
+    <string name="starting_wireless_hotspot">Запуск беспроводной точки доступа</string>
+    <string name="waiting_for_iphone_over_usb">Ожидание iPhone по USB</string>
+    <string name="waiting_for_mfi_coprocessor">Ожидание сопроцессора MFi</string>
+    <string name="waiting_for_paired_iphone">Ожидание связанного iPhone</string>
+    <string name="wireless_carplay_active">Беспроводной CarPlay активен</string>
+    <string name="wireless_carplay_control_running">Управление беспроводным CarPlay работает</string>
+    <string name="hotspot_error_empty_name">Введите имя точки доступа автомобиля</string>
+    <string name="hotspot_error_long_name">Имя точки доступа не должно превышать 32 байта</string>
+    <string name="hotspot_error_invalid_character">Имя или пароль содержит недопустимый символ</string>
+    <string name="hotspot_error_password_length">Пароль точки доступа должен содержать от 8 до 63 символов</string>
+</resources>

@@ -1,8 +1,8 @@
 package com.vivekkaushik.revv.ui.hmi
 
-import com.vivekkaushik.revv.system.CarPlayCompanion
 import androidx.compose.ui.geometry.Rect
 import com.vivekkaushik.revv.apps.LauncherApp
+import com.vivekkaushik.revv.carplay.CarPlay
 import com.vivekkaushik.revv.media.NowPlaying
 import com.vivekkaushik.revv.nav.Place
 import com.vivekkaushik.revv.obd.ObdAdapter
@@ -108,8 +108,8 @@ data class HmiUiState(
     val learntGears: List<Float>,
     /** The call Revv placed on the phone, while it lasts. */
     val call: ActiveCall? = null,
-    /** The RevvCarPlay companion while it is installed (Android 11+); the Auto screen then hosts CarPlay. */
-    val carPlay: CarPlayCompanion? = null
+    /** CarPlay, which the Auto screen hosts; alive for as long as Revv runs. */
+    val carPlay: CarPlay,
 )
 
 /** Everything the HMI can ask for. Implemented by MainActivity. */
@@ -163,7 +163,8 @@ interface HmiActions {
     fun requestMediaAccess()
 
     /** Opens Android's page for letting Revv modify system settings, which the brightness is. */
-    fun requestBrightnessAccess()
+    /** Android's "Modify system settings" page for Revv: screen brightness, and the hotspot switch for CarPlay. */
+    fun requestWriteSettingsAccess()
 
     /** Settings › Display › Auto night mode: off, dimming from sunset to sunrise, or by the light sensor. */
     fun setNightMode(mode: NightMode)
@@ -191,8 +192,17 @@ interface HmiActions {
     /** Chooses which camera the Rear Cam screen shows; null goes back to picking one automatically. */
     fun setRearCameraId(id: String?)
 
-    /** Picks RevvCarPlay's identity files (identity.pk8 and certificate.p7b) and hands them to the companion. */
+    /** Picks CarPlay's identity files (identity.pk8 and certificate.p7b) and installs them. */
     fun importCarPlayIdentity()
+
+    /**
+     * Asks for what CarPlay's setup still lacks that only a prompt can give: the runtime permissions
+     * for the chosen link, Siri and its notification, then the VPN consent for USB CarPlay.
+     */
+    fun finishCarPlaySetup()
+
+    /** Asks for the runtime permissions CarPlay still lacks, or opens Revv's app info page when Android no longer asks. */
+    fun requestCarPlayPermissions()
 
     /** Makes Start projection open [app], or the usual projection app again when null. */
     fun setProjectionApp(app: LauncherApp?)

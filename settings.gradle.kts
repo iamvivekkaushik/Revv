@@ -24,4 +24,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "Revv"
 include(":app")
- 
+// The CarPlay stack (a fork of DiPlay / xcertplay, GPL-3.0): the protocol, transports and media
+// in :carplay:shared, the session engine and DiPlay's own screens in :carplay:common.
+include(":carplay:shared")
+include(":carplay:common")

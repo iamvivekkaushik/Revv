@@ -57,10 +57,6 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
-        <!-- The Revv CarPlay companion app, which runs CarPlay inside the Auto screen. -->
-        <intent>
-            <action android:name="com.vivekkaushik.revvcarplay.action.EMBED_CARPLAY" />
-        </intent>
     </queries>
 
     <application

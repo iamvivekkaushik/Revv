@@ -1,0 +1,49 @@
+name: Checks
+
+# Every push and pull request: no credential files in the tree, then the unit tests of the app and
+# the CarPlay stack, and a source-only debug build (no CarPlay identity, as CI has none).
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Tests and debug build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Reject credential files in the source tree
+        run: python3 scripts/check_public_tree.py
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Unit tests and the debug build
+        run: ./gradlew :app:testDebugUnitTest :carplay:shared:testDebugUnitTest :carplay:common:testDebugUnitTest :app:assembleDebug --stacktrace
+
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            app/build/reports/tests/
+            carplay/shared/build/reports/tests/
+            carplay/common/build/reports/tests/

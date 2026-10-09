@@ -4,9 +4,14 @@
 # For more details, see
 #   https://d.android.com/r/tools/r8/keep-rules
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# The CarPlay stack (carplay/) looks things up by name: JNI methods, enum settings saved by name,
+# the BYD head-unit APIs reached by reflection. Shrink it, but keep every surviving name as it is.
+-keepnames class com.shilapi.xcertplay.** { *; }
+-keepclasseswithmembers class com.shilapi.xcertplay.** { native <methods>; }
+
+# Bouncy Castle registers its algorithms by class name, which R8 cannot trace.
+-keep class org.bouncycastle.** { *; }
+-dontwarn org.bouncycastle.**
+
+# JmDNS (Bonjour for wireless CarPlay) logs through SLF4J, whose optional bindings are absent.
+-dontwarn org.slf4j.**

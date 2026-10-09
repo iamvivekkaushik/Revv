@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="contrib_audio_home_channel_preview_unavailable">На цьому пристрої не можна прослухати аудіопотік Android %1$d.</string>
+</resources>

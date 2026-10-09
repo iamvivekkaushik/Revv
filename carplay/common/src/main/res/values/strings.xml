@@ -1,0 +1,54 @@
+<resources>
+    <string name="hotspot_details_saved">Details saved · Check that the car hotspot is on before connecting.</string>
+    <string name="auto_value">auto</string>
+    <string name="status_hotspot_ready">Hotspot ready: %1$s, %2$s, %3$s, channel %4$s</string>
+    <string name="status_waiting_reenumeration">Waiting for iPhone re-enumeration</string>
+    <string name="status_attaching_ncm">Attaching NCM/AirPlay network</string>
+    <string name="status_failed">Failed: %1$s</string>
+    <string name="app_name">Revv</string>
+    <string name="carplay_control_running">CarPlay control running</string>
+    <string name="carplay_control_window_ended">CarPlay control window ended</string>
+    <string name="connecting_bluetooth">Connecting Bluetooth</string>
+    <string name="connecting_iap2_control">Connecting iAP2 control</string>
+    <string name="could_not_save_the_report">Could not save the report</string>
+    <string name="diagnostic_report_saved">Diagnostic report saved</string>
+    <string name="discovering_iphone">Discovering iPhone</string>
+    <string name="mfi_authentication_ready">MFi authentication ready</string>
+    <string name="opening_usb_data_paths">Opening USB data paths</string>
+    <string name="pairing_with_iphone">Pairing with iPhone</string>
+    <string name="preparing_mfi_authentication">Preparing MFi authentication</string>
+    <string name="requesting_iphone_usb_permission">Requesting iPhone USB permission</string>
+    <string name="requesting_mfi_usb_permission">Requesting MFi USB permission</string>
+    <string name="selecting_carplay_configuration">Selecting CarPlay configuration</string>
+    <string name="starting_airplay_service">Starting AirPlay service</string>
+    <string name="starting_wireless_hotspot">Starting wireless hotspot</string>
+    <string name="waiting_for_iphone_over_usb">Waiting for iPhone over USB</string>
+    <string name="waiting_for_mfi_coprocessor">Waiting for MFi coprocessor</string>
+    <string name="waiting_for_paired_iphone">Waiting for paired iPhone</string>
+    <string name="wireless_carplay_active">Wireless CarPlay active</string>
+    <string name="wireless_carplay_control_running">Wireless CarPlay control running</string>
+    <string name="hotspot_error_empty_name">Enter the car hotspot name</string>
+    <string name="hotspot_error_long_name">The hotspot name must be at most 32 bytes</string>
+    <string name="hotspot_error_invalid_character">The name or password contains an invalid character</string>
+    <string name="hotspot_error_password_length">The hotspot password must be 8–63 characters</string>
+
+    <!-- Revv: accessory identity import and the embedded session in Revv's Auto screen. -->
+    <string name="identity_missing">No identity installed. CarPlay cannot start without one.</string>
+    <string name="identity_pick_both">Pick both files: identity.pk8 and certificate.p7b.</string>
+    <string name="identity_import_failed">These files are not a matching CarPlay identity (P-256 key and its certificate).</string>
+    <string name="identity_imported">Identity imported.</string>
+    <string name="embed_setup_required">Finish setup in Settings › CarPlay.</string>
+    <string name="embed_taking_over">Moving CarPlay to this screen…</string>
+    <string name="embed_starting">Starting CarPlay…</string>
+    <string name="embed_connected">CarPlay connected</string>
+    <string name="embed_reconnecting">Reconnecting to the iPhone…</string>
+    <string name="embed_could_not_start">CarPlay could not start. Check its permissions in Settings › CarPlay.</string>
+    <string name="embed_idle">CarPlay is off</string>
+    <string name="embed_wifi_direct_in_use_by">Wi-Fi Direct is connected to %1$s, perhaps for screen mirroring. Android allows one Wi-Fi Direct connection at a time, so CarPlay can\'t start its own.</string>
+    <string name="embed_wifi_direct_in_use">Another Wi-Fi Direct connection, perhaps screen mirroring, is using Wi-Fi Direct. Android allows one at a time, so CarPlay can\'t start its own.</string>
+    <string name="embed_ending_wifi_direct">Ending the other Wi-Fi Direct connection…</string>
+    <string name="embed_wifi_direct_reset_failed">The other Wi-Fi Direct connection didn\'t end. Stop screen mirroring or disconnect the TV, then try again.</string>
+    <string name="hotspot_switch_no_access">Allow Modify system settings for Revv so it can turn the hotspot on, or turn it on in the head unit\'s settings.</string>
+    <string name="hotspot_switch_unsupported">This head unit doesn\'t let Revv turn its hotspot on. Turn it on in its settings.</string>
+    <string name="hotspot_switch_failed">The head unit didn\'t turn its hotspot on. Turn it on in its settings.</string>
+</resources>

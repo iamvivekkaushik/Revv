@@ -1,13 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+   Android's backup of Revv's settings (devices up to Android 11; data_extraction_rules.xml from 12).
+   CarPlay's pairing keys and records stay out of it: they belong to this head unit alone.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="sharedpref" path="xcertplay_airplay.xml" />
+    <exclude domain="sharedpref" path="diplay.xml" />
+    <exclude domain="sharedpref" path="carplay_wifi_p2p.xml" />
+    <exclude domain="sharedpref" path="carplay_wifi_p2p_success.xml" />
 </full-backup-content>

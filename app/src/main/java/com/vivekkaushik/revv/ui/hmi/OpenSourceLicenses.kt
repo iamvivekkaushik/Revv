@@ -36,6 +36,11 @@ private val NOTICES = listOf(
     Notice("Michroma", "Display font", "SIL Open Font License 1.1", "OFL-Michroma.txt"),
     Notice("engine-sim", "How the engine sound is made, and its exhaust recordings", "MIT License", "MIT-engine-sim.txt"),
     Notice("Map data and services", "OpenStreetMap, OpenFreeMap, OpenMapTiles, Valhalla and Photon", "ODbL, CC-BY 4.0, MIT, Apache 2.0", "Map-data.txt"),
+    Notice("DiPlay and xcertplay", "CarPlay: the iAP2 and AirPlay protocols, USB and wireless links, video and audio", "GNU GPL 3.0", "GPL-3.0.txt"),
+    Notice("Bouncy Castle", "CarPlay's pairing and transport cryptography", "MIT License", "MIT-BouncyCastle.txt"),
+    Notice("JmDNS and SLF4J", "Bonjour, which wireless CarPlay is found with", "Apache License 2.0, MIT License", "MIT-SLF4J.txt"),
+    Notice("AndroidHiddenApiBypass", "Turning the head unit's hotspot on for CarPlay", "Apache License 2.0", "Apache-2.0.txt"),
+    Notice("BYDMate HUD icons", "Maneuver icons for BYD head-up displays", "PolyForm Noncommercial 1.0.0", "PolyForm-NC-BYDMate.txt"),
 )
 
 /** Settings › System › Open source licenses: what Revv is built from, and each one's full terms on tap. */
@@ -51,7 +56,7 @@ fun OpenSourceLicenses(onDone: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         HText("OPEN SOURCE LICENSES", size = 26.sp, family = Hmi.Display)
         HText(
-            "Revv is built with the free software and data below. Tap one to read its license.",
+            "Revv is built with the free software and data below, and is itself free software under the GNU GPL 3.0. Tap one to read its license.",
             Modifier.padding(top = 6.dp, bottom = 16.dp),
             size = 15.sp,
             color = Hmi.Muted,

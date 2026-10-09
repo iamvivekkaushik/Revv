@@ -1,0 +1,34 @@
+<resources>
+    <string name="hotspot_details_saved">详情已保存 · 连接前请确认车载热点已开启。</string>
+    <string name="auto_value">自动</string>
+    <string name="status_hotspot_ready">热点就绪：%1$s、%2$s、%3$s，信道 %4$s</string>
+    <string name="status_waiting_reenumeration">等待 iPhone 重新枚举</string>
+    <string name="status_attaching_ncm">正在连接 NCM/AirPlay 网络</string>
+    <string name="status_failed">失败：%1$s</string>
+    <string name="app_name">Revv</string>
+    <string name="carplay_control_running">CarPlay 控制通道运行中</string>
+    <string name="carplay_control_window_ended">CarPlay 控制会话已结束</string>
+    <string name="connecting_bluetooth">正在连接蓝牙</string>
+    <string name="connecting_iap2_control">正在连接 iAP2 控制通道</string>
+    <string name="could_not_save_the_report">无法保存报告</string>
+    <string name="diagnostic_report_saved">诊断报告已保存</string>
+    <string name="discovering_iphone">正在查找 iPhone</string>
+    <string name="mfi_authentication_ready">MFi 认证已就绪</string>
+    <string name="opening_usb_data_paths">正在打开 USB 数据通道</string>
+    <string name="pairing_with_iphone">正在与 iPhone 配对</string>
+    <string name="preparing_mfi_authentication">正在准备 MFi 认证</string>
+    <string name="requesting_iphone_usb_permission">正在请求 iPhone USB 权限</string>
+    <string name="requesting_mfi_usb_permission">正在请求 MFi USB 权限</string>
+    <string name="selecting_carplay_configuration">正在选择 CarPlay 配置</string>
+    <string name="starting_airplay_service">正在启动 AirPlay 服务</string>
+    <string name="starting_wireless_hotspot">正在启动无线热点</string>
+    <string name="waiting_for_iphone_over_usb">正在等待 USB 连接的 iPhone</string>
+    <string name="waiting_for_mfi_coprocessor">正在等待 MFi 协处理器</string>
+    <string name="waiting_for_paired_iphone">正在等待已配对的 iPhone</string>
+    <string name="wireless_carplay_active">无线 CarPlay 已启用</string>
+    <string name="wireless_carplay_control_running">无线 CarPlay 控制通道运行中</string>
+    <string name="hotspot_error_empty_name">请输入车载热点名称</string>
+    <string name="hotspot_error_long_name">热点名称不能超过32字节</string>
+    <string name="hotspot_error_invalid_character">名称或密码包含无效字符</string>
+    <string name="hotspot_error_password_length">热点密码长度必须为8至63个字符</string>
+</resources>

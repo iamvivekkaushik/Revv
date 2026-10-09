@@ -41,7 +41,7 @@ import com.vivekkaushik.revv.nav.Trip
 import com.vivekkaushik.revv.nav.TripStatus
 import com.vivekkaushik.revv.nav.Turn
 import com.vivekkaushik.revv.settings.SettingsStore
-import com.vivekkaushik.revv.system.CarPlayCompanion
+import com.vivekkaushik.revv.carplay.CarPlay
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -64,7 +64,7 @@ fun NavPanel(
     timeFormat: DateTimeFormatter,
     actions: HmiActions,
     modifier: Modifier = Modifier,
-    carPlay: CarPlayCompanion.Guidance? = null,
+    carPlay: CarPlay.Guidance? = null,
 ) {
     val nav by navigation.collectAsStateWithLifecycle()
     val trip = nav.trip
@@ -281,7 +281,7 @@ fun MapsScreen(
 @Composable
 private fun TripHeader(
     nav: NavState,
-    carPlay: CarPlayCompanion.Guidance?,
+    carPlay: CarPlay.Guidance?,
     distanceSize: TextUnit,
     controls: Boolean,
     actions: HmiActions,
@@ -345,7 +345,7 @@ private fun NextTurn(trip: Trip, guidance: Guidance, distanceSize: TextUnit, ico
  * place wasn't found, or following is off). Before CarPlay names a turn, just where it goes.
  */
 @Composable
-private fun CarPlayTurn(guidance: CarPlayCompanion.Guidance, distanceSize: TextUnit, iconSize: Dp, modifier: Modifier) {
+private fun CarPlayTurn(guidance: CarPlay.Guidance, distanceSize: TextUnit, iconSize: Dp, modifier: Modifier) {
     val turn = guidance.turn
     if (turn == null) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -420,7 +420,7 @@ private fun TripStatusCard(trip: Trip, waitingForFix: Boolean, controls: Boolean
 private class TripLeft(val eta: String, val seconds: Double, val metres: Double)
 
 /** What's left of Revv's own route while guiding, else of CarPlay's; null when neither says. */
-private fun tripLeft(trip: Trip?, carPlay: CarPlayCompanion.Guidance?, timeFormat: DateTimeFormatter): TripLeft? {
+private fun tripLeft(trip: Trip?, carPlay: CarPlay.Guidance?, timeFormat: DateTimeFormatter): TripLeft? {
     if (trip != null) {
         val guidance = trip.guidance?.takeIf { trip.status == TripStatus.Guiding } ?: return null
         val eta = LocalDateTime.now().plusSeconds(guidance.remainingSeconds.toLong())
@@ -444,16 +444,16 @@ private fun TripSummary(left: TripLeft, withUnits: Boolean, modifier: Modifier =
 }
 
 /**
- * CarPlay's route guidance, for Revv's map to show; null without the companion or a route, or
- * while both Follow CarPlay's route and Show CarPlay's turns (Settings › CarPlay) are off.
+ * CarPlay's route guidance, for Revv's map to show; null without a route, or while both Follow
+ * CarPlay's route and Show CarPlay's turns (Settings › CarPlay) are off.
  */
 @Composable
-fun rememberCarPlayGuidance(state: HmiUiState): CarPlayCompanion.Guidance? {
+fun rememberCarPlayGuidance(state: HmiUiState): CarPlay.Guidance? {
     val shown = state.settings.isOn(SettingsStore.CARPLAY_FOLLOW_ROUTE) || state.settings.isOn(SettingsStore.CARPLAY_SHOW_TURNS)
-    return (state.carPlay?.guidance?.takeIf { shown } ?: NO_CARPLAY_GUIDANCE).collectAsStateWithLifecycle().value
+    return (if (shown) state.carPlay.guidance else NO_CARPLAY_GUIDANCE).collectAsStateWithLifecycle().value
 }
 
-private val NO_CARPLAY_GUIDANCE = MutableStateFlow<CarPlayCompanion.Guidance?>(null)
+private val NO_CARPLAY_GUIDANCE = MutableStateFlow<CarPlay.Guidance?>(null)
 
 @Composable
 private fun TripStat(label: String, value: String, unit: String, modifier: Modifier, color: Color = Hmi.Text) {

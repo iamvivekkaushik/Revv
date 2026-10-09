@@ -132,6 +132,11 @@ platform :android do
       tasks: options[:tasks],
       properties: { "revv.versionName" => options[:version][:name], "revv.versionCode" => options[:version][:code] },
     )
+    # A CarPlay identity must never ship: the private key would be extractable from the build.
+    [lane_context[SharedValues::GRADLE_APK_OUTPUT_PATH], lane_context[SharedValues::GRADLE_AAB_OUTPUT_PATH]].reject { |built| built.to_s.empty? }.each do |built|
+      listing = `unzip -l "#{built}"`
+      UI.user_error!("#{built} contains credential files") if listing =~ /offline-mfi|\.(pk8|p7b|pem|p12|pfx|jks|keystore)$/i
+    end
   end
 end
 

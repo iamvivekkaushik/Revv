@@ -27,6 +27,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vivekkaushik.revv.apps.LauncherApp
+import com.vivekkaushik.revv.carplay.CarPlay
 import com.vivekkaushik.revv.media.MediaListenerService
 import com.vivekkaushik.revv.nav.Place
 import com.vivekkaushik.revv.obd.BluetoothAccess
@@ -86,6 +87,20 @@ class MainActivity : ComponentActivity(), HmiActions {
         if (uris.isNotEmpty()) viewModel.importCarPlayIdentity(uris)
     }
 
+    private val carPlayPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        val denied = results.filterValues { !it }.keys
+        if (denied.isNotEmpty()) openAppSettingsIfDeniedForGood(denied)
+        // Bluetooth or location may have come with them, for the rest of Revv too.
+        viewModel.onBluetoothPermissionResult()
+        viewModel.carPlay.setupChanged()
+        // USB CarPlay also needs the VPN consent: ask right after the permissions, not on another tap.
+        if (denied.isEmpty()) askForCarPlayVpnConsent()
+    }
+
+    private val carPlayVpnConsent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        viewModel.carPlay.setupChanged()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
@@ -112,12 +127,11 @@ class MainActivity : ComponentActivity(), HmiActions {
             val phone by viewModel.phone.collectAsStateWithLifecycle()
             val learntGears by viewModel.learntGears.collectAsStateWithLifecycle()
             val activeCall by viewModel.activeCall.collectAsStateWithLifecycle()
-            val carPlay by viewModel.carPlay.collectAsStateWithLifecycle()
             CompositionLocalProvider(LocalIconProvider provides viewModel.icons) {
                 HmiRoot(
                     state = HmiUiState(
                         apps, nowPlaying, system, settings, screen, obdStatus, adapterChoices, bleScanning, recentPlaces, obdLog, phone,
-                        learntGears, activeCall, carPlay = carPlay,
+                        learntGears, activeCall, carPlay = viewModel.carPlay,
                     ),
                     obdReadings = viewModel.obdReadings,
                     navigation = viewModel.navigation,
@@ -247,7 +261,7 @@ class MainActivity : ComponentActivity(), HmiActions {
         }
     }
 
-    override fun requestBrightnessAccess() {
+    override fun requestWriteSettingsAccess() {
         // Revv's own switch, else the list of apps, for builds that lack the per-app page.
         val revv = "package:$packageName".toUri()
         startFirstAvailable(
@@ -294,6 +308,31 @@ class MainActivity : ComponentActivity(), HmiActions {
         // Some head units ship without a document picker; launching can throw before any result.
         runCatching { carPlayIdentityPicker.launch(arrayOf("*/*")) }
             .onFailure { Toast.makeText(this, R.string.no_file_picker, Toast.LENGTH_LONG).show() }
+    }
+
+    override fun finishCarPlaySetup() {
+        val permissions = viewModel.carPlay.missingPermissions()
+        if (permissions.isNotEmpty()) carPlayPermissions.launch(permissions.toTypedArray()) else askForCarPlayVpnConsent()
+    }
+
+    override fun requestCarPlayPermissions() {
+        val permissions = viewModel.carPlay.missingPermissions()
+        if (permissions.isNotEmpty()) {
+            carPlayPermissions.launch(permissions.toTypedArray())
+        } else {
+            startFirstAvailable(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()))
+        }
+    }
+
+    /** Android's VPN consent dialog, once, while USB CarPlay still lacks it. */
+    private fun askForCarPlayVpnConsent() {
+        if (CarPlay.SETUP_VPN !in viewModel.carPlay.state.value.missing) return
+        val consent = viewModel.carPlay.vpnConsentIntent()
+        if (consent == null) {
+            viewModel.carPlay.setupChanged()
+            return
+        }
+        runCatching { carPlayVpnConsent.launch(consent) }.onFailure { toast(R.string.no_vpn_consent) }
     }
     override fun setProjectionApp(app: LauncherApp?) = viewModel.setProjectionApp(app)
     override fun setFuelWidgetApp(app: LauncherApp?) = viewModel.setFuelWidgetApp(app)

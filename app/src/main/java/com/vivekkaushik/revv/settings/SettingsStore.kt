@@ -291,15 +291,9 @@ class SettingsStore(context: Context) {
             SUNSET_DIMMING to false,
             REDUCED_MOTION to false,
             FULL_RPM to false,
-            "autoVol" to true,
             TOUCH_FEEDBACK to true,
-            "hotspot" to true,
-            "tpms" to true,
-            "shiftL" to true,
             AVOID_TOLLS to false,
             SAVE_OBD_LOG to true,
-            "traffic" to true,
-            "autoUpd" to true,
         )
         private val DEFAULT_LEVELS = mapOf(
             NAV_VOLUME to 18,

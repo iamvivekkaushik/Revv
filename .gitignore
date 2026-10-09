@@ -8,10 +8,11 @@
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
 .DS_Store
-/build
+build/
 /captures
 .externalNativeBuild
 .cxx
+.kotlin/
 local.properties
 
 # fastlane
@@ -25,5 +26,18 @@ local.properties
 brag-output/
 brag-output-*/
 
-# Licensed media kept out of the public repo
+# Licensed media kept out of the public repo, and the CarPlay accessory identity for local debug
+# builds (.private/auth/offline-mfi/identity.pk8 and certificate.p7b)
 /.private/
+
+# Never commit credential containers, signing keys or installable builds
+*.pk8
+*.p7b
+*.p12
+*.pfx
+*.pem
+*.key
+*.jks
+*.keystore
+*.apk
+*.aab

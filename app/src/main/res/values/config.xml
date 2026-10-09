@@ -1,0 +1,5 @@
+<resources>
+    <!-- CarPlay's advanced audio channel mapping (usage and content type instead of stream type)
+         is offered in Settings › CarPlay › Audio; carplay/common turns it off by default. -->
+    <bool name="config_advanced_audio_channel_mapping">true</bool>
+</resources>

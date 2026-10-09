@@ -11,7 +11,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Build
 import android.os.SystemClock
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
@@ -155,11 +154,8 @@ fun HmiRoot(state: HmiUiState, obdReadings: StateFlow<ObdReadings?>, navigation:
                     actions = actions,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = if (LocalCompact.current) 12.dp else 28.dp),
                 )
-                val carPlay = state.carPlay
-                if (carPlay != null && state.screen.carPlayFullScreen && state.screen.app == HmiApp.Auto &&
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-                ) {
-                    CarPlayFullScreen(carPlay, onExit = { actions.setCarPlayFullScreen(false) })
+                if (state.screen.carPlayFullScreen && state.screen.app == HmiApp.Auto) {
+                    CarPlayFullScreen(state.carPlay, onExit = { actions.setCarPlayFullScreen(false) })
                 }
             }
         }

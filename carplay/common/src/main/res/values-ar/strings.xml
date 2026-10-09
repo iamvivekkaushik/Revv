@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hotspot_details_saved">تم حفظ البيانات · تأكد من تشغيل نقطة اتصال السيارة قبل الاتصال.</string>
+    <string name="auto_value">تلقائي</string>
+    <string name="status_hotspot_ready">نقطة الاتصال جاهزة: %1$s، %2$s، %3$s، القناة %4$s</string>
+    <string name="status_waiting_reenumeration">بانتظار إعادة تعداد iPhone</string>
+    <string name="status_attaching_ncm">جارٍ توصيل شبكة NCM/AirPlay</string>
+    <string name="status_failed">فشل: %1$s</string>
+    <string name="carplay_control_running">التحكم في CarPlay قيد التشغيل</string>
+    <string name="carplay_control_window_ended">انتهت نافذة التحكم في CarPlay</string>
+    <string name="connecting_bluetooth">جارٍ الاتصال بالبلوتوث</string>
+    <string name="connecting_iap2_control">جارٍ الاتصال بتحكم iAP2</string>
+    <string name="could_not_save_the_report">تعذّر حفظ التقرير</string>
+    <string name="diagnostic_report_saved">تم حفظ تقرير التشخيص</string>
+    <string name="discovering_iphone">جارٍ اكتشاف iPhone</string>
+    <string name="mfi_authentication_ready">مصادقة MFi جاهزة</string>
+    <string name="opening_usb_data_paths">جارٍ فتح مسارات بيانات USB</string>
+    <string name="pairing_with_iphone">جارٍ الاقتران مع iPhone</string>
+    <string name="preparing_mfi_authentication">جارٍ تجهيز مصادقة MFi</string>
+    <string name="requesting_iphone_usb_permission">جارٍ طلب إذن USB لـ iPhone</string>
+    <string name="requesting_mfi_usb_permission">جارٍ طلب إذن USB لـ MFi</string>
+    <string name="selecting_carplay_configuration">جارٍ اختيار إعدادات CarPlay</string>
+    <string name="starting_airplay_service">جارٍ بدء خدمة AirPlay</string>
+    <string name="starting_wireless_hotspot">جارٍ بدء نقطة الاتصال اللاسلكية</string>
+    <string name="waiting_for_iphone_over_usb">بانتظار iPhone عبر USB</string>
+    <string name="waiting_for_mfi_coprocessor">بانتظار معالج MFi المساعد</string>
+    <string name="waiting_for_paired_iphone">بانتظار iPhone المقترن</string>
+    <string name="wireless_carplay_active">CarPlay اللاسلكي نشط</string>
+    <string name="wireless_carplay_control_running">التحكم في CarPlay اللاسلكي قيد التشغيل</string>
+    <string name="hotspot_error_empty_name">أدخل اسم نقطة اتصال السيارة</string>
+    <string name="hotspot_error_long_name">يجب ألا يتجاوز اسم نقطة الاتصال 32 بايت</string>
+    <string name="hotspot_error_invalid_character">يحتوي الاسم أو كلمة المرور على محرف غير صالح</string>
+    <string name="hotspot_error_password_length">يجب أن تتكون كلمة مرور نقطة الاتصال من 8 إلى 63 محرفًا</string>
+</resources>

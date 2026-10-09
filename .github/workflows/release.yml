@@ -29,12 +29,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      # A CarPlay identity or a signing key must never be in the tree, let alone in a release.
+      - name: Reject credential files in the source tree
+        run: python3 scripts/check_public_tree.py
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 25
 
+      # The NDK builds the CarPlay stack's two native files (carplay/shared/src/main/jni).
       - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
 
       - uses: gradle/actions/setup-gradle@v6
         with:

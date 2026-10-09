@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hotspot_details_saved">Datos guardados · Comprueba que el punto de acceso del coche esté activado antes de conectarte.</string>
+    <string name="auto_value">auto</string>
+    <string name="status_hotspot_ready">Punto de acceso listo: %1$s, %2$s, %3$s, canal %4$s</string>
+    <string name="status_waiting_reenumeration">Esperando la reenumeración del iPhone</string>
+    <string name="status_attaching_ncm">Conectando la red NCM/AirPlay</string>
+    <string name="status_failed">Error: %1$s</string>
+    <string name="carplay_control_running">Control de CarPlay en ejecución</string>
+    <string name="carplay_control_window_ended">Ventana de control de CarPlay finalizada</string>
+    <string name="connecting_bluetooth">Conectando Bluetooth</string>
+    <string name="connecting_iap2_control">Conectando el control iAP2</string>
+    <string name="could_not_save_the_report">No se pudo guardar el informe</string>
+    <string name="diagnostic_report_saved">Informe de diagnóstico guardado</string>
+    <string name="discovering_iphone">Buscando iPhone</string>
+    <string name="mfi_authentication_ready">Autenticación MFi lista</string>
+    <string name="opening_usb_data_paths">Abriendo rutas de datos USB</string>
+    <string name="pairing_with_iphone">Emparejando con iPhone</string>
+    <string name="preparing_mfi_authentication">Preparando autenticación MFi</string>
+    <string name="requesting_iphone_usb_permission">Solicitando permiso USB del iPhone</string>
+    <string name="requesting_mfi_usb_permission">Solicitando permiso USB de MFi</string>
+    <string name="selecting_carplay_configuration">Seleccionando configuración de CarPlay</string>
+    <string name="starting_airplay_service">Iniciando el servicio de AirPlay</string>
+    <string name="starting_wireless_hotspot">Iniciando el punto de acceso inalámbrico</string>
+    <string name="waiting_for_iphone_over_usb">Esperando iPhone por USB</string>
+    <string name="waiting_for_mfi_coprocessor">Esperando al coprocesador MFi</string>
+    <string name="waiting_for_paired_iphone">Esperando al iPhone emparejado</string>
+    <string name="wireless_carplay_active">CarPlay inalámbrico activo</string>
+    <string name="wireless_carplay_control_running">Control de CarPlay inalámbrico en ejecución</string>
+    <string name="hotspot_error_empty_name">Introduce el nombre del punto de acceso del coche</string>
+    <string name="hotspot_error_long_name">El nombre del punto de acceso no debe superar los 32 bytes</string>
+    <string name="hotspot_error_invalid_character">El nombre o la contraseña contiene un carácter no válido</string>
+    <string name="hotspot_error_password_length">La contraseña del punto de acceso debe tener entre 8 y 63 caracteres</string>
+</resources>

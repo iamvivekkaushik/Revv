@@ -18,6 +18,7 @@ import androidx.lifecycle.viewModelScope
 import com.vivekkaushik.revv.apps.AppRepository
 import com.vivekkaushik.revv.apps.IconProvider
 import com.vivekkaushik.revv.apps.LauncherApp
+import com.vivekkaushik.revv.carplay.CarPlay
 import com.vivekkaushik.revv.engine.EngineReading
 import com.vivekkaushik.revv.engine.EngineSound
 import com.vivekkaushik.revv.engine.EngineSoundSettings
@@ -41,7 +42,6 @@ import com.vivekkaushik.revv.phone.PhoneMonitor
 import com.vivekkaushik.revv.phone.PhoneState
 import com.vivekkaushik.revv.settings.HmiSettings
 import com.vivekkaushik.revv.settings.SettingsStore
-import com.vivekkaushik.revv.system.CarPlayCompanion
 import com.vivekkaushik.revv.system.BrightnessScale
 import com.vivekkaushik.revv.system.FirstRun
 import com.vivekkaushik.revv.system.HomeRole
@@ -86,13 +86,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val nightDimmer = NightDimmer(application)
     private val engineSound = EngineSound(application)
     /**
-     * The RevvCarPlay companion, bound for as long as Revv runs so its process stays with the
-     * visible launcher instead of dropping to a background service head units like to kill. The
-     * Auto screen only attaches and detaches its view. Null while the companion is not installed;
-     * follows installs and uninstalls through the app list.
+     * CarPlay, alive for as long as Revv runs: the Auto screen only attaches and detaches its view,
+     * so the session and the music carry on while Revv shows another screen.
      */
-    private val _carPlay = MutableStateFlow<CarPlayCompanion?>(null)
-    val carPlay: StateFlow<CarPlayCompanion?> = _carPlay.asStateFlow()
+    val carPlay = CarPlay(application)
     private val isDebugBuild = application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     val icons: IconProvider = appRepository
@@ -136,15 +133,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val activeCall: StateFlow<ActiveCall?> = phoneMonitor.call
 
     init {
-        // Bind the CarPlay companion while it is installed, and drop it when it goes.
-        viewModelScope.launch {
-            apps.collect {
-                val available = CarPlayCompanion.available(application)
-                val current = _carPlay.value
-                if (available && current == null) _carPlay.value = CarPlayCompanion(application).also { it.bind() }
-                else if (!available && current != null) { _carPlay.value = null; current.unbind() }
-            }
-        }
         // First, so the adapter log knows whether to save before the adapter says anything.
         viewModelScope.launch {
             settings.map { it.isOn(SettingsStore.SAVE_OBD_LOG) }.distinctUntilChanged().collect(obd::saveLogs)
@@ -180,13 +168,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             settings.map { it.isOn(SettingsStore.CARPLAY_FOLLOW_ROUTE) }.distinctUntilChanged().collect { carPlayRoute.enabled = it }
         }
         viewModelScope.launch {
-            _carPlay.collectLatest { companion -> companion?.hostUiRequests?.collect { carPlayAskedForRevv() } }
+            carPlay.hostUiRequests.collect { carPlayAskedForRevv() }
         }
         viewModelScope.launch {
-            _carPlay.collectLatest { companion ->
-                if (companion == null) carPlayRoute.update(null, null)
-                else companion.guidance.collect { carPlayRoute.update(it?.destination, it?.routeMeters) }
-            }
+            carPlay.guidance.collect { carPlayRoute.update(it?.destination, it?.routeMeters) }
         }
         // The engine sound follows the car whenever it's switched on, Revv on screen or not.
         viewModelScope.launch {
@@ -229,7 +214,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     override fun onCleared() {
-        _carPlay.value?.unbind()
+        carPlay.close()
         bleScanner.stop()
         obd.stop()
         navigator.stop()
@@ -279,9 +264,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun setRearCameraId(id: String?) = settingsStore.setRearCameraId(id)
 
-    /** Reads the picked CarPlay identity files and hands them to RevvCarPlay, which checks and installs them. */
+    /** Reads the picked CarPlay identity files; CarPlay checks and installs them. */
     fun importCarPlayIdentity(uris: List<Uri>) {
-        val companion = _carPlay.value ?: return
         val resolver = getApplication<Application>().contentResolver
         viewModelScope.launch {
             val files = withContext(Dispatchers.IO) {
@@ -294,7 +278,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     }.getOrNull()
                 }.toMap()
             }
-            companion.importIdentity(files)
+            carPlay.importIdentity(files)
         }
     }
 
@@ -413,11 +397,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun seekTo(positionMs: Long) = media.seekTo(positionMs)
     /**
      * Opens the player behind the media card. CarPlay's music is the iPhone's, played through
-     * RevvCarPlay: that opens CarPlay here, in the Auto screen, rather than the companion's own.
+     * Revv's own media session: that opens CarPlay in the Auto screen.
      */
     fun openPlayer(): Boolean {
         val playing = media.nowPlaying.value?.packageName
-        if (playing != null && playing == CarPlayCompanion.packageName(getApplication())) {
+        if (playing != null && playing == getApplication<Application>().packageName) {
             open(HmiApp.Auto)
             return true
         }
@@ -533,7 +517,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 val read = input.read(buffer)
                 if (read < 0) return out.toByteArray()
                 out.write(buffer, 0, read)
-                if (out.size() > CarPlayCompanion.MAX_IDENTITY_FILE_BYTES) return null
+                if (out.size() > CarPlay.MAX_IDENTITY_FILE_BYTES) return null
             }
         }
     }

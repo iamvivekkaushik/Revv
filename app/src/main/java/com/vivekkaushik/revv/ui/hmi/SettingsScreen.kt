@@ -77,7 +77,8 @@ import com.vivekkaushik.revv.settings.SettingsStore
 import com.vivekkaushik.revv.system.NightMode
 import com.vivekkaushik.revv.system.NightSchedule
 import com.vivekkaushik.revv.vehicle.CarColour
-import com.vivekkaushik.revv.system.CarPlayCompanion
+import com.shilapi.xcertplay.embed.EmbedSettings
+import com.vivekkaushik.revv.carplay.CarPlay
 import com.vivekkaushik.revv.vehicle.CarSetup
 import com.vivekkaushik.revv.vehicle.GearSource
 import com.vivekkaushik.revv.vehicle.TyreSize
@@ -142,7 +143,7 @@ private class OptionRow(
     val onChange: (Int) -> Unit,
 ) : SettingRow
 
-/** An on/off setting kept outside Revv's own settings, e.g. one of RevvCarPlay's. */
+/** An on/off setting kept outside Revv's own settings, e.g. one of CarPlay's. */
 private class SwitchRow(override val name: String, override val detail: String, val on: Boolean, val onToggle: (Boolean) -> Unit) : SettingRow
 
 /** A caption over the rows that follow, with an optional note beside it. */
@@ -209,8 +210,7 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                     .padding(if (compact) 12.dp else 16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                // CarPlay settings exist only with the companion app installed.
-                Category.entries.filter { it != Category.CarPlay || state.carPlay != null }.forEach { entry ->
+                Category.entries.forEach { entry ->
                     CategoryButton(entry, selected = entry == category) {
                         category = entry
                         choosingAdapter = false
@@ -246,7 +246,7 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                         editingGoogleKey = false
                     },
                 )
-                category == Category.CarPlay && state.carPlay != null ->
+                category == Category.CarPlay ->
                     CarPlaySettings(state, actions, Modifier.weight(1f), title = category.title, onPageChange = { carPlayPage = it })
                 else -> {
                     HText(category.title, Modifier.padding(bottom = 16.dp), size = 26.sp, family = Hmi.Display)
@@ -788,7 +788,6 @@ private fun rowsFor(
         Category.Sound -> listOf(
             LevelRow(SettingsStore.MEDIA_VOLUME, "Media volume", "Spotify, radio, phone", system.mediaVolume, system.mediaVolumeMax),
             LevelRow(SettingsStore.NAV_VOLUME, "Navigation volume", "Turn prompts", settings.level(SettingsStore.NAV_VOLUME), 30),
-            ToggleRow("autoVol", "Speed-sensitive volume", "Raise volume with road noise"),
             ToggleRow(SettingsStore.TOUCH_FEEDBACK, "Touch feedback", "Click on every tap"),
             ToggleRow(SettingsStore.MENU_SOUND, "Menu sounds", "A short blip when you tap a button"),
             ToggleRow(SettingsStore.DIALER_SOUND, "Dialer sounds", "A touch-tone for each key on the number pad"),
@@ -797,7 +796,6 @@ private fun rowsFor(
         Category.Connectivity -> listOf(
             ActionRow("Bluetooth", if (system.bluetoothOn) "On" else "Off", "OPEN", actions::openBluetoothSettings),
             ActionRow("Wi-Fi", "Networks and hotspots", "OPEN", actions::openWifiSettings),
-            ToggleRow("hotspot", "Phone hotspot", "Use phone data for maps"),
             pairedDevicesRow(system, actions),
         )
         // Shown by CarPlaySettings, which keeps its own pages.
@@ -809,8 +807,6 @@ private fun rowsFor(
             ToggleRow(SettingsStore.DEMO_DRIVE, "Demo drive", "Simulated car data while no OBD-II adapter is set up"),
             ActionRow("Car", "${settings.car.name} · ${settings.car.colour.label} · ${settings.car.gears} gears", "EDIT", editCar),
             ActionRow("Gear indicator", gearIndicatorDetail(settings.car, state.learntGears), "SET UP", setUpGears),
-            ToggleRow("tpms", "Tyre pressure alerts", "Warn below 28 psi"),
-            ToggleRow("shiftL", "Shift lights", "Above 4,000 rpm"),
         )
         Category.Navigation -> listOfNotNull(
             when {
@@ -824,8 +820,6 @@ private fun rowsFor(
             },
             googleKeyRow(settings, actions, editGoogleKey),
             ToggleRow(SettingsStore.AVOID_TOLLS, "Avoid tolls", "Prefer free roads"),
-            // Kept from the design, but OpenStreetMap routing has no traffic feed to use.
-            ToggleRow("traffic", "Live traffic", "Not available yet · routes use typical speeds"),
             ValueRow("Units", "Kilometres"),
             ValueRow("Map style", "Wireframe"),
             ValueRow("Map data", "OpenStreetMap contributors · OpenFreeMap · Valhalla · Photon", "OpenStreetMap"),
@@ -866,22 +860,21 @@ fun CarPlaySettings(
     besideCarPlay: Boolean = false,
     onPageChange: (Boolean) -> Unit = {},
 ) {
-    val companion = state.carPlay ?: return
-    val context = LocalContext.current
+    val carPlay = state.carPlay
     var editingHotspot by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = editingHotspot) { editingHotspot = false }
     var choosingIPhone by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = choosingIPhone) { choosingIPhone = false }
     // Removing CarPlay's identity takes a second tap: CarPlay can't start again until another is imported.
     var confirmingIdentityRemoval by rememberSaveable { mutableStateOf(false) }
-    val carPlay by companion.state.collectAsState()
-    val settings by companion.settings.collectAsState()
-    val refused by companion.settingsRefused.collectAsState()
-    // Permissions are granted on Android's pages for RevvCarPlay; read the settings again on return.
-    LifecycleResumeEffect(companion) {
-        companion.refreshSettings()
+    val session by carPlay.state.collectAsState()
+    val settings by carPlay.settings.collectAsState()
+    // Permissions may have changed on Android's pages while Revv was away: look again on return.
+    LifecycleResumeEffect(carPlay) {
+        carPlay.setupChanged()
         onPauseOrDispose { }
     }
+    val missingPermissions = remember(session, settings) { carPlay.missingPermissions() }
     val page = editingHotspot || choosingIPhone
     val currentOnPageChange by rememberUpdatedState(onPageChange)
     LaunchedEffect(page) { currentOnPageChange(page) }
@@ -892,27 +885,24 @@ fun CarPlaySettings(
         Column(Modifier.fillMaxSize()) {
             when {
                 editingHotspot -> HotspotEditor(
-                    initialName = settings?.hotspotSsid.orEmpty(),
+                    initialName = settings.hotspotSsid,
                     onCancel = { editingHotspot = false },
                     onSave = { name, password ->
-                        companion.saveHotspot(name, password)
+                        carPlay.saveHotspot(name, password)
                         editingHotspot = false
                     },
                 )
                 choosingIPhone -> IPhonePicker(
                     state,
                     actions,
-                    chosen = settings?.phoneAddress,
-                    onChoose = { address, name -> companion.choosePhone(address, name) },
+                    chosen = settings.phoneAddress,
+                    onChoose = { address, name -> carPlay.choosePhone(address, name) },
                     onDone = { choosingIPhone = false },
                 )
                 else -> {
                     title?.let { HText(it, Modifier.padding(bottom = 16.dp), size = 26.sp, family = Hmi.Display) }
                     val rows = carPlayRows(
-                        state, actions, carPlay, settings, refused,
-                        openCarPlay = { CarPlayCompanion.launchIntent(context)?.let(context::startActivity) },
-                        openCarPlayAppInfo = { CarPlayCompanion.appInfoIntent(context)?.let(context::startActivity) },
-                        openCarPlayWriteSettings = { CarPlayCompanion.writeSettingsIntent(context)?.let(context::startActivity) },
+                        state, actions, session, settings, missingPermissions,
                         editHotspot = { if (besideCarPlay && !roomForEditor) actions.openCarPlaySettings() else editingHotspot = true },
                         chooseIPhone = { choosingIPhone = true },
                         confirmingIdentityRemoval = confirmingIdentityRemoval,
@@ -928,38 +918,33 @@ fun CarPlaySettings(
 }
 
 /**
- * Settings › CarPlay: the session, then RevvCarPlay's own settings, which the companion keeps no
- * screen for. Display and audio changes reconnect a running session, a moment after the last one.
+ * Settings › CarPlay: the session, then CarPlay's own settings. Display and audio changes
+ * reconnect a running session, a moment after the last one.
  */
 private fun carPlayRows(
     state: HmiUiState,
     actions: HmiActions,
-    carPlay: CarPlayCompanion.State?,
-    settings: CarPlayCompanion.Settings?,
-    refused: Boolean,
-    openCarPlay: () -> Unit,
-    openCarPlayAppInfo: () -> Unit,
-    openCarPlayWriteSettings: () -> Unit,
+    session: CarPlay.State,
+    settings: EmbedSettings.Snapshot,
+    missingPermissions: List<String>,
     editHotspot: () -> Unit,
     chooseIPhone: () -> Unit,
     confirmingIdentityRemoval: Boolean,
     setConfirmingIdentityRemoval: (Boolean) -> Unit,
 ): List<SettingRow> {
-    val companion = state.carPlay
-    val session = carPlay as? CarPlayCompanion.State.Session
+    val carPlay = state.carPlay
     val top = listOfNotNull(
-        ValueRow("Status", carPlay?.explanation() ?: "Open the Auto screen to connect", carPlay?.headline() ?: "—"),
-        when (session?.phase) {
-            null -> null
-            // Identity and hotspot details are set below; only the companion can ask for its permissions and VPN.
-            CarPlayCompanion.PHASE_SETUP_REQUIRED -> if (session.missing.any { it in COMPANION_PROMPTS }) {
-                ActionRow("Session", "Allow RevvCarPlay's one-time prompts in the companion app", "FINISH SETUP", openCarPlay)
+        ValueRow("Status", session.explanation(), session.headline()),
+        when (session.phase) {
+            // Identity and hotspot details are set below; permissions and the VPN consent take a prompt.
+            CarPlay.PHASE_SETUP_REQUIRED -> if (session.missing.any { it in SETUP_PROMPTS }) {
+                ActionRow("Session", "Allow the one-time prompts CarPlay needs: its permissions, and the VPN connection for USB", "FINISH SETUP", actions::finishCarPlaySetup)
             } else {
                 null
             }
-            CarPlayCompanion.PHASE_IDLE, CarPlayCompanion.PHASE_FAILED ->
-                ActionRow("Session", "Start CarPlay again; the Auto screen shows it", "CONNECT", onClick = { companion?.retry() })
-            else -> ActionRow("Session", "End the CarPlay connection", "DISCONNECT", onClick = { companion?.stop() })
+            CarPlay.PHASE_IDLE, CarPlay.PHASE_FAILED ->
+                ActionRow("Session", "Start CarPlay again; the Auto screen shows it", "CONNECT", onClick = carPlay::retry)
+            else -> ActionRow("Session", "End the CarPlay connection", "DISCONNECT", onClick = carPlay::stop)
         },
         ToggleRow(SettingsStore.CARPLAY_WIDE, "Wide screen", "CarPlay fills the Auto screen; its status and link controls stay here"),
         ToggleRow(SettingsStore.CARPLAY_SETTINGS_BESIDE, "Settings beside CarPlay", "Without wide screen, the Auto screen's side column shows these settings"),
@@ -979,20 +964,14 @@ private fun carPlayRows(
             badge = "EXPERIMENTAL",
         ).takeUnless { state.settings.isOn(SettingsStore.CARPLAY_FOLLOW_ROUTE) },
     )
-    if (settings == null) {
-        return top + if (refused) {
-            ValueRow("RevvCarPlay settings", "RevvCarPlay takes settings only from a Revv signed with the same key", "Unavailable")
-        } else {
-            ValueRow("RevvCarPlay settings", "Waiting for RevvCarPlay", "—")
-        }
-    }
-    fun set(name: String, value: Int) = companion?.setSetting(name, value)
-    fun set(name: String, value: Boolean) = companion?.setSetting(name, value)
+    fun set(name: String, value: Int) = carPlay.setSetting(name, value)
+    fun set(name: String, value: Boolean) = carPlay.setSetting(name, value)
     val link = when {
         !settings.wireless -> 0
-        settings.hotspotMode == CarPlayCompanion.HOTSPOT_MANUAL -> 2
+        settings.hotspotMode == CarPlay.HOTSPOT_MANUAL -> 2
         else -> 1
     }
+    val permissionsDetail = "Nearby devices for wireless CarPlay, the microphone for Siri and calls, and notifications for the connection"
     return top + listOfNotNull(
         HeaderRow("SETUP"),
         when {
@@ -1001,7 +980,7 @@ private fun carPlayRows(
                 "CarPlay won't start again until another is imported",
                 "REMOVE",
                 onClick = {
-                    companion?.removeIdentity()
+                    carPlay.removeIdentity()
                     setConfirmingIdentityRemoval(false)
                 },
                 secondary = "KEEP" to { setConfirmingIdentityRemoval(false) },
@@ -1011,13 +990,17 @@ private fun carPlayRows(
             else ->
                 ActionRow("Identity", "None installed · pick identity.pk8 and certificate.p7b", "IMPORT", actions::importCarPlayIdentity)
         },
-        ActionRow("Permissions", "Nearby devices, location and microphone, granted to RevvCarPlay", "OPEN", openCarPlayAppInfo),
+        if (missingPermissions.isEmpty()) {
+            ValueRow("Permissions", permissionsDetail, "Granted")
+        } else {
+            ActionRow("Permissions", permissionsDetail, "ALLOW", actions::requestCarPlayPermissions)
+        },
         HeaderRow("CONNECTION"),
         OptionRow("Link", "How the iPhone connects; a running session reconnects over the new link", listOf("USB", "Wi-Fi Direct", "Car hotspot"), link) { index ->
             when (index) {
-                0 -> companion?.configure(wireless = false)
-                1 -> companion?.configure(wireless = true, hotspotMode = CarPlayCompanion.HOTSPOT_P2P)
-                else -> companion?.configure(wireless = true, hotspotMode = CarPlayCompanion.HOTSPOT_MANUAL)
+                0 -> carPlay.configure(wireless = false)
+                1 -> carPlay.configure(wireless = true, hotspotMode = CarPlay.HOTSPOT_P2P)
+                else -> carPlay.configure(wireless = true, hotspotMode = CarPlay.HOTSPOT_MANUAL)
             }
         },
         ActionRow(
@@ -1026,67 +1009,67 @@ private fun carPlayRows(
             if (settings.hotspotReady) "EDIT" else "SET UP",
             editHotspot,
         ),
-        // Over the car hotspot, RevvCarPlay switches the head unit's hotspot on when it may.
+        // Over the car hotspot, Revv switches the head unit's hotspot on when it may.
         when {
             link != 2 -> null
             !settings.hotspotSwitchAllowed -> ActionRow(
                 "Hotspot switch",
-                "Let RevvCarPlay turn this head unit's hotspot on: allow Modify system settings for it",
+                "Let Revv turn this head unit's hotspot on: allow Modify system settings for it",
                 "ALLOW",
-                openCarPlayWriteSettings,
+                actions::requestWriteSettingsAccess,
             )
-            settings.hotspotOn == true -> ValueRow("Head unit hotspot", "RevvCarPlay turns it on for each CarPlay connection", "On")
+            settings.hotspotOn == true -> ValueRow("Head unit hotspot", "Revv turns it on for each CarPlay connection", "On")
             else -> ActionRow(
                 "Head unit hotspot",
-                if (settings.hotspotOn == false) "Off · RevvCarPlay turns it on when CarPlay connects" else "RevvCarPlay turns it on when CarPlay connects",
+                if (settings.hotspotOn == false) "Off · Revv turns it on when CarPlay connects" else "Revv turns it on when CarPlay connects",
                 "TURN ON",
-                onClick = { companion?.turnOnHotspot() },
+                onClick = carPlay::turnOnHotspot,
             )
         },
         ActionRow("iPhone", if (settings.phoneAddress != null) "${settings.phoneName} · for wireless CarPlay" else "None chosen · wireless CarPlay needs one", "CHOOSE", chooseIPhone),
         HeaderRow("DISPLAY", "CHANGES RECONNECT CARPLAY"),
         OptionRow("CarPlay size", "Size of CarPlay's icons and text", listOf("Large", "Medium", "Small"), CARPLAY_SIZES.indexOf(settings.carPlaySize).coerceAtLeast(0)) {
-            set(CarPlayCompanion.SETTING_CARPLAY_SIZE, CARPLAY_SIZES[it])
+            set(CarPlay.SETTING_CARPLAY_SIZE, CARPLAY_SIZES[it])
         },
         OptionRow("Resolution", "Lower eases the load on a slow head unit", listOf("Native", "80 %", "60 %"), RESOLUTIONS.indexOf(settings.resolution).coerceAtLeast(0)) {
-            set(CarPlayCompanion.SETTING_RESOLUTION, RESOLUTIONS[it])
+            set(CarPlay.SETTING_RESOLUTION, RESOLUTIONS[it])
         },
         OptionRow("Frame rate", "60 fps moves smoother, 30 fps is lighter", listOf("30 fps", "60 fps"), if (settings.frameRate == 60) 1 else 0) {
-            set(CarPlayCompanion.SETTING_FRAME_RATE, if (it == 1) 60 else 30)
+            set(CarPlay.SETTING_FRAME_RATE, if (it == 1) 60 else 30)
         },
-        SwitchRow("Efficient video", "HEVC; leave off for the widest head-unit support", settings.hevc) { set(CarPlayCompanion.SETTING_HEVC, it) },
-        SwitchRow("Right-hand drive", "CarPlay's controls closer to the driver", settings.rightHandDrive) { set(CarPlayCompanion.SETTING_RIGHT_HAND_DRIVE, it) },
+        SwitchRow("Efficient video", "HEVC; leave off for the widest head-unit support", settings.hevc) { set(CarPlay.SETTING_HEVC, it) },
+        SwitchRow("Right-hand drive", "CarPlay's controls closer to the driver", settings.rightHandDrive) { set(CarPlay.SETTING_RIGHT_HAND_DRIVE, it) },
         HeaderRow("AUDIO", "CHANGES RECONNECT CARPLAY"),
-        SwitchRow("Audio focus", "CarPlay music takes audio focus; turn off if sound goes missing", settings.audioFocus) { set(CarPlayCompanion.SETTING_AUDIO_FOCUS, it) },
+        SwitchRow("Audio focus", "CarPlay music takes audio focus; turn off if sound goes missing", settings.audioFocus) { set(CarPlay.SETTING_AUDIO_FOCUS, it) },
         StepperRow("Media stream", "0 routes music automatically; a tone plays on the stream you pick", settings.mediaStream, 0..20, holdToRepeat = false) {
-            set(CarPlayCompanion.SETTING_MEDIA_STREAM, it)
+            set(CarPlay.SETTING_MEDIA_STREAM, it)
         },
         StepperRow("Navigation stream", "Where turn prompts play; 0 routes them automatically", settings.navigationStream, 0..20, holdToRepeat = false) {
-            set(CarPlayCompanion.SETTING_NAVIGATION_STREAM, it)
+            set(CarPlay.SETTING_NAVIGATION_STREAM, it)
         },
         OptionRow("Music buffer", "More rides out a weak link, at a little delay", listOf("300 ms", "500 ms", "1000 ms"), MUSIC_BUFFERS.indexOf(settings.musicBufferMillis).coerceAtLeast(0)) {
-            set(CarPlayCompanion.SETTING_MUSIC_BUFFER, MUSIC_BUFFERS[it])
+            set(CarPlay.SETTING_MUSIC_BUFFER, MUSIC_BUFFERS[it])
         },
         if (settings.advancedAudioAvailable) {
-            SwitchRow("Advanced channel mapping", "Route by usage and content type instead of stream type", settings.advancedAudio) { set(CarPlayCompanion.SETTING_ADVANCED_AUDIO, it) }
+            SwitchRow("Advanced channel mapping", "Route by usage and content type instead of stream type", settings.advancedAudio) { set(CarPlay.SETTING_ADVANCED_AUDIO, it) }
         } else {
             null
         },
         HeaderRow("LOCATION"),
-        SwitchRow("Location to iPhone", "This head unit's GPS for the iPhone's maps, when it asks", settings.locationReporting) { set(CarPlayCompanion.SETTING_LOCATION_REPORTING, it) },
+        SwitchRow("Location to iPhone", "This head unit's GPS for the iPhone's maps, when it asks", settings.locationReporting) { set(CarPlay.SETTING_LOCATION_REPORTING, it) },
         if (settings.locationReporting && !settings.locationPermitted) {
-            ActionRow("Location permission", "RevvCarPlay may not read the location yet; allow precise location for it", "ALLOW", openCarPlayAppInfo)
+            ActionRow("Location permission", "Revv may not read the location yet; allow precise location", "ALLOW", actions::requestLocationPermission)
         } else {
             null
         },
         HeaderRow("SUPPORT"),
-        ActionRow("Diagnostic report", "Saved to Downloads/Revv/CarPlay on this head unit; nothing is sent", "SAVE", onClick = { companion?.saveReport() }),
+        ActionRow("Diagnostic report", "Saved to Downloads/Revv/CarPlay on this head unit; nothing is sent", "SAVE", onClick = carPlay::saveReport),
     )
 }
 
-/** Setup only the companion's own screen can do: its permission prompts and the VPN consent. */
-private val COMPANION_PROMPTS = setOf(CarPlayCompanion.SETUP_VPN, CarPlayCompanion.SETUP_WIRELESS_PERMISSIONS)
-private val CARPLAY_SIZES = listOf(CarPlayCompanion.SIZE_LARGE, CarPlayCompanion.SIZE_MEDIUM, CarPlayCompanion.SIZE_SMALL)
+/** Setup only a prompt can finish: the permission dialogs and the VPN consent. */
+private val SETUP_PROMPTS = setOf(CarPlay.SETUP_VPN, CarPlay.SETUP_WIRELESS_PERMISSIONS)
+private val CARPLAY_SIZES = listOf(CarPlay.SIZE_LARGE, CarPlay.SIZE_MEDIUM, CarPlay.SIZE_SMALL)
 private val RESOLUTIONS = listOf(10, 8, 6)
 private val MUSIC_BUFFERS = listOf(300, 500, 1000)
 
@@ -1103,7 +1086,7 @@ private fun HotspotEditor(initialName: String, onCancel: () -> Unit, onSave: (St
         Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
             HText("CAR HOTSPOT", size = 26.sp, family = Hmi.Display)
             HText(
-                "Copy these from the car's hotspot settings; 5 GHz works best. The password is kept by RevvCarPlay only, so type it again to change anything.",
+                "Copy these from the car's hotspot settings; 5 GHz works best. The password stays on this head unit, so type it again to change anything.",
                 size = 16.sp,
                 color = Hmi.Muted,
                 lineHeight = 22.sp,
@@ -1185,7 +1168,7 @@ private fun CredentialField(label: String, value: String, selected: Boolean, mod
     }
 }
 
-/** RevvCarPlay checks these too; the same rules here say what is wrong before anything is sent. */
+/** CarPlay checks these too when saving; the same rules here say what is wrong first. */
 private fun hotspotError(name: String, password: String): String? = when {
     name.isBlank() -> "Enter the car hotspot's name."
     name.trim().encodeToByteArray().size > 32 -> "The name can be 32 bytes at most."
@@ -1245,7 +1228,7 @@ private fun pairedDevices(context: Context): List<Pair<String, String>> = runCat
 private fun brightnessRow(state: HmiUiState, actions: HmiActions): SettingRow {
     val system = state.system
     if (!system.canChangeBrightness) {
-        return ActionRow("Brightness", "Screen backlight · needs access to modify system settings", "ALLOW", actions::requestBrightnessAccess)
+        return ActionRow("Brightness", "Screen backlight · needs access to modify system settings", "ALLOW", actions::requestWriteSettingsAccess)
     }
     val detail = when (nightMode(state)) {
         NightMode.Off -> "Screen backlight"
@@ -1260,7 +1243,7 @@ private fun brightnessRow(state: HmiUiState, actions: HmiActions): SettingRow {
 private fun autoNightRow(state: HmiUiState, actions: HmiActions, clock: DateTimeFormatter): SettingRow {
     val system = state.system
     if (!system.canChangeBrightness) {
-        return ActionRow("Auto night mode", "Dims the screen at night · needs access to modify system settings", "ALLOW", actions::requestBrightnessAccess)
+        return ActionRow("Auto night mode", "Dims the screen at night · needs access to modify system settings", "ALLOW", actions::requestWriteSettingsAccess)
     }
     val modes = listOfNotNull(NightMode.Off, NightMode.Sunset, NightMode.LightSensor.takeIf { system.autoBrightnessAvailable })
     val mode = nightMode(state)
