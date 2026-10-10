@@ -1,0 +1,4 @@
+• Other apps keep their internet while an iPhone is plugged in: only Revv is placed under the USB CarPlay tunnel.
+• The CarPlay session stays up when Revv leaves the screen or its task is removed; Disconnect in the notification ends it.
+• Wired CarPlay connects more reliably: replies are held while the iPhone opens its link instead of being dropped.
+• The head unit's hotspot is turned on through Android 16's public API, with a SETTINGS shortcut for older firmware.
