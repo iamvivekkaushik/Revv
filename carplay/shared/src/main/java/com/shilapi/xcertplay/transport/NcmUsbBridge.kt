@@ -36,6 +36,7 @@ class NcmUsbBridge internal constructor(
     private var failure: IphoneUsbException? = null
     private var sequence = 0
     private var loggedWriteTimeout = false
+    private var loggedHoldExpired = false
     private val frames = ArrayDeque<ByteArray>()
     private var queuedBytes = 0
     private var buffered = ByteArray(0)
@@ -65,20 +66,51 @@ class NcmUsbBridge internal constructor(
             this.sequence.also { this.sequence = (this.sequence + 1) and 0xffff }
         }
         val block = Ntb16Codec.build(frame, sequence)
-        val transferred = connection.bulkTransfer(outEndpoint, block, block.size, timeoutMillis)
         // Before StartCarPlaySession the phone keeps the NCM data path NAKed. Android reports the
-        // resulting timeout as -1; it is not a detach and later packets must be allowed to retry.
-        if (transferred <= 0) {
+        // resulting timeout as -1; it is not a detach. The packet is held and the write retried
+        // for up to NAK_HOLD_MILLIS rather than dropped: the phone opens its TCP connection for
+        // the CarPlay stream and retries it only a few times, seconds apart, and a dropped reply
+        // in that window lost the whole session until the next re-enumeration. Nothing else can
+        // go out while the path is closed, so holding the writer costs nothing.
+        val holdUntil = System.nanoTime() + NAK_HOLD_MILLIS * NANOS_PER_MILLISECOND
+        var transferred = connection.bulkTransfer(outEndpoint, block, block.size, timeoutMillis)
+        while (transferred <= 0) {
             if (!loggedWriteTimeout) {
                 loggedWriteTimeout = true
-                Log.i(IphoneCarPlayConfiguration.TAG, "ncm bulk-out not ready; retaining bridge for retry")
+                Log.i(IphoneCarPlayConfiguration.TAG, "ncm bulk-out not ready; holding the packet for retry")
             }
-            return@synchronized
+            // Closed or failed meanwhile (a detach, say): throws, which ends the writer.
+            checkOpen()
+            if (System.nanoTime() >= holdUntil) {
+                if (!loggedHoldExpired) {
+                    loggedHoldExpired = true
+                    Log.i(IphoneCarPlayConfiguration.TAG, "ncm bulk-out still not ready after ${NAK_HOLD_MILLIS}ms; dropping the packet")
+                }
+                return@synchronized
+            }
+            // A device that answers at once with -1 would otherwise spin here.
+            val attemptStarted = System.nanoTime()
+            transferred = connection.bulkTransfer(outEndpoint, block, block.size, timeoutMillis)
+            if (transferred <= 0 && System.nanoTime() - attemptStarted < QUICK_FAILURE_NANOS) {
+                try {
+                    Thread.sleep(QUICK_FAILURE_PAUSE_MILLIS)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw IphoneUsbException.DeviceUnavailable("NCM write interrupted")
+                }
+            }
         }
+        loggedHoldExpired = false
         if (transferred != block.size) {
             throw IphoneUsbException.DeviceUnavailable(
                 "NCM write transferred $transferred of ${block.size} bytes",
             )
+        }
+        // An NTB ending on a full packet needs a zero-length packet to delimit it (CDC NCM 3.2.2),
+        // otherwise the phone merges it with the next block.
+        val packetSize = outEndpoint.maxPacketSize
+        if (packetSize > 0 && block.size % packetSize == 0) {
+            connection.bulkTransfer(outEndpoint, ByteArray(0), 0, timeoutMillis)
         }
         if (loggedWriteTimeout) {
             loggedWriteTimeout = false
@@ -296,6 +328,12 @@ class NcmUsbBridge internal constructor(
         private const val MAX_QUEUED_FRAMES = 256
         private const val MAX_QUEUED_BYTES = 1 shl 20
         private const val NANOS_PER_MILLISECOND = 1_000_000L
+
+        /** How long a packet is held for the phone to open its NCM data path before it is dropped. */
+        private const val NAK_HOLD_MILLIS = 8_000L
+        /** A write refused faster than this did not wait out its timeout: the device is gone or resetting. */
+        private const val QUICK_FAILURE_NANOS = 50 * NANOS_PER_MILLISECOND
+        private const val QUICK_FAILURE_PAUSE_MILLIS = 100L
 
         /** Claims and activates the NCM control/data interfaces; owns the connection on success. */
         fun open(connection: UsbDeviceConnection, function: NcmFunctionDiscovery.NcmFunction): NcmUsbBridge {

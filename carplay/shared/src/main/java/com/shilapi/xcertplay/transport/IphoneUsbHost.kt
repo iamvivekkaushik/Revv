@@ -348,6 +348,15 @@ class Iap2UsbSession internal constructor(
                 "USBMUX write transferred $transferred of ${data.size} bytes",
             )
         }
+        // A transfer ending on a full packet has no short packet to terminate it, so the iPhone
+        // keeps waiting for more of the frame. usbmuxd sends a zero-length packet here; without
+        // it a 4608-byte Lockdown Pair frame (9 x 512) is never answered.
+        val packetSize = outEndpoint.maxPacketSize
+        if (packetSize > 0 && data.size % packetSize == 0) {
+            if (connection.bulkTransfer(outEndpoint, ByteArray(0), 0, timeoutMillis) < 0) {
+                throw IphoneUsbException.DeviceUnavailable("USBMUX zero-length packet was not sent")
+            }
+        }
     }
 
     /** Returns null only when no completed USB request arrives before [timeoutMillis]. */
