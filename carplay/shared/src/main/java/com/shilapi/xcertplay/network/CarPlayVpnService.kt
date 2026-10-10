@@ -6,6 +6,7 @@ import android.net.VpnService
 import android.os.Binder
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import android.system.OsConstants
 import android.util.Log
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
@@ -86,9 +87,17 @@ class CarPlayVpnService : VpnService() {
             }
             require(hostMac.size == 6) { "hostMac must be 6 bytes" }
 
+            // The tunnel carries one thing, this app's link to the iPhone on fe80::/64. Android
+            // puts every app under a VPN unless told otherwise, and blocks any address family the
+            // tunnel has no address for as leak protection, which here meant all IPv4, i.e. the
+            // whole head unit's internet, for as long as an iPhone was plugged in. So: only this
+            // app is under the tunnel (other apps never see it), and IPv4 may bypass it, so the
+            // app's own map tiles and routes still go out the normal network.
             val tunFd = Builder()
                 .addAddress(linkLocal, LINK_PREFIX)
                 .addRoute(LINK_LOCAL_ROUTE, LINK_PREFIX)
+                .allowFamily(OsConstants.AF_INET)
+                .addAllowedApplication(packageName)
                 .setSession(SESSION_NAME)
                 .setMtu(TUN_MTU)
                 .setBlocking(true)
@@ -299,7 +308,8 @@ class CarPlayVpnService : VpnService() {
         private const val TAG = "xcertplay-usb"
         private const val LINK_PREFIX = 64
         private const val LINK_LOCAL_ROUTE = "fe80::"
-        private const val SESSION_NAME = "xcertplay CarPlay"
+        /** What Android's VPN notice calls the tunnel: say what it is for. */
+        private const val SESSION_NAME = "Revv · USB CarPlay link"
         private const val TUN_MTU = 1500
 
         /** Returns the VPN consent intent, or null when consent is already granted. */
