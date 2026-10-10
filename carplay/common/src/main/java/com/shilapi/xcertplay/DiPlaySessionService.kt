@@ -66,10 +66,12 @@ class DiPlaySessionService : Service() {
         return START_NOT_STICKY
     }
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // BYD's recents force-stops the package ~10 ms after removing the task: end guidance first.
+        // BYD's recents force-stops the package ~10 ms after removing the task: end guidance first,
+        // so the cluster is not left showing a turn. The session itself stays: Revv is a home
+        // screen, its CarPlay keeps playing while other apps are used, and some launchers remove
+        // the task the moment the app leaves the screen. The notification's Disconnect ends it.
+        android.util.Log.i("RevvCarPlay-Embed", "task removed; the CarPlay session stays up")
         com.shilapi.xcertplay.hud.BydNavigationOutputs.endNow()
-        CarPlayBackgroundSession.stop()
-        stopSelf()
     }
     companion object {
         const val ACTION_STOP = "com.shihab.diplay.DISCONNECT"
