@@ -23,7 +23,6 @@ CarPlay and the CarPlay icon are Apple Inc. marks/assets. This asset is not cove
 - Bouncy Castle 1.79 — The Legion of the Bouncy Castle Inc.; Bouncy Castle license (MIT-style).
 - JmDNS 3.6.3 — JmDNS contributors; Apache License 2.0.
 - SLF4J — QOS.ch; MIT license.
-- AndroidHiddenApiBypass 6.1 (`org.lsposed.hiddenapibypass`) — LSPosed; Apache License 2.0.
 
 Gradle dependency declarations and version catalog accompany the source. License files available in the resolved artifacts are included under `docs/carplay/licenses/dependencies/`, and Revv's Settings › System › Open source licenses lists them.
 

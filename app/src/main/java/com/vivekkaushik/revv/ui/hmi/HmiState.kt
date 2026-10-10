@@ -186,6 +186,9 @@ interface HmiActions {
     fun openSystemSettings()
     fun openBluetoothSettings()
     fun openWifiSettings()
+
+    /** Android's hotspot and tethering page, for turning the head unit's hotspot on by hand. */
+    fun openHotspotSettings()
     fun toggleSetting(key: String)
     fun setDisplaySize(percent: Int)
     fun setChoice(key: String, index: Int)

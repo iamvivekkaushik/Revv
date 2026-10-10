@@ -1034,11 +1034,13 @@ private fun carPlayRows(
                 actions::requestWriteSettingsAccess,
             )
             settings.hotspotOn == true -> ValueRow("Head unit hotspot", "Revv turns it on for each CarPlay connection", "On")
+            // Android 16 lets Revv switch it; older firmware may not, so the page it lives on is a tap away.
             else -> ActionRow(
                 "Head unit hotspot",
-                if (settings.hotspotOn == false) "Off · Revv turns it on when CarPlay connects" else "Revv turns it on when CarPlay connects",
+                if (settings.hotspotOn == false) "Off · Revv turns it on when CarPlay connects, where the head unit allows" else "Revv turns it on when CarPlay connects, where the head unit allows",
                 "TURN ON",
                 onClick = carPlay::turnOnHotspot,
+                secondary = "SETTINGS" to actions::openHotspotSettings,
             )
         },
         ActionRow("iPhone", if (settings.phoneAddress != null) "${settings.phoneName} · for wireless CarPlay" else "None chosen · wireless CarPlay needs one", "CHOOSE", chooseIPhone),

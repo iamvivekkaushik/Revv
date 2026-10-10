@@ -315,6 +315,11 @@ class MainActivity : ComponentActivity(), HmiActions {
         startFirstAvailable(panel, Intent(Settings.ACTION_WIFI_SETTINGS), Intent(Settings.ACTION_SETTINGS))
     }
 
+    override fun openHotspotSettings() {
+        // The tethering page has no public constant, but every Android ships it under this action.
+        startFirstAvailable(Intent("android.settings.TETHER_SETTINGS"), Intent(Settings.ACTION_WIRELESS_SETTINGS), Intent(Settings.ACTION_SETTINGS))
+    }
+
     override fun toggleSetting(key: String) = viewModel.toggleSetting(key)
     override fun clearTroubleCodes() = viewModel.clearTroubleCodes()
     override fun setChoice(key: String, index: Int) = viewModel.setChoice(key, index)

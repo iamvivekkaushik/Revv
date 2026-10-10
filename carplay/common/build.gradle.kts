@@ -27,8 +27,6 @@ android {
 dependencies {
     api(project(":carplay:shared"))
     implementation(libs.androidx.annotation)
-    // Reaches the hidden TetheringManager API that turns the head unit's hotspot on (HotspotSwitch).
-    implementation(libs.hiddenapibypass)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
 }

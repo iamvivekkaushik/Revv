@@ -39,7 +39,6 @@ private val NOTICES = listOf(
     Notice("DiPlay and xcertplay", "CarPlay: the iAP2 and AirPlay protocols, USB and wireless links, video and audio", "GNU GPL 3.0", "GPL-3.0.txt"),
     Notice("Bouncy Castle", "CarPlay's pairing and transport cryptography", "MIT License", "MIT-BouncyCastle.txt"),
     Notice("JmDNS and SLF4J", "Bonjour, which wireless CarPlay is found with", "Apache License 2.0, MIT License", "MIT-SLF4J.txt"),
-    Notice("AndroidHiddenApiBypass", "Turning the head unit's hotspot on for CarPlay", "Apache License 2.0", "Apache-2.0.txt"),
     Notice("DiAuto, Open Headunit and headunit", "Android Auto: the Android Auto protocol, USB and wireless links, video and audio", "GNU AGPL 3.0", "AGPL-3.0.txt"),
     Notice("Protocol Buffers", "Android Auto's messages", "BSD 3-Clause", "BSD-3-Clause-Protobuf.txt"),
     Notice("AndroidX Media and DexMaker", "Android Auto's media controls, and the tethering callback the car hotspot link needs", "Apache License 2.0", "Apache-2.0.txt"),
