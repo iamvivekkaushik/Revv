@@ -1,0 +1,2 @@
+• Engine sound from the virtual GPS adapter holds a steady note at a steady speed, and a burst of speed eases off instead of cutting out.
+• Revv is now offered to head units without GPS or network location.
