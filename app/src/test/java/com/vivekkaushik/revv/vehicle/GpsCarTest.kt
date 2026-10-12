@@ -97,12 +97,36 @@ class GpsCarTest {
     fun brakingCoastsOnAShutThrottleDownToNeutral() {
         // 60 km/h to a stop at about 3 m/s².
         val states = GpsCar(swift).drive(12) { if (it < 3) 60.0 else maxOf(0.0, 60 - (it - 3) * 11.0) }
-        val braking = states.drop(40).filter { it.speedKmh > 10 }
+        // The first slower fix comes at 4 s; the throttle is shut within half a second of it.
+        val braking = states.drop(45).filter { it.speedKmh > 10 }
         assertTrue(braking.isNotEmpty())
         assertTrue("no load while braking: ${braking.map { it.load }}", braking.all { it.load == 0.0 })
         val gears = states.drop(30).map { it.gear }
         assertEquals("only changes down", gears.sortedDescending(), gears)
         assertEquals(0, states.last().gear)
+    }
+
+    @Test
+    fun holdsASteadyNoteWhileTheGpsSpeedWanders() {
+        // 50 km/h with the fixes wandering ±0.7 km/h either side of it, as a receiver's speed does.
+        val states = GpsCar(swift).drive(12) { 50.0 + if (it % 2 == 0) 0.7 else -0.7 }
+        val settled = states.drop(30)
+        assertEquals(1, settled.map { it.gear }.distinct().size)
+        val loads = settled.map { it.load }
+        assertTrue("never lifts off: $loads", loads.all { it > 0.05 })
+        assertTrue("barely wavers: $loads", loads.max() - loads.min() < 0.15)
+    }
+
+    @Test
+    fun aSpurtEasesOffRatherThanLiftingOffTheMomentItEnds() {
+        // Cruising at 50, a few seconds' pull to 56, then holding that.
+        val states = GpsCar(swift).drive(10) { if (it < 3) 50.0 else minOf(56.0, 50.0 + (it - 2) * 2.0) }
+        val peak = states.subList(30, 60).maxOf { it.load }
+        val after = states.subList(60, 90).map { it.load }
+        assertTrue("pulls during the spurt: $peak", peak > 0.3)
+        assertTrue("never lifts off after it: $after", after.all { it > 0.05 })
+        assertTrue("eases off: $after", after.zipWithNext().all { (a, b) -> b <= a + 1e-9 })
+        assertTrue("cruising again a few seconds on", states.last().load < peak / 2)
     }
 
     @Test

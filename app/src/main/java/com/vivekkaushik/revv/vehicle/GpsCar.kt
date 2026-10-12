@@ -1,17 +1,22 @@
 package com.vivekkaushik.revv.vehicle
 
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sign
 
 /**
  * A car known only from GPS: road speed from the fixes, and the gear, revs and load a calm driver
  * of a manual would have at that speed, from the gearing in [setup]. Fixes come about once a
  * second; between them the speed carries on toward where the last two say it's heading, so the
- * revs climb and fall smoothly rather than in steps. Gears go up sooner cruising than pulling
- * hard, one at a time, and never back and forth within [SHIFT_GAP_NANOS]. Times are on one
- * monotonic clock, in nanoseconds. Fixes may come from one thread while another reads [at].
+ * revs climb and fall smoothly rather than in steps. The load and the gear changes follow the
+ * acceleration smoothed over the last few fixes, less the little that GPS speed wanders by on its
+ * own, so a steady speed is a steady note and a burst of speed eases off instead of lifting off
+ * the moment it ends. Gears go up sooner cruising than pulling hard, one at a time, and never
+ * back and forth within [SHIFT_GAP_NANOS]. Times are on one monotonic clock, in nanoseconds.
+ * Fixes may come from one thread while another reads [at].
  */
 class GpsCar(setup: CarSetup, private val profile: VehicleProfile = VehicleProfile.SWIFT_VXI_2015) {
 
@@ -32,8 +37,9 @@ class GpsCar(setup: CarSetup, private val profile: VehicleProfile = VehicleProfi
     private var lastFixAt = 0L
     private var lastFixKmh = 0.0
 
-    /** Metres per second², smoothed over the last few fixes. */
+    /** Metres per second², smoothed over the last few fixes; glides there from [fromAccel] with the speed. */
     private var accel = 0.0
+    private var fromAccel = 0.0
 
     /** The speed glides from [fromKmh] to [toKmh] over [rampSeconds] from [rampFrom]. */
     private var fromKmh = 0.0
@@ -56,9 +62,11 @@ class GpsCar(setup: CarSetup, private val profile: VehicleProfile = VehicleProfi
             interval = USUAL_INTERVAL
             now = if (lastFixAt == 0L) measured else speedAt(nanos)
             accel = 0.0
+            fromAccel = 0.0
         } else {
             interval = max(gap, MIN_INTERVAL)
             now = speedAt(nanos)
+            fromAccel = accelAt(nanos)
             val change = ((measured - lastFixKmh) / KMH_PER_MPS / interval).coerceIn(-MAX_ACCEL, MAX_ACCEL)
             accel += (change - accel) * ACCEL_BLEND
         }
@@ -77,23 +85,36 @@ class GpsCar(setup: CarSetup, private val profile: VehicleProfile = VehicleProfi
     fun at(nanos: Long): State? {
         if (lastFixAt == 0L || nanos - lastFixAt > HOLD_NANOS) return null
         val speed = speedAt(nanos)
-        val accel = slopeAt(nanos)
+        val pull = pulling(accelAt(nanos))
         val ratios = setup.rpmPerKmh()
-        val gear = shift(speed, accel, ratios, nanos)
+        val gear = shift(speed, pull, ratios, nanos)
         if (gear == 0) return State(speed, 0, IDLE_RPM.roundToInt(), 0.0)
-        val effort = (accel / HARD_ACCEL).coerceIn(0.0, 1.0)
+        val effort = (pull / HARD_ACCEL).coerceIn(0.0, 1.0)
         // Below the speed first gear idles at, the clutch slips: more revs the harder it pulls away.
         val floor = if (gear == 1) IDLE_RPM + (LAUNCH_RPM - IDLE_RPM) * effort else IDLE_RPM
         val rpm = max(floor, speed * ratios[gear - 1])
-        return State(speed, gear, rpm.roundToInt(), load(speed, accel, rpm))
+        return State(speed, gear, rpm.roundToInt(), load(speed, pull, rpm))
     }
 
     private fun progress(nanos: Long) = ((nanos - rampFrom) / 1e9 / rampSeconds).coerceIn(0.0, 1.0)
 
     private fun speedAt(nanos: Long) = fromKmh + (toKmh - fromKmh) * progress(nanos)
 
-    /** Metres per second² along the glide; level once it has got there. */
-    private fun slopeAt(nanos: Long) = if (progress(nanos) < 1.0) (toKmh - fromKmh) / KMH_PER_MPS / rampSeconds else 0.0
+    /**
+     * The smoothed acceleration, glided like the speed. Past the glide, without a newer fix, it
+     * fades over [TREND_FADE] seconds: the speed is being held, so the car is cruising at it.
+     */
+    private fun accelAt(nanos: Long): Double {
+        val elapsed = (nanos - rampFrom) / 1e9
+        if (elapsed < rampSeconds) return fromAccel + (accel - fromAccel) * (elapsed / rampSeconds)
+        return accel * (1 - (elapsed - rampSeconds) / TREND_FADE).coerceIn(0.0, 1.0)
+    }
+
+    /**
+     * [accel] less what the speed wanders by from one fix to the next on its own, which isn't the
+     * driver's doing: it neither pulls nor lifts off within that.
+     */
+    private fun pulling(accel: Double) = if (abs(accel) <= JITTER_ACCEL) 0.0 else accel - sign(accel) * JITTER_ACCEL
 
     private fun shift(speedKmh: Double, accel: Double, ratios: List<Float>, nanos: Long): Int {
         if (ratios.isEmpty() || speedKmh < MOVING_KMH) {
@@ -167,6 +188,16 @@ class GpsCar(setup: CarSetup, private val profile: VehicleProfile = VehicleProfi
 
         /** Metres per second²: about as hard as a small petrol car pulls. */
         const val HARD_ACCEL = 2.5
+
+        /**
+         * Metres per second² the speed wanders by from fix to fix with the car holding steady,
+         * about 0.9 km/h a second: a receiver's Doppler speed is good to a few tenths of a km/h,
+         * and the smoothing takes out most of what two fixes disagree by.
+         */
+        const val JITTER_ACCEL = 0.25
+
+        /** Seconds the trend takes to fade once the glide has run out without a newer fix. */
+        private const val TREND_FADE = 2.0
 
         private const val KMH_PER_MPS = 3.6
         private const val USUAL_INTERVAL = 1.0
