@@ -98,15 +98,15 @@ The release build is signed only when all four `REVV_KEYSTORE_*` variables are s
    ```bash
    JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" REVV_KEYSTORE_PATH=~/revv-release.jks REVV_KEYSTORE_PASSWORD='…' REVV_KEY_ALIAS=revv REVV_KEY_PASSWORD='…' ./gradlew :app:assembleRelease
    ```
-   Output: `app/build/outputs/apk/release/app-release.apk`. Use `:app:bundleRelease` for a Play bundle.
+   Output, in `app/build/outputs/apk/release/`: `app-universal-release.apk` for any head unit, and a smaller `app-<abi>-release.apk` for each of armeabi-v7a, arm64-v8a, x86 and x86_64. For a Play bundle run `:app:bundleRelease` on its own, not with `assembleRelease`: the bundle can't be built in the same run as the per-ABI APKs.
 3. Check the signature:
    ```bash
-   ~/Library/Android/sdk/build-tools/36.0.0/apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
+   ~/Library/Android/sdk/build-tools/36.0.0/apksigner verify --print-certs app/build/outputs/apk/release/app-universal-release.apk
    ```
 
 ## Releases
 
-Releases are built in CI with [fastlane](https://fastlane.tools). Pushing a `vMAJOR.MINOR.PATCH` tag builds the release APK and app bundle signed with the release keystore and publishes a GitHub release with both attached (plus the R8 mapping, for reading the APK's crash logs), a changelog of the commits since the previous tag and SHA-256 checksums. A suffixed tag such as `v1.2.0-beta.1` becomes a pre-release.
+Releases are built in CI with [fastlane](https://fastlane.tools). Pushing a `vMAJOR.MINOR.PATCH` tag builds the release APKs (`revv-<version>.apk` for any head unit and a smaller `revv-<version>-<abi>.apk` for each ABI) and the app bundle, signed with the release keystore, and publishes a GitHub release with them attached (plus the R8 mapping, for reading the APK's crash logs), a changelog of the commits since the previous tag and SHA-256 checksums. A suffixed tag such as `v1.2.0-beta.1` becomes a pre-release.
 
 ```bash
 git tag v1.0.0 && git push origin v1.0.0

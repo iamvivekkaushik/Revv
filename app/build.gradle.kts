@@ -60,11 +60,14 @@ android {
     buildFeatures {
         compose = true
     }
-    // Sideloaded APKs: one per ABI, smaller, and a universal one for any head unit. The app bundle
-    // ignores this; Play splits it per device itself.
+    // Sideloaded APKs: one per ABI, smaller, and a universal one for any head unit. Not in a build
+    // that makes the app bundle: with the splits on, AGP finds a shrunk resource table per ABI
+    // where the bundle wants one (issuetracker.google.com/402800800), so the bundle, which Play
+    // splits per device itself, is built on its own (see fastlane's signed_build).
+    val buildingBundle = gradle.startParameter.taskNames.any { it.substringAfterLast(':').startsWith("bundle") }
     splits {
         abi {
-            isEnable = true
+            isEnable = !buildingBundle
             reset()
             include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
             isUniversalApk = true
