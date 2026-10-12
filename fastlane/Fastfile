@@ -43,13 +43,17 @@ platform :android do
     signed_build(version: version, tasks: [":app:assembleRelease", ":app:bundleRelease"])
 
     # Named after the version, so downloads from different releases don't all read app-release.
-    # The R8 mapping reads the obfuscated stack traces in a sideloaded APK's crash log; Play gets
-    # its own copy inside the app bundle.
-    assets = {
-      lane_context[SharedValues::GRADLE_APK_OUTPUT_PATH] => ".apk",
+    # The APKs are the universal one and one per ABI (app-arm64-v8a-release.apk becomes
+    # revv-1.2.0-arm64-v8a.apk). The R8 mapping reads the obfuscated stack traces in a sideloaded
+    # APK's crash log; Play gets its own copy inside the app bundle.
+    apks = Array(lane_context[SharedValues::GRADLE_ALL_APK_OUTPUT_PATHS]).to_h do |apk|
+      abi = File.basename(apk, ".apk")[/\Aapp-(.+)-release\z/, 1]
+      [apk, abi == "universal" ? ".apk" : "-#{abi}.apk"]
+    end
+    assets = apks.merge(
       lane_context[SharedValues::GRADLE_AAB_OUTPUT_PATH] => ".aab",
       lane_context[SharedValues::GRADLE_MAPPING_TXT_OUTPUT_PATH] => "-mapping.txt",
-    }.reject { |built, _| built.to_s.empty? }.map do |built, suffix|
+    ).reject { |built, _| built.to_s.empty? }.map do |built, suffix|
       named = File.join(File.dirname(built), "revv-#{version[:name]}#{suffix}")
       FileUtils.cp(built, named)
       named

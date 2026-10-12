@@ -60,6 +60,16 @@ android {
     buildFeatures {
         compose = true
     }
+    // Sideloaded APKs: one per ABI, smaller, and a universal one for any head unit. The app bundle
+    // ignores this; Play splits it per device itself.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
+    }
     // Licensed recordings, such as the engine's start-up, are kept out of the public repo in
     // .private/assets and built in when they're there.
     sourceSets.getByName("main").assets.directories.add(rootProject.file(".private/assets").path)

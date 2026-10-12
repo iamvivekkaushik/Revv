@@ -66,7 +66,8 @@ module RevvChangelog
       assets.each do |path|
         name = File.basename(path)
         what =
-          if name.end_with?(".apk") then "install this on the head unit"
+          if name =~ /-(armeabi-v7a|arm64-v8a|x86|x86_64)\.apk\z/ then "smaller APK for #{$1} head units only"
+          elsif name.end_with?(".apk") then "install this on the head unit (works on any CPU)"
           elsif name.end_with?(".aab") then "app bundle, for app stores"
           else "R8 mapping, to read the APK's crash logs"
           end
