@@ -200,6 +200,12 @@ class CarPlay(context: Context) : AutoCloseable {
     /** The runtime permissions CarPlay still lacks for the chosen link, Siri, its notification and location reporting. */
     fun missingPermissions(): List<String> = host.missingPermissions()
 
+    /**
+     * Whether this build links over USB. The Play build doesn't: Play allows a VPN service only in
+     * VPN apps, and USB CarPlay runs over one. Its CarPlay is always wireless.
+     */
+    val usbAvailable: Boolean get() = host.usbAvailable
+
     /** Android's VPN consent dialog USB CarPlay needs once; null once it was given. */
     fun vpnConsentIntent(): Intent? = host.vpnConsentIntent()
 
@@ -231,7 +237,7 @@ class CarPlay(context: Context) : AutoCloseable {
      */
     fun resetWifiDirect() = host.resetWifiDirect()
 
-    /** Chooses the link: USB ([wireless] false), or wireless over Wi-Fi Direct / the car hotspot. */
+    /** Chooses the link: USB ([wireless] false, when [usbAvailable]), or wireless over Wi-Fi Direct / the car hotspot. */
     fun configure(wireless: Boolean, hotspotMode: String? = null) = host.configure(wireless, hotspotMode)
 
     private fun stateOf(status: EmbeddedCarPlay.Status) = State(

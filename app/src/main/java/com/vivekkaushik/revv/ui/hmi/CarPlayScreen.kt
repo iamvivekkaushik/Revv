@@ -192,13 +192,16 @@ private fun SessionAction(state: State, carPlay: CarPlay, actions: HmiActions, m
     }
 }
 
-/** USB, Wi-Fi Direct or the car hotspot; the choice is saved, and a running session reconnects over it. */
+/**
+ * USB (not in the Play build), Wi-Fi Direct or the car hotspot; the choice is saved, and a running
+ * session reconnects over it.
+ */
 @Composable
 private fun RowScope.LinkChooser(state: State, carPlay: CarPlay, each: Modifier) {
     val usb = !state.wireless
     val direct = state.wireless && state.hotspotMode != CarPlay.HOTSPOT_MANUAL
     val hotspot = state.wireless && state.hotspotMode == CarPlay.HOTSPOT_MANUAL
-    LinkChoice("USB", usb, each) { carPlay.configure(wireless = false) }
+    if (carPlay.usbAvailable) LinkChoice("USB", usb, each) { carPlay.configure(wireless = false) }
     LinkChoice("WI-FI DIRECT", direct, each) { carPlay.configure(wireless = true, hotspotMode = CarPlay.HOTSPOT_P2P) }
     LinkChoice("CAR HOTSPOT", hotspot, each) { carPlay.configure(wireless = true, hotspotMode = CarPlay.HOTSPOT_MANUAL) }
 }

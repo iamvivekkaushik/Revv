@@ -37,6 +37,7 @@ import com.shilapi.xcertplay.mfi.Iap2MfiAuthenticationClient
 import com.shilapi.xcertplay.mfi.MfiAuthenticationClient
 import com.shilapi.xcertplay.mfi.RemoteMfiAuthenticationClient
 import com.shilapi.xcertplay.mfi.LocalMfiAuthenticationClient
+import com.shilapi.xcertplay.network.AirPlayListener
 import com.shilapi.xcertplay.network.CarPlayBonjour
 import com.shilapi.xcertplay.network.diagnosticSummary
 import com.shilapi.xcertplay.network.CarPlayVpnService
@@ -240,6 +241,8 @@ class CarPlayController(
     @Volatile private var wirelessIdentification: Iap2IdentificationConfig? = null
     @Volatile private var wirelessAirPlayEndpoint: Iap2WirelessCarPlayEndpoint? = null
     @Volatile private var wirelessLocationRequest = Iap2LocationRequest()
+    /** Wireless CarPlay's AirPlay listener; USB CarPlay's runs in [CarPlayVpnService], inside its tunnel. */
+    private val wirelessAirPlay = AirPlayListener()
     @Volatile private var vpnService: CarPlayVpnService? = null
     @Volatile private var vpnBound = false
     private val wirelessHandoffRequested = AtomicBoolean(false)
@@ -380,7 +383,7 @@ class CarPlayController(
     fun isClosed(): Boolean = closed
 
     fun hasActiveAirPlayAttachment(): Boolean = synchronized(lifecycleLock) {
-        !closed && vpnService?.isAttached() == true
+        !closed && (vpnService?.isAttached() == true || wirelessAirPlay.isOpen())
     }
 
     fun start() {
@@ -490,7 +493,7 @@ class CarPlayController(
             {
                 try {
                     if (config.transport == CarPlayTransport.WIRELESS) {
-                        closeBestEffort("wireless stack") { closeWirelessStack(service) }
+                        closeBestEffort("wireless stack") { closeWirelessStack() }
                     } else {
                         closeBestEffort("CSM") { csm?.close() }
                         csm = null
@@ -1006,11 +1009,9 @@ class CarPlayController(
             )
 
             onStatus(CarPlayStatus.AttachingNetwork)
-            val service = awaitVpnService()
-                ?: throw IOException("Could not bind the CarPlay AirPlay service")
-            when (
-                val result = service.attachWireless(
-                    bindAddress = hostAddress,
+            try {
+                wirelessAirPlay.open(
+                    address = hostAddress,
                     config = wirelessAirPlayConfig,
                     identity = identity,
                     pairings = pairings,
@@ -1018,14 +1019,10 @@ class CarPlayController(
                     listener = wirelessSessionListener(generation),
                     media = media,
                 )
-            ) {
-                CarPlayVpnService.AttachResult.Started -> Unit
-                CarPlayVpnService.AttachResult.AlreadyStarted ->
-                    throw IOException("Wireless AirPlay transport is already attached")
-                is CarPlayVpnService.AttachResult.Failed ->
-                    throw IOException(result.message)
+            } catch (error: Exception) {
+                throw IOException(error.message ?: error.javaClass.simpleName, error)
             }
-            val listenerPort = service.boundPort() ?: wirelessAirPlayConfig.port
+            val listenerPort = wirelessAirPlay.boundPort() ?: wirelessAirPlayConfig.port
             val advertisedAirPlayConfig = wirelessAirPlayConfig.copy(port = listenerPort)
             debugLog(
                 "wireless AirPlay listener attached bind=$hostAddressText " +
@@ -1929,7 +1926,7 @@ class CarPlayController(
         }
     }
 
-    private fun closeWirelessStack(service: CarPlayVpnService? = vpnService) {
+    private fun closeWirelessStack() {
         wirelessConnectionProof.clear()
         media.setIapTunnelHandler(null)
         val activeTunnel = wirelessTunnelChannel
@@ -1951,7 +1948,7 @@ class CarPlayController(
         wirelessTunnelReady.set(false)
         wirelessActiveReported.set(false)
 
-        if (service != null) closeBestEffort("AirPlay service") { service.detach() }
+        closeBestEffort("AirPlay listener") { wirelessAirPlay.close() }
     }
 
     private fun isBluetoothDeviceConnected(device: BluetoothDevice): Boolean = try {

@@ -953,7 +953,12 @@ private fun carPlayRows(
         when (session.phase) {
             // Identity and hotspot details are set below; permissions and the VPN consent take a prompt.
             CarPlay.PHASE_SETUP_REQUIRED -> if (session.missing.any { it in SETUP_PROMPTS }) {
-                ActionRow("Session", "Allow the one-time prompts CarPlay needs: its permissions, and the VPN connection for USB", "FINISH SETUP", actions::finishCarPlaySetup)
+                ActionRow(
+                    "Session",
+                    "Allow the one-time prompts CarPlay needs: its permissions" + if (carPlay.usbAvailable) ", and the VPN connection for USB" else "",
+                    "FINISH SETUP",
+                    actions::finishCarPlaySetup,
+                )
             } else {
                 null
             }
@@ -981,11 +986,15 @@ private fun carPlayRows(
     )
     fun set(name: String, value: Int) = carPlay.setSetting(name, value)
     fun set(name: String, value: Boolean) = carPlay.setSetting(name, value)
-    val link = when {
-        !settings.wireless -> 0
-        settings.hotspotMode == CarPlay.HOTSPOT_MANUAL -> 2
-        else -> 1
-    }
+    // The Play build has no USB link (see CarPlay.usbAvailable).
+    val links = listOfNotNull(LINK_USB.takeIf { carPlay.usbAvailable }, LINK_WIFI_DIRECT, LINK_CAR_HOTSPOT)
+    val link = links.indexOf(
+        when {
+            !settings.wireless -> LINK_USB
+            settings.hotspotMode == CarPlay.HOTSPOT_MANUAL -> LINK_CAR_HOTSPOT
+            else -> LINK_WIFI_DIRECT
+        },
+    )
     val permissionsDetail = "Nearby devices for wireless CarPlay, the microphone for Siri and calls, and notifications for the connection"
     return top + listOfNotNull(
         HeaderRow("SETUP"),
@@ -1011,10 +1020,10 @@ private fun carPlayRows(
             ActionRow("Permissions", permissionsDetail, "ALLOW", actions::requestCarPlayPermissions)
         },
         HeaderRow("CONNECTION"),
-        OptionRow("Link", "How the iPhone connects; a running session reconnects over the new link", listOf("USB", "Wi-Fi Direct", "Car hotspot"), link) { index ->
-            when (index) {
-                0 -> carPlay.configure(wireless = false)
-                1 -> carPlay.configure(wireless = true, hotspotMode = CarPlay.HOTSPOT_P2P)
+        OptionRow("Link", "How the iPhone connects; a running session reconnects over the new link", links, link) { index ->
+            when (links[index]) {
+                LINK_USB -> carPlay.configure(wireless = false)
+                LINK_WIFI_DIRECT -> carPlay.configure(wireless = true, hotspotMode = CarPlay.HOTSPOT_P2P)
                 else -> carPlay.configure(wireless = true, hotspotMode = CarPlay.HOTSPOT_MANUAL)
             }
         },
@@ -1086,6 +1095,9 @@ private fun carPlayRows(
 
 /** Setup only a prompt can finish: the permission dialogs and the VPN consent. */
 private val SETUP_PROMPTS = setOf(CarPlay.SETUP_VPN, CarPlay.SETUP_WIRELESS_PERMISSIONS)
+private const val LINK_USB = "USB"
+private const val LINK_WIFI_DIRECT = "Wi-Fi Direct"
+private const val LINK_CAR_HOTSPOT = "Car hotspot"
 private val CARPLAY_SIZES = listOf(CarPlay.SIZE_LARGE, CarPlay.SIZE_MEDIUM, CarPlay.SIZE_SMALL)
 private val RESOLUTIONS = listOf(10, 8, 6)
 private val MUSIC_BUFFERS = listOf(300, 500, 1000)

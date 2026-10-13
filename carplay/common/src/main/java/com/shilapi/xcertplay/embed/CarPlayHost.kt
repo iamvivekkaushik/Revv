@@ -192,8 +192,11 @@ class CarPlayHost(context: Context, private val listener: Listener) : AutoClosea
         return wanted.distinct().filter { app.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
     }
 
-    /** Android's VPN consent dialog wired CarPlay needs once, or null when it was given already. */
-    fun vpnConsentIntent(): Intent? = CarPlayVpnService.prepare(app)
+    /** Whether this build has USB CarPlay: Revv's Play build lacks the VPN service it runs over. */
+    val usbAvailable: Boolean get() = CarPlayVpnService.available(app)
+
+    /** Android's VPN consent dialog wired CarPlay needs once, or null when it was given already or there is no USB CarPlay. */
+    fun vpnConsentIntent(): Intent? = if (usbAvailable) CarPlayVpnService.prepare(app) else null
 
     /**
      * A permission or the VPN consent was answered: looks again at what setup is missing. When

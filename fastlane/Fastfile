@@ -28,7 +28,7 @@ platform :android do
     gradle(task: ":app:assembleRelease")
   end
 
-  desc "Build the release app bundle (app/build/outputs/bundle/release/app-release.aab)"
+  desc "Build the release app bundle, Google Play's build, without USB CarPlay (app/build/outputs/bundle/release/app-release.aab)"
   lane :bundle do
     test
     gradle(task: ":app:bundleRelease")
@@ -40,7 +40,9 @@ platform :android do
     UI.user_error!("GITHUB_REF_NAME is not set; publish runs from the release workflow on a tag push") if tag.empty?
     version = release_version(tag: tag)
 
-    signed_build(version: version, tasks: [":app:assembleRelease", ":app:bundleRelease"])
+    # The bundle first: it is Play's build, without USB CarPlay (app/build.gradle.kts, playBuild),
+    # so R8 names some classes differently, and the APKs' run leaves the mapping attached below.
+    signed_build(version: version, tasks: [":app:bundleRelease", ":app:assembleRelease"])
 
     # Named after the version, so downloads from different releases don't all read app-release.
     # The APKs are the universal one and one per ABI (app-arm64-v8a-release.apk becomes

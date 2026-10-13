@@ -87,7 +87,8 @@ jobs:
             echo "upload=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Gradle finds the bundle already built for the GitHub release, so this mostly just uploads.
+      # Gradle builds the bundle the GitHub release has once more (the APKs, which keep USB CarPlay,
+      # were built after it) and uploads it.
       - name: Upload to Google Play with fastlane
         if: steps.play.outputs.upload == 'true'
         run: bundle exec fastlane play track:"$PLAY_TRACK" status:"$PLAY_RELEASE_STATUS"

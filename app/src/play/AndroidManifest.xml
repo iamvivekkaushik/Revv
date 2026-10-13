@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Google Play's build (app/build.gradle.kts, playBuild): Play allows VpnService only in VPN apps,
+     so this leaves out the VPN service USB CarPlay runs over. CarPlay is wireless only there. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <service
+            android:name="com.shilapi.xcertplay.network.CarPlayVpnService"
+            tools:node="remove" />
+    </application>
+</manifest>

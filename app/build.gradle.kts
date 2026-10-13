@@ -15,6 +15,9 @@ val debugIdentityAssets = rootProject.file(".private/auth").canonicalFile.takeIf
     identityFiles.all { name -> dir.resolve("offline-mfi/$name").let { it.isFile && it.length() > 0 } }
 }
 
+// The app bundle, Google Play's build: see the ABI splits and playBuild below.
+val buildingBundle = gradle.startParameter.taskNames.any { it.substringAfterLast(':').startsWith("bundle") }
+
 android {
     namespace = "com.vivekkaushik.revv"
     compileSdk {
@@ -64,7 +67,6 @@ android {
     // that makes the app bundle: with the splits on, AGP finds a shrunk resource table per ABI
     // where the bundle wants one (issuetracker.google.com/402800800), so the bundle, which Play
     // splits per device itself, is built on its own (see fastlane's signed_build).
-    val buildingBundle = gradle.startParameter.taskNames.any { it.substringAfterLast(':').startsWith("bundle") }
     splits {
         abi {
             isEnable = !buildingBundle
@@ -77,6 +79,16 @@ android {
     // .private/assets and built in when they're there.
     sourceSets.getByName("main").assets.directories.add(rootProject.file(".private/assets").path)
     debugIdentityAssets?.let { sourceSets.getByName("debug").assets.directories.add(it.path) }
+}
+
+// Google Play's build is the app bundle, or any build with -Prevv.play=true (to try it on a head
+// unit). Play allows VpnService only in VPN apps, so it leaves out USB CarPlay's VPN service
+// (src/play/AndroidManifest.xml): its CarPlay is wireless only. The sideloaded APKs keep USB CarPlay.
+val playBuild = buildingBundle || providers.gradleProperty("revv.play").orNull.toBoolean()
+androidComponents {
+    onVariants { variant ->
+        if (playBuild) variant.sources.manifests.addStaticManifestFile(file("src/play/AndroidManifest.xml").path)
+    }
 }
 
 dependencies {
