@@ -1,0 +1,2 @@
+• CarPlay in this version connects wirelessly, over Wi-Fi Direct or the car's hotspot; the USB link is no longer offered.
+• Wireless CarPlay starts without the VPN connection USB CarPlay used to ask for.
