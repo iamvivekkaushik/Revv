@@ -1,0 +1,4 @@
+• On FYT head units, the Phone screens follow the phone connected in the head unit's own Bluetooth app, with its contacts, and calls go through it.
+• Wireless Android Auto now works on FYT head units.
+• Rear Cam gains a wide view that shows the whole picture and a mirror switch, and on FYT head units it can open in reverse instead of the head unit's own view.
+• An OBD-II adapter that doesn't answer no longer leaves Revv stuck connecting.
