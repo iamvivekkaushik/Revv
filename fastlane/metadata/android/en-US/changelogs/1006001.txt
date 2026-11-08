@@ -1,0 +1,2 @@
+• The car hotspot password stays saved: opening the hotspot details to check or change them no longer clears it, for Android Auto and CarPlay alike.
+• On FYT head units, wireless Android Auto reconnects by itself after a session ends.
