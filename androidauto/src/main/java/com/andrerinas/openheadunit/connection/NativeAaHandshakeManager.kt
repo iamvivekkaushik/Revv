@@ -423,7 +423,12 @@ class NativeAaHandshakeManager(
      * there is nothing to listen on or poke here, only that channel to serve.
      */
     private fun startFyt() {
-        val serial = FytAutoSerial { link ->
+        val serial = FytAutoSerial(
+            busy = {
+                commManager.isConnected ||
+                    commManager.connectionState.value is CommManager.ConnectionState.Connecting
+            },
+        ) { link ->
             if (refuseWhileBackedOff(link)) return@FytAutoSerial
             scope.launch(Dispatchers.IO + CoroutineName("NativeAa-Handshake-FYT")) {
                 handleHandshake(link, FYT_RADIO)

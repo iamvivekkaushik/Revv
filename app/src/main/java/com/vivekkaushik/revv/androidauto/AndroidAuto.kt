@@ -218,6 +218,9 @@ class AndroidAuto(context: Context) : AutoCloseable {
     /** Saves the car hotspot's details; the wireless link then goes over the car hotspot. */
     fun saveHotspot(ssid: String, passphrase: String) = host.saveHotspot(ssid, passphrase)
 
+    /** The car hotspot password saved last, for its editor to start from. */
+    fun savedHotspotPassword(): String = host.savedHotspotPassword()
+
     /** The paired phone the wireless link wakes. */
     fun choosePhone(address: String, name: String) { host.savePhone(address, name) }
 

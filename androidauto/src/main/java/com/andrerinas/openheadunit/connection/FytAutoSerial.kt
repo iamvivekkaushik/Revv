@@ -19,9 +19,16 @@ import kotlin.concurrent.thread
  * (docs/FYT_BLUETOOTH.md). Only one app can read the terminal, so Car Link's wireless mode has to
  * be off for this to work.
  *
- * [onLink] hears each phone channel that opens, on the reader thread.
+ * [onLink] hears each phone channel that opens, on the reader thread. While [busy] says an
+ * Android Auto session is already running, what the phone sends on a channel Revv didn't see open
+ * is passed over rather than taken up: the phone keeps talking on it through a session.
  */
-class FytAutoSerial(private val onLink: (AaBluetoothLink) -> Unit) {
+class FytAutoSerial(
+    private val busy: () -> Boolean = { false },
+    private val onLink: (AaBluetoothLink) -> Unit,
+) {
+    /** Whether passing over the phone's messages during this session has been logged yet. */
+    @Volatile private var passedOverLogged = false
 
     private var input: FileInputStream? = null
     private var output: FileOutputStream? = null
@@ -116,17 +123,27 @@ class FytAutoSerial(private val onLink: (AaBluetoothLink) -> Unit) {
                 if (current != null && current.open && current.address == address) return
                 current?.end()
                 AppLog.i("NativeAA/FYT: the phone ($address) opened Android Auto's Bluetooth channel.")
-                val opened = Link(address)
-                link = opened
-                onLink(opened)
+                open(address)
             }
             is FytAutoSerialProtocol.Event.Data -> {
-                val current = link
-                if (current == null || !current.open) {
-                    AppLog.w("NativeAA/FYT: ${event.bytes.size} bytes from the phone with no channel open; dropped.")
-                } else {
-                    current.deliver(event.bytes)
+                val open = link?.takeIf { it.open }
+                if (open == null && busy()) {
+                    if (!passedOverLogged) {
+                        passedOverLogged = true
+                        AppLog.d("NativeAA/FYT: a session is running; passing over the phone's messages on the Bluetooth channel.")
+                    }
+                    return
                 }
+                passedOverLogged = false
+                val current = open ?: run {
+                    // The phone is talking on a channel that opened before this listener did (it
+                    // outlives an Android Auto session, and the listener restarts after one): data
+                    // flowing proves it open, and blink5 won't announce it again.
+                    val address = phoneAddress ?: UNKNOWN_PHONE
+                    AppLog.i("NativeAA/FYT: the phone ($address) is already talking on Android Auto's Bluetooth channel; taking it up.")
+                    open(address)
+                }
+                current.deliver(event.bytes)
             }
             FytAutoSerialProtocol.Event.Closed -> {
                 AppLog.i("NativeAA/FYT: blink5 says the phone closed Android Auto's Bluetooth channel.")
@@ -135,6 +152,14 @@ class FytAutoSerial(private val onLink: (AaBluetoothLink) -> Unit) {
             }
             is FytAutoSerialProtocol.Event.Other -> AppLog.d("NativeAA/FYT: blink5 said \"${event.line}\".")
         }
+    }
+
+    /** A channel to the phone at [address], handed to [onLink]. */
+    private fun open(address: String): Link {
+        val opened = Link(address)
+        link = opened
+        onLink(opened)
+        return opened
     }
 
     @Throws(IOException::class)

@@ -217,6 +217,9 @@ class CarPlay(context: Context) : AutoCloseable {
     /** Saves the car hotspot's details; wireless CarPlay then links over the car hotspot. */
     fun saveHotspot(ssid: String, passphrase: String) = host.saveHotspot(ssid, passphrase)
 
+    /** The car hotspot password saved last, for its editor to start from. */
+    fun savedHotspotPassword(): String = host.savedHotspotPassword()
+
     /** The paired iPhone wireless CarPlay connects to. */
     fun choosePhone(address: String, name: String) { host.savePhone(address, name) }
 

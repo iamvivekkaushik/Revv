@@ -224,6 +224,9 @@ class AndroidAutoHost(context: Context, hostIntent: (Context) -> Intent, private
     }
 
     /** Saves the car hotspot's details and links over the car hotspot; a notice says whether they were usable. */
+    /** The car hotspot password saved last, so its editor can start from it. */
+    fun savedHotspotPassword(): String = com.andrerinas.openheadunit.App.settings(app).hotspotPassword
+
     fun saveHotspot(ssid: String, passphrase: String) {
         val error = EmbedSettings.saveHotspot(app, ssid, passphrase)
         if (error != null) {

@@ -239,6 +239,9 @@ class CarPlayHost(context: Context, private val listener: Listener) : AutoClosea
         return true
     }
 
+    /** The car hotspot password saved last, so its editor can start from it. */
+    fun savedHotspotPassword(): String = com.shilapi.xcertplay.AirPlayPersistence.loadManualHotspotPassphrase(app)
+
     /** Saves the car hotspot's details and links over the car hotspot; a notice says whether they were usable. */
     fun saveHotspot(ssid: String, passphrase: String) {
         val error = EmbedSettings.saveHotspot(app, ssid, passphrase)

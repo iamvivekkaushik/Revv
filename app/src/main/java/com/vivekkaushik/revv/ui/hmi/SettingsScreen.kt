@@ -914,6 +914,7 @@ fun CarPlaySettings(
             when {
                 editingHotspot -> HotspotEditor(
                     initialName = settings.hotspotSsid,
+                    initialPassword = remember { carPlay.savedHotspotPassword() },
                     onCancel = { editingHotspot = false },
                     onSave = { name, password ->
                         carPlay.saveHotspot(name, password)
@@ -1166,6 +1167,7 @@ fun AndroidAutoSettings(
             when {
                 editingHotspot -> HotspotEditor(
                     initialName = settings.hotspotSsid,
+                    initialPassword = remember { androidAuto.savedHotspotPassword() },
                     onCancel = { editingHotspot = false },
                     onSave = { name, password ->
                         androidAuto.saveHotspot(name, password)
@@ -1315,9 +1317,10 @@ private val ANDROID_AUTO_SIZES = listOf(120, 100, 80)
 
 /** The car hotspot's name and password, typed exactly: Wi-Fi details have lower case and symbols. */
 @Composable
-private fun HotspotEditor(initialName: String, onCancel: () -> Unit, onSave: (String, String) -> Unit) {
+private fun HotspotEditor(initialName: String, initialPassword: String, onCancel: () -> Unit, onSave: (String, String) -> Unit) {
     var name by rememberSaveable { mutableStateOf(initialName) }
-    var password by rememberSaveable { mutableStateOf("") }
+    // Starts from the saved password: an empty field saved again used to replace it with none.
+    var password by rememberSaveable { mutableStateOf(initialPassword) }
     var typingPassword by rememberSaveable { mutableStateOf(initialName.isNotEmpty()) }
     var showPassword by rememberSaveable { mutableStateOf(false) }
     var tried by remember { mutableStateOf(false) }
@@ -1326,7 +1329,7 @@ private fun HotspotEditor(initialName: String, onCancel: () -> Unit, onSave: (St
         Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
             HText("CAR HOTSPOT", size = 26.sp, family = Hmi.Display)
             HText(
-                "Copy these from the car's hotspot settings; 5 GHz works best. The password stays on this head unit, so type it again to change anything.",
+                "Copy these from the car's hotspot settings; 5 GHz works best. The password stays on this head unit; SHOW reveals it.",
                 size = 16.sp,
                 color = Hmi.Muted,
                 lineHeight = 22.sp,
