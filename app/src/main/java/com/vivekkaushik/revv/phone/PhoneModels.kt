@@ -51,7 +51,7 @@ data class PairedPhone(val name: String, val connected: Boolean)
 
 /** Where a call goes. */
 enum class CallRoute {
-    /** Revv is having the phone dial, as a hands-free device of its own. */
+    /** Revv is having the phone dial, as a hands-free device of its own, or through FYT's Bluetooth service. */
     Phone,
 
     /** The head unit's own hands-free link to the phone places it, through the unit's dialer. */
@@ -72,6 +72,11 @@ data class PhoneState(
     /** The phone's contacts, A to Z. */
     val contacts: List<Contact> = emptyList(),
     val pairedPhones: List<PairedPhone> = emptyList(),
+    /**
+     * The head unit's own Bluetooth app links the phone (FYT units), not Android's Bluetooth: phones
+     * are paired there, and Revv reads the contacts and calls that app saves rather than the phone.
+     */
+    val headUnitBluetooth: Boolean = false,
 )
 
 /** How far a call placed from Revv has got. */

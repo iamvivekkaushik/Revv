@@ -53,6 +53,7 @@ import com.shilapi.xcertplay.transport.Ch341DeviceMatcher
 import com.shilapi.xcertplay.transport.Ch341I2cTransport
 import com.shilapi.xcertplay.transport.Ch341UsbHost
 import com.shilapi.xcertplay.transport.Ch341UsbSession
+import com.shilapi.xcertplay.transport.FytRfSerial
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
 import com.shilapi.xcertplay.transport.Iap2LocationProvider
 import com.shilapi.xcertplay.transport.Iap2LocationRequest
@@ -236,7 +237,10 @@ class CarPlayController(
     @Volatile private var hotspot: WirelessHotspotManager? = null
     @Volatile private var bonjour: CarPlayBonjour? = null
     @Volatile private var bluetoothSocket: BluetoothSocket? = null
-    @Volatile private var bluetoothStream: BluetoothRfcommDuplexStream? = null
+    @Volatile private var bluetoothStream: BlockingDuplexByteStream? = null
+
+    /** FYT's Bluetooth stack's CarPlay channel, on FYT head units while wireless runs; null elsewhere. */
+    @Volatile private var fytRfSerial: FytRfSerial? = null
     @Volatile private var wirelessTunnelChannel: Iap2Session? = null
     @Volatile private var wirelessIdentification: Iap2IdentificationConfig? = null
     @Volatile private var wirelessAirPlayEndpoint: Iap2WirelessCarPlayEndpoint? = null
@@ -994,14 +998,34 @@ class CarPlayController(
             )
             onStatus(CarPlayStatus.WaitingForPairedIphone)
 
-            val adapter = bluetoothAdapter
-                ?: throw IOException("Bluetooth adapter is unavailable")
-            if (!adapter.isEnabled) throw IOException("Bluetooth is not enabled")
-            val device = selectWirelessBluetoothDevice(adapter)
-            val hostBluetoothMac = accessoryBluetoothMac(adapter)
+            // FYT units: FYT's own stack holds the radio and the iPhone is paired with it, so the
+            // iAP2 channel and this unit's Bluetooth address both come from it, not from Android.
+            val fyt = if (FytRfSerial.available()) {
+                FytRfSerial.open(::debugLog).also { fytRfSerial = it }
+            } else {
+                null
+            }
+            val device: BluetoothDevice?
+            val targetAddress: String
+            val hostBluetoothMac: String
+            if (fyt != null) {
+                device = null
+                targetAddress = config.wirelessBluetoothDeviceAddress
+                    ?: fyt.awaitPhoneAddress(FYT_QUERY_MILLIS)
+                    ?: throw IOException("No iPhone is connected in the head unit's Bluetooth app")
+                hostBluetoothMac = fyt.awaitLocalAddress(FYT_QUERY_MILLIS) ?: airPlayConfig.btMac
+            } else {
+                val adapter = bluetoothAdapter
+                    ?: throw IOException("Bluetooth adapter is unavailable")
+                if (!adapter.isEnabled) throw IOException("Bluetooth is not enabled")
+                device = selectWirelessBluetoothDevice(adapter)
+                targetAddress = device.address
+                hostBluetoothMac = accessoryBluetoothMac(adapter)
+            }
             debugLog(
-                "wireless selected Bluetooth target name=${device.name ?: "unknown"} " +
-                    "address=${device.address} localBt=$hostBluetoothMac",
+                "wireless selected Bluetooth target name=${device?.name ?: "unknown"} " +
+                    "address=$targetAddress localBt=$hostBluetoothMac" +
+                    (if (fyt != null) " via=FYT blink5" else ""),
             )
             val wirelessAirPlayConfig = airPlayConfig.copy(
                 deviceId = deviceIdentifier,
@@ -1055,31 +1079,44 @@ class CarPlayController(
 
             onStatus(CarPlayStatus.ConnectingBluetooth)
             debugLog(
-                "wireless RFCOMM connecting address=${device.address} " +
+                "wireless RFCOMM connecting address=$targetAddress " +
                     "uuid=$IAP2_IPHONE_UUID",
             )
-            val socket = device
-                    .createRfcommSocketToServiceRecord(UUID.fromString(IAP2_IPHONE_UUID))
-                    .also { bluetoothSocket = it }
-            logBluetoothConnectionSnapshot(device, "before-connect")
             val bluetoothStarted = System.nanoTime()
-            try {
-                connectBluetoothSocket(socket, device.address)
-                connectionDiagnostic("Bluetooth connect completed elapsedMs=${elapsedMillis(bluetoothStarted)}")
-            } catch (error: Throwable) {
-                connectionDiagnostic(
-                    "Bluetooth connect failed elapsedMs=${elapsedMillis(bluetoothStarted)} " +
-                        "failureClass=${diagnosticFailureClass(error)}",
-                )
-                logBluetoothConnectionSnapshot(device, "after-failure")
-                throw error
+            val stream: BlockingDuplexByteStream = if (fyt != null) {
+                try {
+                    fyt.connect(targetAddress, FYT_CONNECT_MILLIS)
+                } catch (error: Throwable) {
+                    connectionDiagnostic(
+                        "FYT Bluetooth connect failed elapsedMs=${elapsedMillis(bluetoothStarted)} " +
+                            "failureClass=${diagnosticFailureClass(error)}",
+                    )
+                    throw error
+                }.also { bluetoothStream = it }
+            } else {
+                val bluetoothDevice = checkNotNull(device)
+                val socket = bluetoothDevice
+                        .createRfcommSocketToServiceRecord(UUID.fromString(IAP2_IPHONE_UUID))
+                        .also { bluetoothSocket = it }
+                logBluetoothConnectionSnapshot(bluetoothDevice, "before-connect")
+                try {
+                    connectBluetoothSocket(socket, bluetoothDevice.address)
+                } catch (error: Throwable) {
+                    connectionDiagnostic(
+                        "Bluetooth connect failed elapsedMs=${elapsedMillis(bluetoothStarted)} " +
+                            "failureClass=${diagnosticFailureClass(error)}",
+                    )
+                    logBluetoothConnectionSnapshot(bluetoothDevice, "after-failure")
+                    throw error
+                }
+                BluetoothRfcommDuplexStream(socket).also { bluetoothStream = it }
             }
-            debugLog("wireless RFCOMM connected address=${device.address}")
+            connectionDiagnostic("Bluetooth connect completed elapsedMs=${elapsedMillis(bluetoothStarted)}")
+            debugLog("wireless RFCOMM connected address=$targetAddress")
             if (isStaleWirelessRun(generation)) {
                 closeWirelessStack()
                 return
             }
-            val stream = BluetoothRfcommDuplexStream(socket).also { bluetoothStream = it }
             val channel = Iap2Session.openWireless(
                 stream,
                 traceContext = "wireless-rfcomm",
@@ -1378,6 +1415,10 @@ class CarPlayController(
         val activeSocket = bluetoothSocket
         bluetoothSocket = null
         if (activeSocket != null) closeBestEffort("wireless Bluetooth socket") { activeSocket.close() }
+
+        val activeFyt = fytRfSerial
+        fytRfSerial = null
+        if (activeFyt != null) closeBestEffort("FYT CarPlay channel") { activeFyt.close() }
     }
 
     private fun startIphone() {
@@ -2263,6 +2304,12 @@ class CarPlayController(
         const val CONNECTION_DIAGNOSTIC_PREFIX = "CONNECTION_DIAGNOSTIC"
         private val diagnosticAttempts = AtomicInteger()
         private const val IAP2_IPHONE_UUID = "00000000-deca-fade-deca-deafdecacafe"
+
+        /** How long blink5 has to name the linked iPhone and this unit's address on FYT units. */
+        private const val FYT_QUERY_MILLIS = 3_000L
+
+        /** How long blink5 has to open the iAP2 channel to the iPhone on FYT units. */
+        private const val FYT_CONNECT_MILLIS = 20_000L
         private const val HOTSPOT_START_TIMEOUT_MILLIS = 60_000L
         private const val WIFI_P2P_START_TIMEOUT_MILLIS = 20_000L
         private const val PAIR_TIMEOUT_MILLIS = 5 * 60_000L

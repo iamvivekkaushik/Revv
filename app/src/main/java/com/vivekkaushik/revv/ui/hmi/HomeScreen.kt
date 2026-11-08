@@ -618,11 +618,11 @@ private fun PhoneCard(phone: PhoneState, now: LocalDateTime, timeFormat: DateTim
             lastCall == null -> when (phone.sync) {
                 PhoneSync.NeedsPermission -> {
                     LastCall("Calls and contacts", "TAP ALLOW TO CONNECT", Hmi.Muted)
-                    AccentButton("ALLOW", actions::requestBluetoothPermission, button)
+                    AccentButton("ALLOW", actions::requestPhonePermission, button)
                 }
                 PhoneSync.NoPhone -> {
                     LastCall("No phone connected", "PAIR ONE OVER BLUETOOTH", Hmi.Muted)
-                    AccentButton("BLUETOOTH", actions::openBluetoothSettings, button)
+                    AccentButton("BLUETOOTH", actions::openPhonePairing, button)
                 }
                 PhoneSync.Reading -> {
                     LastCall(name, "READING CALLS…", Hmi.Muted)

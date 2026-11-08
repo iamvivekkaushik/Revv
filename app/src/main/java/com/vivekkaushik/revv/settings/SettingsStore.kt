@@ -218,6 +218,15 @@ class SettingsStore(context: Context) {
         /** The starter and the engine catching when the car starts. */
         const val ENGINE_START = "engineStart"
         const val CAMERA_ROTATION = "cameraRotation"
+
+        /** The Rear Cam's picture takes the whole width and shows all of the camera's picture, uncropped. */
+        const val CAMERA_WIDE = "cameraWide"
+
+        /** The Rear Cam's picture flipped left to right, for cameras that send it the other way round. */
+        const val CAMERA_MIRROR = "cameraMirror"
+
+        /** FYT head units: Revv's Rear Cam opens in reverse instead of the head unit's own view, while Revv is on screen. */
+        const val REVERSE_CAMERA = "reverseCamera"
         const val HOME_PHONE = "homePhone"
         const val HOME_MEDIA = "homeMedia"
         const val HOME_MEDIA_SWIPE = "homeMediaSwipe"
@@ -313,6 +322,9 @@ class SettingsStore(context: Context) {
             TOUCH_FEEDBACK to true,
             AVOID_TOLLS to false,
             SAVE_OBD_LOG to true,
+            REVERSE_CAMERA to false,
+            CAMERA_WIDE to false,
+            CAMERA_MIRROR to false,
         )
         private val DEFAULT_LEVELS = mapOf(
             NAV_VOLUME to 18,

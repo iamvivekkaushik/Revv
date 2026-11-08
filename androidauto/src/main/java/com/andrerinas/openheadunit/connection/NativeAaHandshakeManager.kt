@@ -43,6 +43,12 @@ class NativeAaHandshakeManager(
     companion object {
         private val AA_UUID = UUID.fromString("4de17a00-52cb-11e6-bdf4-0800200c9a66")
         private val HFP_UUID = UUID.fromString("0000111e-0000-1000-8000-00805f9b34fb")
+
+        /** What the logs call FYT's Bluetooth stack, in place of a radio name. */
+        private const val FYT_RADIO = "FYT blink5"
+
+        /** The address an FYT channel carries when blink5 hasn't named the phone. */
+        private const val UNKNOWN_ADDRESS = "00:00:00:00:00:00"
         // The phone-wake targets, and the rules for when a poke may run at all, live in
         // BluetoothWakePolicy — one of those records is also the one a phone call rides on.
 
@@ -80,7 +86,7 @@ class NativeAaHandshakeManager(
          * module, or null when it isn't. Kept here so the handshake manager and the settings
          * compatibility probe say exactly the same thing.
          */
-        fun externalBtDiagnostic(): String? = BluetoothHelper.externalBtEvidence?.let { evidence ->
+        fun externalBtDiagnostic(): String? = if (FytAutoSerial.available()) null else BluetoothHelper.externalBtEvidence?.let { evidence ->
             "NativeAA: external Bluetooth module detected ($evidence) — the phone is bonded to " +
                 "the head unit's own Bluetooth chip, not the one Android exposes, so nothing we " +
                 "write over RFCOMM reaches it. Bluetooth-based wireless cannot work on this unit; " +
@@ -100,6 +106,8 @@ class NativeAaHandshakeManager(
                 .settings.manualSecondaryBluetoothServiceName.isNotEmpty()
 
         fun checkCompatibility(context: Context): Boolean {
+            // FYT units: Android's RFCOMM can't reach the phone, but FYT's own stack hands us its channel.
+            if (FytAutoSerial.available()) return true
             externalBtDiagnostic()?.let {
                 AppLog.w(it)
                 if (!externalBtOverridden(context)) return false
@@ -192,7 +200,10 @@ class NativeAaHandshakeManager(
     // The socket of the handshake currently being served. Kept so a phone that gives up and
     // reconnects over Bluetooth during a settle supersedes the stale one instead of running a
     // second handleHandshake() alongside it.
-    @Volatile private var activeHandshakeSocket: BluetoothSocket? = null
+    @Volatile private var activeHandshakeSocket: AaBluetoothLink? = null
+
+    /** FYT's Bluetooth stack's stand-in for the AA listener, on FYT head units; null elsewhere. */
+    @Volatile private var fyt: FytAutoSerial? = null
     // The coroutine serving [activeHandshakeSocket]. Closing a superseded handshake's socket only
     // ends it on stacks where close() interrupts a pending read; some do not, and it runs on for
     // minutes. Cancelling cannot break a blocking JNI read either, but it does end every real
@@ -274,6 +285,13 @@ class NativeAaHandshakeManager(
     fun start() {
         if (isRunning) return
 
+        // FYT units run Bluetooth in the vendor's own stack, which takes the phone's AA connection
+        // itself and passes it on over a terminal; Android's listeners would never be reached.
+        if (FytAutoSerial.available()) {
+            startFyt()
+            return
+        }
+
         // Leave isRunning false, like the "adapter disabled" case below: isActive() callers must
         // see this as genuinely stopped. Nothing here is retryable, but a listener that was never
         // opened must not be reported as up.
@@ -321,10 +339,11 @@ class NativeAaHandshakeManager(
                     val socket = aaServerSocket?.accept()
                     if (socket != null) {
                         AppLog.i("NativeAA: Connection accepted from ${socket.remoteDevice.name} (${socket.remoteDevice.address}) on local radio [$localRadioName]")
-                        if (refuseWhileBackedOff(socket)) continue
+                        val link = RfcommAaLink(socket)
+                        if (refuseWhileBackedOff(link)) continue
                         // [FIX] Launch handshake in a separate coroutine so the server can accept the next connection!
                         scope.launch(Dispatchers.IO + CoroutineName("NativeAa-Handshake-${socket.remoteDevice.address}")) {
-                            handleHandshake(socket, localRadioName)
+                            handleHandshake(link, localRadioName)
                         }
                     }
                 }
@@ -399,6 +418,29 @@ class NativeAaHandshakeManager(
     }
 
     /**
+     * The FYT route: FYT's stack already answers the phone's AA and hands-free connections, and
+     * hands the AA channel over once the phone is connected for calls in FYT's Bluetooth app. So
+     * there is nothing to listen on or poke here, only that channel to serve.
+     */
+    private fun startFyt() {
+        val serial = FytAutoSerial { link ->
+            if (refuseWhileBackedOff(link)) return@FytAutoSerial
+            scope.launch(Dispatchers.IO + CoroutineName("NativeAa-Handshake-FYT")) {
+                handleHandshake(link, FYT_RADIO)
+            }
+        }
+        if (!serial.start()) {
+            AppLog.e("NativeAA: this is an FYT head unit, but its Android Auto channel (${FytAutoSerial.PATH}) wouldn't open. Bluetooth-based wireless can't start.")
+            return
+        }
+        fyt = serial
+        isRunning = true
+        aaListenersClosedForSession = false
+        localRadioName = FYT_RADIO
+        AppLog.i("NativeAA: FYT head unit — serving Android Auto over FYT's Bluetooth. Connect the phone in FYT's Bluetooth app; FYT's Car Link must not be using wireless Android Auto.")
+    }
+
+    /**
      * Open supplementary AA + HFP RFCOMM listeners on a secondary Bluetooth radio, so a phone
      * bonded to that radio (dual-Bluetooth head units) can still reach us. Experimental, and
      * fully guarded so a bad radio cannot affect the primary listener.
@@ -416,9 +458,10 @@ class NativeAaHandshakeManager(
                     val socket = server.accept()
                     if (socket != null) {
                         AppLog.i("NativeAA: Connection accepted (secondary radio '$serviceName' [$radioName]) from ${socket.remoteDevice.name} (${socket.remoteDevice.address})")
-                        if (refuseWhileBackedOff(socket)) continue
+                        val link = RfcommAaLink(socket)
+                        if (refuseWhileBackedOff(link)) continue
                         scope.launch(Dispatchers.IO + CoroutineName("NativeAa-Handshake-${socket.remoteDevice.address}")) {
-                            handleHandshake(socket, radioName)
+                            handleHandshake(link, radioName)
                         }
                     }
                 }
@@ -661,6 +704,10 @@ class NativeAaHandshakeManager(
      * re-delivery. That put a real RFCOMM connect() in the middle of the phone's DHCP exchange.
      */
     fun triggerPoke() {
+        if (fyt != null) {
+            AppLog.d("NativeAA: FYT head unit — the phone opens Android Auto by itself once it is connected in FYT's Bluetooth app; nothing to poke.")
+            return
+        }
         if (isHandoffSettling()) {
             // Info, not debug: this line is the evidence the suppression is working, and reporter
             // logs default to INFO.
@@ -790,6 +837,10 @@ class NativeAaHandshakeManager(
      * Start a manual poke (wakeup) for a specific Bluetooth device.
      */
     fun manualPoke(address: String) {
+        if (fyt != null) {
+            AppLog.i("NativeAA: FYT head unit — Android's Bluetooth can't reach the phone to poke it. Connect it in FYT's Bluetooth app instead.")
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.BLUETOOTH_CONNECT) 
                 != PackageManager.PERMISSION_GRANTED) {
@@ -837,7 +888,7 @@ class NativeAaHandshakeManager(
      * is stop starting new ones. The phone will keep reconnecting; closing immediately costs it
      * nothing beyond the retry it was going to make anyway.
      */
-    private fun refuseWhileBackedOff(socket: BluetoothSocket): Boolean {
+    private fun refuseWhileBackedOff(socket: AaBluetoothLink): Boolean {
         if (NativeHandoffPolicy.shouldServeHandshake(consecutiveHandshakeFailures)) return false
         if (!loggedHandshakeBackoff) {
             loggedHandshakeBackoff = true
@@ -868,11 +919,11 @@ class NativeAaHandshakeManager(
      * on for minutes — and its late writes would clear the live session's settling stamp, cancel
      * its poke, close listeners it still needs, or wipe a backoff it had legitimately earned.
      */
-    private inline fun ifOwner(socket: BluetoothSocket, block: () -> Unit) {
+    private inline fun ifOwner(socket: AaBluetoothLink, block: () -> Unit) {
         if (activeHandshakeSocket === socket) block()
     }
 
-    private suspend fun handleHandshake(socket: BluetoothSocket, localRadio: String? = null) = withContext(Dispatchers.IO) {
+    private suspend fun handleHandshake(socket: AaBluetoothLink, localRadio: String? = null) = withContext(Dispatchers.IO) {
         // The phone reached us. Recorded here rather than at either accept site so both the
         // primary and the secondary-radio loops are covered by one statement.
         everAcceptedAaConnection = true
@@ -926,7 +977,7 @@ class NativeAaHandshakeManager(
         val inbound = Channel<ProtobufMessage>(Channel.UNLIMITED)
         var readerJob: Job? = null
         try {
-            val device = socket.remoteDevice
+            val device = socket
             AppLog.i("NativeAA: Handling handshake for ${device.name} (${device.address}) on local radio [${localRadio ?: "?"}]")
 
             if (commManager.isConnected ||
@@ -938,7 +989,7 @@ class NativeAaHandshakeManager(
             }
 
             val macs = settings.autoStartBluetoothDeviceMacs
-            if (!macs.contains(device.address)) {
+            if (!macs.contains(device.address) && device.address != UNKNOWN_ADDRESS) {
                 AppLog.i("NativeAA: Saving ${device.address} (${device.name}) to the list of auto-start devices.")
                 val newMacs = macs + device.address
                 settings.autoStartBluetoothDeviceMacs = newMacs
@@ -1416,6 +1467,8 @@ class NativeAaHandshakeManager(
 
     fun stop() {
         isRunning = false
+        fyt?.stop()
+        fyt = null
         try { aaServerSocket?.close() } catch (e: Exception) {}
         try { hfpServerSocket?.close() } catch (e: Exception) {}
         synchronized(extraAaServerSockets) {

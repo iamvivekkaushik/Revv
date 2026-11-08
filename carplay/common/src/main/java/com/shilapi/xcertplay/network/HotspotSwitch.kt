@@ -39,9 +39,11 @@ object HotspotSwitch {
     private const val TETHER_ERROR_NO_CHANGE_TETHERING_PERMISSION = 14
     private val main = Handler(Looper.getMainLooper())
 
+    /** Whether this Android has a switch apps can reach at all: Android 11+ (TetheringManager). */
+    fun supported(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+
     /** Whether this app may switch the hotspot: Android 11+ and "Modify system settings" granted. */
-    fun allowed(context: Context): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Settings.System.canWrite(context)
+    fun allowed(context: Context): Boolean = supported() && Settings.System.canWrite(context)
 
     /** Turns the hotspot on unless it already is. [done] gets the outcome on the main thread. */
     fun turnOn(context: Context, done: (Result) -> Unit = {}) {

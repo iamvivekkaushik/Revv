@@ -232,9 +232,17 @@ private fun RecentsNote(phone: PhoneState, actions: HmiActions) {
     val name = phone.link?.name ?: "your phone"
     when (phone.sync) {
         PhoneSync.NeedsPermission ->
-            Prompt("Allow Revv to use Bluetooth to read the calls on your phone.", "ALLOW", actions::requestBluetoothPermission)
+            if (phone.headUnitBluetooth) {
+                Prompt("Allow Revv to read the contacts and calls your head unit's Bluetooth saved from $name.", "ALLOW", actions::requestPhonePermission)
+            } else {
+                Prompt("Allow Revv to use Bluetooth to read the calls on your phone.", "ALLOW", actions::requestPhonePermission)
+            }
         PhoneSync.NoPhone ->
-            Prompt("Pair your phone with this head unit to see its calls here.", "BLUETOOTH", actions::openBluetoothSettings)
+            if (phone.headUnitBluetooth) {
+                Prompt("Connect your phone in the head unit's Bluetooth app to see its calls here.", "BLUETOOTH", actions::openPhonePairing)
+            } else {
+                Prompt("Pair your phone with this head unit to see its calls here.", "BLUETOOTH", actions::openPhonePairing)
+            }
         PhoneSync.Reading -> Note("Reading calls from $name…")
         PhoneSync.AwaitingApproval ->
             Note("$name is asking whether to share its contacts and call history with this head unit. Allow it on the phone.")
@@ -267,7 +275,7 @@ private fun LinkCard(phone: PhoneState, timeFormat: DateTimeFormatter, actions: 
             }
         }
     }
-    val onClick = if (link == null) actions::openBluetoothSettings else actions::readPhoneAgain
+    val onClick = if (link == null) actions::openPhonePairing else actions::readPhoneAgain
     Pressable(onClick, Modifier.fillMaxWidth(), border = Hmi.Line, contentAlignment = Alignment.CenterStart) { content() }
 }
 

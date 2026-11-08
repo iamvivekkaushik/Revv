@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Google Play's build (app/build.gradle.kts, playBuild): Play allows VpnService only in VPN apps,
-     so this leaves out the VPN service USB CarPlay runs over. CarPlay is wireless only there. -->
+     so this leaves out the VPN service USB CarPlay runs over. CarPlay is wireless only there.
+     Play also restricts the call log to apps it approves for it, so on FYT head units this build
+     shows the phone's contacts but not its recent calls. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission
+        android:name="android.permission.READ_CALL_LOG"
+        tools:node="remove" />
 
     <application>
         <service

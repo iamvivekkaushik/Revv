@@ -169,6 +169,7 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
     var choosingAdapter by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val about = remember { About(versionName(context), freeStorage(context)) }
+    val fytReverse = remember { com.vivekkaushik.revv.fyt.FytReverse.present(context) }
     val locale = LocalConfiguration.current.locales[0]
     val is24Hour = ClockFormats.is24Hour(state.settings, DateFormat.is24HourFormat(context))
     val clock = remember(is24Hour, locale) { DateTimeFormatter.ofPattern(ClockFormats.timePattern(is24Hour), locale) }
@@ -276,6 +277,7 @@ fun SettingsScreen(state: HmiUiState, actions: HmiActions) {
                         chooseFuelApp = { choosingFuelApp = true },
                         showLicenses = { viewingLicenses = true },
                         editGoogleKey = { editingGoogleKey = true },
+                        fytReverse = fytReverse,
                     )
                     // Vehicle has more rows than fit.
                     LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
@@ -772,6 +774,7 @@ private fun rowsFor(
     chooseFuelApp: () -> Unit,
     showLicenses: () -> Unit,
     editGoogleKey: () -> Unit,
+    fytReverse: Boolean = false,
 ): List<SettingRow> {
     val settings = state.settings
     val system = state.system
@@ -806,8 +809,14 @@ private fun rowsFor(
             ToggleRow(SettingsStore.DIALER_SOUND, "Dialer sounds", "A touch-tone for each key on the number pad"),
             ToggleRow(SettingsStore.KEYBOARD_SOUND, "Keyboard sounds", "A soft tick for each key on the keyboard"),
         ) + engineSoundRows(settings, actions)
-        Category.Connectivity -> listOf(
+        Category.Connectivity -> listOfNotNull(
             ActionRow("Bluetooth", if (system.bluetoothOn) "On" else "Off", "OPEN", actions::openBluetoothSettings),
+            ActionRow(
+                "Restart Bluetooth",
+                "Switches the head unit's Bluetooth off and on, for when the OBD adapter stops connecting. The phone reconnects by itself",
+                "RESTART",
+                actions::restartHeadUnitBluetooth,
+            ).takeIf { fytReverse },
             ActionRow("Wi-Fi", "Networks and hotspots", "OPEN", actions::openWifiSettings),
             pairedDevicesRow(system, actions),
         )
@@ -820,6 +829,12 @@ private fun rowsFor(
             ToggleRow(SettingsStore.DEMO_DRIVE, "Demo drive", "Simulated car data while no OBD-II adapter is set up"),
             ActionRow("Car", "${settings.car.name} · ${settings.car.colour.label} · ${settings.car.gears} gears", "EDIT", editCar),
             ActionRow("Gear indicator", gearIndicatorDetail(settings.car, state.learntGears), "SET UP", setUpGears),
+            ToggleRow(
+                SettingsStore.REVERSE_CAMERA,
+                "Rear Cam in reverse",
+                "Revv's Rear Cam opens when you shift into reverse, instead of the head unit's own view, while Revv is on screen",
+                badge = "EXPERIMENTAL",
+            ).takeIf { fytReverse },
         )
         Category.Navigation -> listOfNotNull(
             when {
@@ -1036,6 +1051,17 @@ private fun carPlayRows(
         // Over the car hotspot, Revv switches the head unit's hotspot on when it may.
         when {
             link != 2 -> null
+            // Before Android 11 there's no switch an app can reach, whatever it's allowed.
+            !settings.hotspotSwitchSupported -> if (settings.hotspotOn == true) {
+                ValueRow("Head unit hotspot", "Keep it on in the head unit's settings; its Android can't let Revv switch it", "On")
+            } else {
+                ActionRow(
+                    "Head unit hotspot",
+                    "Turn it on in the head unit's settings; its Android version can't let Revv switch it",
+                    "SETTINGS",
+                    actions::openHotspotSettings,
+                )
+            }
             !settings.hotspotSwitchAllowed -> ActionRow(
                 "Hotspot switch",
                 "Let Revv turn this head unit's hotspot on: allow Modify system settings for it",
@@ -1403,12 +1429,24 @@ private fun PhonePicker(
 ) {
     val context = LocalContext.current
     val system = state.system
-    val devices = remember(system.bluetoothOn, system.hasBluetoothPermission, system.pairedDevices) { pairedDevices(context) }
+    // On FYT units phones pair with FYT's own Bluetooth, which Android's paired list never shows:
+    // offer the phone FYT has connected too.
+    val headUnitPhone = state.phone.link?.takeIf { state.phone.headUnitBluetooth }?.let { it.name to colonAddress(it.address) }
+    val devices = remember(system.bluetoothOn, system.hasBluetoothPermission, system.pairedDevices, headUnitPhone) {
+        val paired = pairedDevices(context)
+        if (headUnitPhone == null || paired.any { it.second.equals(headUnitPhone.second, ignoreCase = true) }) paired else listOf(headUnitPhone) + paired
+    }
     Column(Modifier.fillMaxSize()) {
         HText(title, size = 26.sp, family = Hmi.Display)
-        HText(hint, Modifier.padding(top = 8.dp), size = 16.sp, color = Hmi.Muted)
+        HText(
+            if (state.phone.headUnitBluetooth) hint.replace("Pair it in Bluetooth settings first.", "Connect it in the head unit's Bluetooth app first.") else hint,
+            Modifier.padding(top = 8.dp),
+            size = 16.sp,
+            color = Hmi.Muted,
+        )
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             when {
+                headUnitPhone != null -> Unit
                 !system.hasBluetoothPermission -> item(key = "permission") {
                     SettingRowView(ActionRow("Bluetooth access", "Needed to list paired phones", "ALLOW", actions::requestBluetoothPermission), state, actions)
                 }
@@ -1432,11 +1470,15 @@ private fun PhonePicker(
             }
         }
         Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GhostButton("BLUETOOTH SETTINGS", actions::openBluetoothSettings, Modifier.height(56.dp))
+            GhostButton("BLUETOOTH SETTINGS", actions::openPhonePairing, Modifier.height(56.dp))
             SolidButton("DONE", onClick = onDone, modifier = Modifier.height(56.dp).weight(1f, fill = false).width(240.dp))
         }
     }
 }
+
+/** "AABBCCDDEEFF" as "AA:BB:CC:DD:EE:FF", the way Android writes Bluetooth addresses; others as they are. */
+private fun colonAddress(address: String): String =
+    if (address.length == 12 && address.all { it.isLetterOrDigit() }) address.uppercase().chunked(2).joinToString(":") else address.uppercase()
 
 /** Name and address of each paired Bluetooth device, by name; empty without Bluetooth access. */
 @SuppressLint("MissingPermission")

@@ -5,6 +5,10 @@
     <string name="launch_failed">Couldn’t open %1$s</string>
     <string name="no_music_app">No music app found</string>
     <string name="no_dialer">No phone app found</string>
+    <string name="bluetooth_restarting">Restarting the head unit\'s Bluetooth. The phone will reconnect by itself.</string>
+    <string name="bluetooth_restarted">The head unit\'s Bluetooth is back on.</string>
+    <string name="reverse_handed_back">No picture from the rear camera, so reverse goes back to the head unit\'s own view until Revv restarts.</string>
+    <string name="bluetooth_restart_failed">Couldn\'t reach the head unit\'s Bluetooth service.</string>
     <string name="calling_on">Calling on %1$s…</string>
     <string name="no_phone_to_call">No phone connected to call on</string>
     <string name="no_projection_app">No Android Auto or phone-projection app found</string>

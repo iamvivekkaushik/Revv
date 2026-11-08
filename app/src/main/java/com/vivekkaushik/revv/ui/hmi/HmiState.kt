@@ -238,6 +238,15 @@ interface HmiActions {
     /** Erases the car fault codes and turns its check-engine light off. */
     fun clearTroubleCodes()
     fun requestBluetoothPermission()
+
+    /** What the Phone screens need to read the phone: Bluetooth, or on FYT units its saved contacts and calls. */
+    fun requestPhonePermission()
+
+    /** Where phones are paired: Android's Bluetooth settings, or on FYT units FYT's Bluetooth app. */
+    fun openPhonePairing()
+
+    /** FYT head units: switches the head unit's own Bluetooth off and on, for when OBD stops connecting. */
+    fun restartHeadUnitBluetooth()
     fun requestBleScanPermission()
     fun scanForBleAdapters()
     fun stopBleScan()

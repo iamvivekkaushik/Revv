@@ -259,6 +259,8 @@ object BluetoothHelper {
      * We fall back to reflection and Chinese OEM SystemProperties to find the true hardware BDADDR.
      */
     fun getBluetoothMacAddress(context: Context, adapter: BluetoothAdapter? = null): String? {
+        // FYT units: the phone is paired with FYT's own stack, so that's the address it knows the car by.
+        com.andrerinas.openheadunit.connection.FytAutoSerial.localAddress?.let { return it }
         val targetAdapter = adapter ?: getBluetoothAdapter(context)
         
         // 1. Try standard adapter property if valid

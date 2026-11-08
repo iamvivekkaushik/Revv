@@ -10,8 +10,13 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.database.ContentObserver
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
+import android.provider.CallLog
+import android.provider.ContactsContract
 import android.telephony.PhoneNumberUtils
 import android.telephony.TelephonyManager
 import androidx.core.content.ContextCompat
@@ -21,6 +26,7 @@ import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,12 +41,28 @@ import kotlinx.coroutines.withContext
  * Bluetooth (PBAP), the way car kits do, never the head unit's own. The phone is the one connected
  * for calls and audio, else the one read last time, else the only one paired. Call [start], [stop]
  * and the rest on the main thread.
+ *
+ * On FYT head units the vendor's own Bluetooth stack holds the phone and Android's has none, so
+ * there the phone comes from FYT's service instead ([FytBluetooth]): its link and calls from the
+ * service, its contacts and call history from where FYT's Bluetooth app saves them ([FytPhoneBook]).
  */
 class PhoneMonitor(private val context: Context, private val scope: CoroutineScope) {
 
     private val bluetooth = context.getSystemService(BluetoothManager::class.java)?.adapter
     private val telephony = context.getSystemService(TelephonyManager::class.java)
     private val prefs = context.getSharedPreferences("phone", Context.MODE_PRIVATE)
+
+    /** FYT's Bluetooth service, on FYT head units only. */
+    private val fyt: FytBluetooth? = if (FytBluetooth.present(context)) FytBluetooth(context, ::onFytUpdate) else null
+    @Volatile private var fytLink = FytLink()
+
+    /** Whether FYT's phone has shown a call since Revv dialled, so going back to idle means it ended. */
+    @Volatile private var fytCallSeen = false
+    private var fytDialTimeout: Job? = null
+
+    private val phoneBookChanges = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) = refreshLink(Trigger.Check)
+    }
 
     private val _state = MutableStateFlow(PhoneState())
     val state: StateFlow<PhoneState> = _state.asStateFlow()
@@ -77,23 +99,43 @@ class PhoneMonitor(private val context: Context, private val scope: CoroutineSco
     fun start() {
         if (started) return
         started = true
-        // Exported: Bluetooth's broadcasts come from the Bluetooth app, not the system itself.
-        ContextCompat.registerReceiver(context, receiver, bluetoothEvents(), ContextCompat.RECEIVER_EXPORTED)
+        if (fyt != null) {
+            fyt.bind()
+            observePhoneBook()
+        } else {
+            // Exported: Bluetooth's broadcasts come from the Bluetooth app, not the system itself.
+            ContextCompat.registerReceiver(context, receiver, bluetoothEvents(), ContextCompat.RECEIVER_EXPORTED)
+        }
         refresh()
     }
 
     fun stop() {
         if (!started) return
         started = false
-        context.unregisterReceiver(receiver)
+        if (fyt != null) {
+            fyt.unbind()
+            context.contentResolver.unregisterContentObserver(phoneBookChanges)
+        } else {
+            context.unregisterReceiver(receiver)
+        }
         linkJob?.cancel()
     }
 
     /** Picks up Bluetooth access granted or a phone paired while Revv was away, and reads the phone if it's been a while. */
-    fun refresh() = refreshLink(Trigger.Check)
+    fun refresh() {
+        // Contacts access may have come since start(), and with it the right to watch them.
+        if (fyt != null && started) observePhoneBook()
+        refreshLink(Trigger.Check)
+    }
 
     /** Reads the phone's calls again now, as after a failure. */
-    fun readAgain() = refreshLink(Trigger.Force)
+    fun readAgain() {
+        fyt?.downloadPhoneBook()
+        refreshLink(Trigger.Force)
+    }
+
+    /** Whether the phone is linked through FYT's Bluetooth rather than Android's: pairing and access go through FYT's app. */
+    val headUnitBluetooth: Boolean get() = fyt != null
 
     /**
      * Has the phone call [number] (digits and + * #). With [CallRoute.Phone], Revv links up as a
@@ -101,6 +143,7 @@ class PhoneMonitor(private val context: Context, private val scope: CoroutineSco
      * couldn't; with [CallRoute.HeadUnit] the head unit's own hands-free link should place it.
      */
     fun call(number: String, onFailed: (String) -> Unit): CallRoute {
+        if (fyt != null) return callThroughFyt(fyt, number, onFailed)
         val link = _state.value.link
         val adapter = bluetooth
         if (link == null || adapter == null || !BluetoothAccess.granted(context)) return CallRoute.None
@@ -127,6 +170,75 @@ class PhoneMonitor(private val context: Context, private val scope: CoroutineSco
     fun hangUp() {
         hangUpRequested = true
         _call.update { it?.copy(stage = CallStage.Ending) }
+        if (fyt != null && !fyt.hangUp()) {
+            fytDialTimeout?.cancel()
+            _call.value = null
+        }
+    }
+
+    /**
+     * Has FYT's Bluetooth dial, as its own dialler does; FYT's call screen comes up over Revv. Revv
+     * follows the call through the phone's state until it's back to idle.
+     */
+    private fun callThroughFyt(fyt: FytBluetooth, number: String, onFailed: (String) -> Unit): CallRoute {
+        val link = fytLink
+        if (!link.connected) return CallRoute.None
+        if (_call.value != null) return CallRoute.Phone
+        // FYT's Bluetooth app takes tel: links too, should the service not answer.
+        if (!fyt.dial(number)) return CallRoute.HeadUnit
+        hangUpRequested = false
+        fytCallSeen = false
+        _call.value = ActiveCall(number, nameFor(number), CallStage.Dialling)
+        fytDialTimeout?.cancel()
+        fytDialTimeout = scope.launch {
+            delay(FYT_DIAL_MILLIS)
+            if (!fytCallSeen && _call.value != null) {
+                _call.value = null
+                onFailed("${link.name.ifBlank { "The phone" }} didn't start the call.")
+            }
+        }
+        return CallRoute.Phone
+    }
+
+    /** On a binder thread: FYT's service reporting on the phone. */
+    private fun onFytUpdate(update: FytUpdate) {
+        val before = fytLink
+        val after = before.after(update)
+        fytLink = after
+        if (update.code == FytUpdate.PHONE_STATE) followFytCall(after)
+        val linkChanged = after.connected != before.connected || after.name != before.name || after.address != before.address
+        val readingDone = before.reading && !after.reading
+        if (linkChanged || readingDone || update === FytUpdate.LOST) scope.launch(Dispatchers.Main) { refreshLink(Trigger.Look) }
+    }
+
+    private fun followFytCall(link: FytLink) {
+        _call.update { active ->
+            active ?: return@update null
+            val stage = link.stage
+            when {
+                stage != null -> {
+                    fytCallSeen = true
+                    when {
+                        active.stage == CallStage.Ending -> active
+                        stage == CallStage.Connected -> active.copy(stage = stage, answeredAt = active.answeredAt ?: SystemClock.elapsedRealtime())
+                        stage == CallStage.Dialling -> active.copy(stage = stage)
+                        else -> active
+                    }
+                }
+                // Back to idle, or the phone gone: the call is over.
+                fytCallSeen || !link.connected -> null
+                else -> active
+            }
+        }
+        if (_call.value == null) fytDialTimeout?.cancel()
+    }
+
+    private fun observePhoneBook() {
+        val resolver = context.contentResolver
+        resolver.unregisterContentObserver(phoneBookChanges)
+        // Android 8+ throws for a provider that isn't there, and stripped head unit builds may lack one.
+        runCatching { resolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, phoneBookChanges) }
+        runCatching { resolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, phoneBookChanges) }
     }
 
     private fun onCallIndicators(indicators: CallIndicators) {
@@ -164,6 +276,14 @@ class PhoneMonitor(private val context: Context, private val scope: CoroutineSco
 
     private fun refreshLink(trigger: Trigger) {
         linkJob?.cancel()
+        if (fyt != null) {
+            linkJob = scope.launch(Dispatchers.IO) {
+                // FYT saves a phone book in batches, each one a change: read once they settle.
+                delay(if (trigger == Trigger.Force) SETTLE_MILLIS else FYT_SETTLE_MILLIS)
+                readFyt()
+            }
+            return
+        }
         linkJob = scope.launch(Dispatchers.IO) {
             delay(SETTLE_MILLIS)
             if (!BluetoothAccess.granted(context)) {
@@ -250,6 +370,64 @@ class PhoneMonitor(private val context: Context, private val scope: CoroutineSco
         }
         // Read the phone the head unit moved on to, if it did.
         if (phoneAddress != address) scope.launch(Dispatchers.Main) { refreshLink(Trigger.Force) }
+    }
+
+    /**
+     * The phone as FYT's Bluetooth has it: linked through FYT's service, its contacts and calls from
+     * where FYT's app saved them. With no phone connected, the one seen last, as it was.
+     */
+    private suspend fun readFyt() {
+        val live = fytLink
+        val lastAddress = prefs.getString(LAST_PHONE, null)
+        val lastName = prefs.getString(LAST_FYT_NAME, null)?.ifBlank { null }
+        val link = if (live.connected) {
+            // The service may tell the state before the phone's name and address.
+            val address = live.address.ifBlank { lastAddress.orEmpty() }
+            val name = live.name.ifBlank { lastName ?: address.ifBlank { "Phone" } }
+            if (live.address.isNotBlank()) prefs.edit { putString(LAST_PHONE, live.address).putString(LAST_FYT_NAME, live.name) }
+            PhoneLink(name, address, battery = null, connected = true)
+        } else {
+            lastAddress?.let { PhoneLink(lastName ?: it, it, battery = null, connected = false) }
+        }
+        val state = when {
+            link == null -> PhoneState(sync = PhoneSync.NoPhone, headUnitBluetooth = true)
+            !FytPhoneBook.granted(context) -> PhoneState(sync = PhoneSync.NeedsPermission, link = link, headUnitBluetooth = true)
+            else -> try {
+                fytPhoneBook(link, live.reading)
+            } catch (e: SecurityException) {
+                PhoneState(sync = PhoneSync.NeedsPermission, link = link, headUnitBluetooth = true)
+            } catch (e: RuntimeException) {
+                PhoneState(sync = PhoneSync.Failed, link = link, problem = "Couldn't read the contacts saved for ${link.name}.", headUnitBluetooth = true)
+            }
+        }
+        currentCoroutineContext().ensureActive()
+        phoneAddress = link?.address
+        _state.value = state
+    }
+
+    private fun fytPhoneBook(link: PhoneLink, reading: Boolean): PhoneState {
+        val resolver = context.contentResolver
+        val numbers = FytPhoneBook.numbers(resolver)
+        val rows = if (FytPhoneBook.mayReadCalls(context)) FytPhoneBook.calls(resolver) else emptyList()
+        val names = numbers.associateBy({ PhoneBook.numberKey(it.number) }, { it.name })
+        val country = networkCountry()
+        val calls = rows.map { row ->
+            val label = names[PhoneBook.numberKey(row.number)] ?: row.cachedName
+                ?: if (row.number.isBlank()) "Unknown number" else readable(row.number, country)
+            Call(row.number, label, row.type, row.timeMillis)
+        }
+        val starred = numbers.filter { it.starred }.map { Favourite(it.name, it.number, starred = true) }
+        val now = System.currentTimeMillis()
+        val empty = calls.isEmpty() && numbers.isEmpty()
+        return PhoneState(
+            sync = if (reading && empty) PhoneSync.Reading else PhoneSync.Synced,
+            link = link,
+            syncedAt = now,
+            recents = PhoneBook.recents(calls),
+            favourites = PhoneBook.favourites(starred, calls, now),
+            contacts = PhoneBook.contacts(numbers.map { Contact(it.name, it.number) }),
+            headUnitBluetooth = true,
+        )
     }
 
     private fun problem(stage: PbapException.Stage, name: String): String = when (stage) {
@@ -341,7 +519,12 @@ class PhoneMonitor(private val context: Context, private val scope: CoroutineSco
         const val HEADSET_CLIENT = 16
 
         const val LAST_PHONE = "lastPhone"
+        const val LAST_FYT_NAME = "lastFytPhoneName"
         const val SETTLE_MILLIS = 300L
+        const val FYT_SETTLE_MILLIS = 1_500L
+
+        /** How long FYT's phone has to show a call Revv asked it to dial. */
+        const val FYT_DIAL_MILLIS = 15_000L
 
         /** Calls read this recently are shown as they are. */
         const val FRESH_MILLIS = 60_000L

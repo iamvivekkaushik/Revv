@@ -32,6 +32,8 @@ import com.vivekkaushik.revv.carplay.CarPlay
 import com.vivekkaushik.revv.media.MediaListenerService
 import com.vivekkaushik.revv.nav.Place
 import com.vivekkaushik.revv.obd.BluetoothAccess
+import com.vivekkaushik.revv.phone.FytBluetooth
+import com.vivekkaushik.revv.phone.FytPhoneBook
 import com.vivekkaushik.revv.obd.ObdAdapter
 import com.vivekkaushik.revv.system.ExternalApps
 import com.vivekkaushik.revv.system.HomeRole
@@ -68,6 +70,12 @@ class MainActivity : ComponentActivity(), HmiActions {
         if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             openAppSettingsIfDeniedForGood(listOf(Manifest.permission.BLUETOOTH_CONNECT))
         }
+        viewModel.onBluetoothPermissionResult()
+    }
+
+    private val phonePermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        val denied = results.filterValues { !it }.keys
+        if (denied.isNotEmpty()) openAppSettingsIfDeniedForGood(denied)
         viewModel.onBluetoothPermissionResult()
     }
 
@@ -425,6 +433,21 @@ class MainActivity : ComponentActivity(), HmiActions {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             bluetoothPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
         }
+    }
+
+    override fun requestPhonePermission() {
+        if (FytBluetooth.present(this)) phonePermissions.launch(FytPhoneBook.permissions(this)) else requestBluetoothPermission()
+    }
+
+    override fun restartHeadUnitBluetooth() = viewModel.restartHeadUnitBluetooth()
+
+    override fun openPhonePairing() {
+        // FYT's Bluetooth app pairs phones there; Android's Bluetooth settings can't.
+        if (FytBluetooth.present(this)) {
+            val pairing = Intent("com.syu.bt.act.ActBtPairDevices").setPackage("com.syu.bt")
+            if (startFirstAvailable(pairing, packageManager.getLaunchIntentForPackage("com.syu.bt"))) return
+        }
+        openBluetoothSettings()
     }
 
     /** Once Android stops showing a permission dialog, only Revv's settings page can grant it. */

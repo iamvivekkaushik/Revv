@@ -113,7 +113,7 @@ fun AppOverlay(
                     HmiApp.Auto -> AutoScreen(state, actions)
                     HmiApp.Maps -> MapsScreen(state, navigation, timeFormat, actions)
                     HmiApp.Vehicle -> VehicleScreen(live, state.settings.car, actions)
-                    HmiApp.Camera -> CameraScreen(live, state.settings.rearCameraId, state.settings.rearCameraRotation, actions)
+                    HmiApp.Camera -> CameraScreen(live, state.settings.rearCameraId, state.settings.rearCameraRotation, state.settings.isOn(SettingsStore.CAMERA_WIDE), state.settings.isOn(SettingsStore.CAMERA_MIRROR), actions)
                     HmiApp.Apps -> AppsScreen(state.apps, actions)
                     HmiApp.Settings -> SettingsScreen(state, actions)
                     HmiApp.Radio -> StubScreen(app.title, "NO RADIO APP FOUND ON THIS HEAD UNIT")

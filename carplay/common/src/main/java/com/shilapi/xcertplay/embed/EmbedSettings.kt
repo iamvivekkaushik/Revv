@@ -64,6 +64,8 @@ object EmbedSettings {
         val hotspotReady: Boolean,
         /** The head unit's hotspot is on; null when the firmware hides its state. */
         val hotspotOn: Boolean?,
+        /** This Android lets apps switch the hotspot at all (11+); below that it's the driver's to switch. */
+        val hotspotSwitchSupported: Boolean,
         /** The app may turn the hotspot on: Android 11+ and "Modify system settings" granted. */
         val hotspotSwitchAllowed: Boolean,
         val phoneAddress: String?,
@@ -93,6 +95,7 @@ object EmbedSettings {
             hotspotSsid = ssid,
             hotspotReady = ManualHotspotValidation.error(ssid, AirPlayPersistence.loadManualHotspotPassphrase(context)) == null,
             hotspotOn = CarHotspotStatus.isEnabled(context),
+            hotspotSwitchSupported = HotspotSwitch.supported(),
             hotspotSwitchAllowed = HotspotSwitch.allowed(context),
             phoneAddress = DiPlayPreferences.phoneAddress(context),
             phoneName = DiPlayPreferences.phoneName(context),

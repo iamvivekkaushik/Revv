@@ -39,6 +39,7 @@ import com.vivekkaushik.revv.obd.ObdSession
 import com.vivekkaushik.revv.obd.ObdStatus
 import com.vivekkaushik.revv.phone.ActiveCall
 import com.vivekkaushik.revv.phone.CallRoute
+import com.vivekkaushik.revv.fyt.FytReverse
 import com.vivekkaushik.revv.phone.PhoneMonitor
 import com.vivekkaushik.revv.phone.PhoneState
 import com.vivekkaushik.revv.settings.HmiSettings
@@ -50,6 +51,8 @@ import com.vivekkaushik.revv.system.NightDimmer
 import com.vivekkaushik.revv.system.NightMode
 import com.vivekkaushik.revv.system.NightSchedule
 import com.vivekkaushik.revv.system.ScreenBrightness
+import com.vivekkaushik.revv.ui.hmi.CameraLog
+import com.vivekkaushik.revv.ui.hmi.RearCameraFeed
 import com.vivekkaushik.revv.ui.hmi.HmiApp
 import com.vivekkaushik.revv.ui.hmi.ScreenState
 import com.vivekkaushik.revv.ui.hmi.SystemState
@@ -57,6 +60,7 @@ import com.vivekkaushik.revv.vehicle.CarSetup
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -84,6 +88,19 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val navigator = Navigator(application, viewModelScope)
     private val carPlayRoute = CarPlayRoute(navigator, viewModelScope)
     private val phoneMonitor = PhoneMonitor(application, viewModelScope)
+
+    /** Reverse gear on FYT head units; null elsewhere. */
+    private val reverse: FytReverse? = if (FytReverse.present(application)) {
+        FytReverse(application) { value -> CameraLog.add(application, "FYT reports reverse gear $value") }
+    } else {
+        null
+    }
+
+    /** Whether Revv is on screen, so it may stand in for FYT's own reverse view. */
+    @Volatile private var foreground = false
+
+    /** The screen as it was when reverse opened the Rear Cam, to go back to after. */
+    private var screenBeforeReverse: ScreenState? = null
     private val nightDimmer = NightDimmer(application)
     private val engineSound = EngineSound(application)
     /**
@@ -137,6 +154,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val activeCall: StateFlow<ActiveCall?> = phoneMonitor.call
 
     init {
+        reverse?.let { fyt ->
+            // Shifting into reverse opens the Rear Cam while Revv shows it instead of FYT; out of reverse, back.
+            viewModelScope.launch { fyt.reversing.collect(::onReversing) }
+            // The setting takes effect at once while Revv is on screen.
+            viewModelScope.launch {
+                settings.map { it.isOn(SettingsStore.REVERSE_CAMERA) }.distinctUntilChanged().collect { if (foreground) holdBackFytReverseView() }
+            }
+        }
         // First, so the adapter log knows whether to save before the adapter says anything.
         viewModelScope.launch {
             settings.map { it.isOn(SettingsStore.SAVE_OBD_LOG) }.distinctUntilChanged().collect(obd::saveLogs)
@@ -245,19 +270,83 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         navigator.stop()
         phoneMonitor.stop()
         engineSound.release()
+        reverse?.stop()
+        // FYT's own reverse view must not stay off with Revv gone; the scope is already cancelled.
+        if (reverseHeldBack) Thread { FytReverse.holdBackOwnView(false) }.start()
     }
 
     fun onStart() {
+        foreground = true
         refreshSystemState()
         media.start()
         navigator.start()
         phoneMonitor.start()
+        reverse?.start()
+        holdBackFytReverseView()
     }
 
     fun onStop() {
+        foreground = false
         media.stop()
         navigator.stop()
         phoneMonitor.stop()
+        reverse?.stop()
+        holdBackFytReverseView()
+    }
+
+    /**
+     * Keeps FYT's own reverse view from opening while Revv is on screen with Settings › Vehicle ›
+     * Rear Cam in reverse on, and lets it open again otherwise, so something always shows the camera.
+     * Leaves the switch alone with the setting off, as FYT's own settings may have set it.
+     */
+    private fun holdBackFytReverseView() {
+        if (reverse == null) return
+        val enabled = settings.value.isOn(SettingsStore.REVERSE_CAMERA)
+        val hold = enabled && foreground && !reverseStoodDown
+        if (!enabled && !reverseHeldBack) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            reverseHeldBack = FytReverse.holdBackOwnView(hold) { CameraLog.add(app, it) } && hold
+        }
+    }
+
+    /** Whether Revv last switched FYT's own reverse view off. */
+    @Volatile private var reverseHeldBack = false
+
+    /** Set when Revv's Rear Cam showed no picture in reverse: FYT shows reverse until Revv restarts. */
+    @Volatile private var reverseStoodDown = false
+    private var reverseWatchdog: Job? = null
+
+    private fun onReversing(reversing: Boolean) {
+        if (reversing) {
+            val enabled = settings.value.isOn(SettingsStore.REVERSE_CAMERA)
+            if (!foreground || !enabled || screenBeforeReverse != null) {
+                CameraLog.add(getApplication(), "In reverse; not opening the Rear Cam (on screen $foreground, setting $enabled)")
+                return
+            }
+            screenBeforeReverse = _screen.value
+            _screen.update { it.open(HmiApp.Camera) }
+            // A reverse view that shows nothing is worse than FYT's: if no picture comes in time,
+            // hand reverse back to FYT, from the next reverse on, until Revv restarts.
+            val pictures = RearCameraFeed.pictures
+            reverseWatchdog?.cancel()
+            reverseWatchdog = viewModelScope.launch {
+                delay(REVERSE_PICTURE_MILLIS)
+                if (RearCameraFeed.pictures == pictures && reverse?.reversing?.value == true) {
+                    val app = getApplication<Application>()
+                    reverseStoodDown = true
+                    CameraLog.add(app, "No picture ${REVERSE_PICTURE_MILLIS / 1000.0} s into reverse; handing reverse back to the head unit")
+                    holdBackFytReverseView()
+                    Toast.makeText(app, R.string.reverse_handed_back, Toast.LENGTH_LONG).show()
+                }
+            }
+        } else {
+            reverseWatchdog?.cancel()
+            val before = screenBeforeReverse ?: return
+            screenBeforeReverse = null
+            // Back where the driver was, unless they moved on from the Rear Cam meanwhile.
+            _screen.update { if (it.app == HmiApp.Camera) before else it }
+        }
     }
 
     fun refreshSystemState() {
@@ -324,6 +413,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun onLocationPermissionResult() = refreshSystemState()
 
     fun hangUp() = phoneMonitor.hangUp()
+
+    /** FYT head units: restarts the head unit's Bluetooth, for when OBD stops connecting through it. */
+    fun restartHeadUnitBluetooth() {
+        val app = getApplication<Application>()
+        Toast.makeText(app, R.string.bluetooth_restarting, Toast.LENGTH_LONG).show()
+        viewModelScope.launch {
+            val done = com.vivekkaushik.revv.phone.FytBluetooth.restart(app, obd::note)
+            Toast.makeText(app, if (done) R.string.bluetooth_restarted else R.string.bluetooth_restart_failed, Toast.LENGTH_LONG).show()
+        }
+    }
 
     fun readPhoneAgain() = phoneMonitor.readAgain()
 
@@ -540,6 +639,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     )
 
     private companion object {
+        /** How long Revv's Rear Cam has to show a picture in reverse before reverse goes back to the head unit. */
+        const val REVERSE_PICTURE_MILLIS = 3_500L
+
         const val ASK_TO_BE_HOME = "ask_to_be_home"
         val LEVEL_MAX = mapOf(
             SettingsStore.NAV_VOLUME to 30,

@@ -16,7 +16,10 @@ internal object DiagnosticJournal {
 
     @Synchronized fun init(context: Context) {
         if (directory != null) return
-        val dir = File(context.filesDir, "diagnostics")
+        // Debug builds keep it in the app's external folder, where a developer can read it on head
+        // units with no adb (over a terminal app's SSH, say). Release builds keep it private.
+        val debuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val dir = (if (debuggable) context.getExternalFilesDir("diagnostics") else null) ?: File(context.filesDir, "diagnostics")
         directory = dir
         Thread({
             while (true) {

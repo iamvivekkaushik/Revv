@@ -49,7 +49,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.hypot
 
 @Composable
-fun CameraScreen(live: LiveTelemetry, chosenCameraId: String?, rotation: Int, actions: HmiActions) {
+fun CameraScreen(live: LiveTelemetry, chosenCameraId: String?, rotation: Int, wide: Boolean, mirror: Boolean, actions: HmiActions) {
     val context = LocalContext.current
     var granted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -58,19 +58,43 @@ fun CameraScreen(live: LiveTelemetry, chosenCameraId: String?, rotation: Int, ac
     val cameras = remember { RearCameras.list(context) }
     val camera = cameras.firstOrNull { it.id == chosenCameraId } ?: cameras.firstOrNull()
     var guides by rememberSaveable { mutableStateOf(true) }
-    // Reset when the camera changes, so a camera that failed can be tried again by switching.
-    var failedId by remember { mutableStateOf<String?>(null) }
+    // Cameras that failed this time the screen is up. A failed camera hands over to the next one
+    // not yet tried, and that one is kept: head units list inputs with nothing behind them, and
+    // in reverse there's no time to tap through them. Switching by hand starts afresh.
+    var failedIds by remember { mutableStateOf(emptySet<String>()) }
+    val onCameraFailed: (String) -> Unit = { id ->
+        failedIds = failedIds + id
+        val next = cameras.firstOrNull { it.id !in failedIds }
+        if (next != null) {
+            CameraLog.add(context, "Camera $id failed; trying camera ${next.id}")
+            actions.setRearCameraId(next.id)
+        }
+    }
     val feed = when {
         camera == null -> Feed.NoCamera
         !granted -> Feed.NeedsPermission
-        failedId == camera.id -> Feed.Failed
+        camera.id in failedIds -> Feed.Failed
         else -> Feed.Live(camera)
     }
     // Compact (display sizes above 130%) gives the picture more room and drops the rear sensors
     // card, which only illustrates: no sensor reading reaches Revv.
     val compact = LocalCompact.current
+    val allow = { permission.launch(Manifest.permission.CAMERA) }
+    // Wide: the picture takes the whole width and shows all of what the camera sees, uncropped,
+    // with only the guidelines switch and the way back over it.
+    if (wide) {
+        Box(Modifier.fillMaxSize()) {
+            CameraFeed(live, feed, guides, rotation, allow, onCameraFailed, Modifier.fillMaxSize(), whole = true, mirror = mirror)
+            Row(Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GhostButton(if (guides) "GUIDES ON" else "GUIDES OFF", { guides = !guides }, Modifier.height(52.dp))
+                GhostButton(if (mirror) "MIRROR ON" else "MIRROR OFF", { actions.toggleSetting(SettingsStore.CAMERA_MIRROR) }, Modifier.height(52.dp))
+                GhostButton("NARROW", { actions.toggleSetting(SettingsStore.CAMERA_WIDE) }, Modifier.height(52.dp))
+            }
+        }
+        return
+    }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(if (compact) 24.dp else 28.dp)) {
-        CameraFeed(live, feed, guides, rotation, { permission.launch(Manifest.permission.CAMERA) }, { failedId = it }, Modifier.weight(1f).fillMaxHeight())
+        CameraFeed(live, feed, guides, rotation, allow, onCameraFailed, Modifier.weight(1f).fillMaxHeight(), mirror = mirror)
         Column(Modifier.width(if (compact) 320.dp else 400.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(28.dp)) {
             if (!compact) Column(
                 Modifier.fillMaxWidth().border(1.dp, Hmi.Line).padding(28.dp),
@@ -104,6 +128,8 @@ fun CameraScreen(live: LiveTelemetry, chosenCameraId: String?, rotation: Int, ac
                     GhostButton("GUIDELINES OFF", { guides = true }, Modifier.fillMaxWidth().height(60.dp))
                 }
                 Caption("PICTURE", Modifier.padding(top = 10.dp, bottom = 6.dp))
+                GhostButton("WIDE VIEW", { actions.toggleSetting(SettingsStore.CAMERA_WIDE) }, Modifier.fillMaxWidth().height(60.dp))
+                GhostButton(if (mirror) "MIRROR · ON" else "MIRROR · OFF", { actions.toggleSetting(SettingsStore.CAMERA_MIRROR) }, Modifier.fillMaxWidth().height(60.dp))
                 GhostButton(
                     "ROTATE · $rotation°",
                     { actions.setChoice(SettingsStore.CAMERA_ROTATION, (rotation / 90 + 1) % 4) },
@@ -114,7 +140,7 @@ fun CameraScreen(live: LiveTelemetry, chosenCameraId: String?, rotation: Int, ac
                     GhostButton(
                         camera.label,
                         {
-                            failedId = null
+                            failedIds = emptySet()
                             actions.setRearCameraId(cameras[(cameras.indexOf(camera) + 1) % cameras.size].id)
                         },
                         Modifier.fillMaxWidth().height(60.dp),
@@ -143,6 +169,8 @@ private fun CameraFeed(
     onAllow: () -> Unit,
     onFailed: (String) -> Unit,
     modifier: Modifier,
+    whole: Boolean = false,
+    mirror: Boolean = false,
 ) {
     Box(
         modifier
@@ -162,7 +190,7 @@ private fun CameraFeed(
             },
     ) {
         if (feed is Feed.Live) {
-            CameraPreview(feed.camera.id, rotation, onFailed = { onFailed(feed.camera.id) }, modifier = Modifier.fillMaxSize())
+            CameraPreview(feed.camera.id, rotation, onFailed = { onFailed(feed.camera.id) }, modifier = Modifier.fillMaxSize(), whole = whole, mirror = mirror)
         }
         if (guides) {
             Canvas(Modifier.fillMaxSize()) { drawGuides() }

@@ -17,6 +17,7 @@ import java.io.File
 import java.io.IOException
 import java.util.Locale
 import kotlin.math.round
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -69,6 +70,9 @@ class ObdSession(
 
     /** The adapter conversation of recent connection attempts, for troubleshooting. */
     val adapterLog: StateFlow<List<String>> = log.lines
+
+    /** A line from outside the session, such as a Bluetooth restart, for the adapter log. */
+    fun note(text: String) = log.add(text)
 
     /** Whether the adapter log is also saved to a file on the device. */
     fun saveLogs(save: Boolean) {
@@ -149,6 +153,14 @@ class ObdSession(
                 currentCoroutineContext().ensureActive()
                 log.add("Failed: ${e.message ?: "connection lost"}")
                 _status.value = ObdStatus(ObdLink.Retrying, adapter.name, problem = e.message ?: "Connection lost")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: RuntimeException) {
+                // Vendor Bluetooth stacks throw unchecked exceptions Android's own never does. One
+                // adapter that won't connect must not crash Revv on every start.
+                currentCoroutineContext().ensureActive()
+                log.add("Failed: ${e.javaClass.simpleName}: ${e.message ?: "no detail"}")
+                _status.value = ObdStatus(ObdLink.Retrying, adapter.name, problem = e.message ?: "Connection failed")
             }
             polling = false
             _readings.value = null
