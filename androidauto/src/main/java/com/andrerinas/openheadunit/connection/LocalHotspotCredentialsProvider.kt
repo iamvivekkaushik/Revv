@@ -19,6 +19,7 @@ import java.net.Inet6Address
 import java.net.NetworkInterface
 import java.util.UUID
 import java.util.concurrent.Executor
+import com.andrerinas.openheadunit.utils.InterfaceUp
 
 /** An app-owned local AP reservation; never changes saved Wi-Fi or global tethering settings. */
 class LocalHotspotCredentialsProvider(private val context: Context, private val scope: CoroutineScope) {
@@ -298,7 +299,7 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
 
     private fun interfaces(): List<ApInterfaceCandidate> = runCatching {
         NetworkInterface.getNetworkInterfaces().toList().map { net ->
-            ApInterfaceCandidate(net.name, net.isLoopback, net.isUp,
+            ApInterfaceCandidate(net.name, net.isLoopback, InterfaceUp.of(net),
                 net.inetAddresses.toList().filterIsInstance<Inet4Address>()
                     .firstOrNull { it.isSiteLocalAddress }?.hostAddress)
         }

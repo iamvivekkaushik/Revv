@@ -36,6 +36,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.net.Inet4Address
 import java.net.NetworkInterface
+import com.andrerinas.openheadunit.utils.InterfaceUp
 
 /**
  * Supplies the Native AA handshake with the credentials of *this head unit's own access point*,
@@ -327,7 +328,7 @@ class SoftApCredentialsProvider(
                 ApInterfaceCandidate(
                     name = nif.name,
                     isLoopback = try { nif.isLoopback } catch (e: Exception) { false },
-                    isUp = try { nif.isUp } catch (e: Exception) { false },
+                    isUp = InterfaceUp.of(nif),
                     siteLocalIpv4 = nif.inetAddresses.toList()
                         .filterIsInstance<Inet4Address>()
                         .firstOrNull { it.isSiteLocalAddress }

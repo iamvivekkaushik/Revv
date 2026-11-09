@@ -293,7 +293,7 @@ object HotspotManager {
                 ApInterfaceCandidate(
                     name = nif.name,
                     isLoopback = try { nif.isLoopback } catch (e: Exception) { false },
-                    isUp = try { nif.isUp } catch (e: Exception) { false },
+                    isUp = InterfaceUp.of(nif),
                     siteLocalIpv4 = nif.inetAddresses.toList()
                         .filterIsInstance<Inet4Address>()
                         .firstOrNull { it.isSiteLocalAddress }
