@@ -1,0 +1,1 @@
+• On FYT head units, wireless Android Auto over the car hotspot starts again: Revv no longer waits for another device to join the hotspot before handing it to the phone.
